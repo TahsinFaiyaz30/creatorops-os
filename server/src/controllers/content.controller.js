@@ -1,6 +1,7 @@
 import {
   createContentItem,
   getContentVersions,
+  listContentVariants,
   listContentByCampaign,
   updateContentItem,
   updateContentStatus
@@ -46,6 +47,15 @@ export const getContentVersionsHandler = async (req, res, next) => {
   try {
     const versions = await getContentVersions(req.user, req.params.id);
     res.json({ data: { versions } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const listContentVariantsHandler = async (req, res, next) => {
+  try {
+    const variants = await listContentVariants(req.user, req.params.id);
+    res.json({ data: { variants } });
   } catch (error) {
     next(error);
   }

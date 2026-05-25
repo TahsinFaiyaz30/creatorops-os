@@ -1,5 +1,6 @@
 import Campaign from '../models/Campaign.js';
 import ContentItem from '../models/ContentItem.js';
+import PlatformVariant from '../models/PlatformVariant.js';
 import { createWorkflowEvent } from './event.service.js';
 import { createContentVersion, listContentVersions } from './versioning.service.js';
 import { validateStatusTransition } from './workflow.service.js';
@@ -184,3 +185,12 @@ export const updateContentStatus = async (user, contentItemId, input) => {
 };
 
 export const getContentVersions = async (user, contentItemId) => listContentVersions(user, contentItemId);
+
+export const listContentVariants = async (user, contentItemId) => {
+  await findScopedContentItem(user, contentItemId);
+
+  return PlatformVariant.find({
+    workspaceId: user.workspaceId,
+    contentItemId
+  }).sort({ platform: 1, createdAt: 1 });
+};

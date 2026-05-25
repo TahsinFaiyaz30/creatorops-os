@@ -3,6 +3,7 @@ import { Router } from 'express';
 import {
   createContentHandler,
   getContentVersionsHandler,
+  listContentVariantsHandler,
   listContentByCampaignHandler,
   updateContentHandler,
   updateContentStatusHandler
@@ -18,5 +19,6 @@ router.get('/campaign/:campaignId', listContentByCampaignHandler);
 router.patch('/:id', updateContentHandler);
 router.patch('/:id/status', updateContentStatusHandler);
 router.get('/:id/versions', getContentVersionsHandler);
+router.get('/:id/variants', listContentVariantsHandler);
 
 export default router;
