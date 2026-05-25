@@ -14,6 +14,16 @@ const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
 const GEMINI_FALLBACK_MODELS = ['gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 
 const platformRules = {
+  facebook: {
+    name: 'Facebook',
+    style: 'community-style, medium caption, engagement-led',
+    hook: idea => `Let's make this easier: ${idea}`,
+    caption: ({ idea, brandName, tone, targetAudience }) =>
+      `${brandName || 'Our team'} is turning "${idea}" into a practical conversation for ${targetAudience || 'the community'}. ${tone ? `Keep it ${tone}.` : 'Keep it helpful, direct, and easy to respond to.'} This is built for teams who want clearer content operations without jumping between disconnected tools.`,
+    cta: 'What would you add to this workflow? Comment below or share it with your team.',
+    hashtags: ['#CreatorWorkflow', '#ContentOps', '#Community'],
+    fitWords: ['community', 'comment', 'share', 'team']
+  },
   instagram: {
     name: 'Instagram',
     style: 'short, emotional, visual-first',
@@ -44,6 +54,16 @@ const platformRules = {
     hashtags: ['#CreatorTok', '#ContentHacks', '#AITools'],
     fitWords: ['pov', 'fast', 'follow', 'comment']
   },
+  youtube: {
+    name: 'YouTube',
+    style: 'searchable title and description',
+    hook: idea => `How to use ${idea.toLowerCase()} in a creator workflow`,
+    caption: ({ idea, brandName, targetAudience }) =>
+      `Title idea: How Creator Teams Turn One Idea Into Multi-Platform Content\n\nDescription: In this video, ${brandName || 'the workflow'} shows how "${idea}" becomes platform-ready content with approvals, scheduling, and a publishing simulator. Built for ${targetAudience || 'creator teams'} who need a repeatable content system.`,
+    cta: 'Subscribe for more creator workflow breakdowns and watch the next video.',
+    hashtags: ['#CreatorWorkflow', '#ContentSystem', '#MarketingOps'],
+    fitWords: ['how', 'video', 'subscribe', 'description']
+  },
   youtube_shorts: {
     name: 'YouTube Shorts',
     style: 'search-friendly, clear, script-like',
@@ -53,6 +73,56 @@ const platformRules = {
     cta: 'Subscribe for the next workflow breakdown and watch the next short.',
     hashtags: ['#YouTubeGrowth', '#CreatorWorkflow', '#ContentSystem'],
     fitWords: ['how to', 'script', 'subscribe', 'watch']
+  },
+  threads: {
+    name: 'Threads',
+    style: 'short, conversational, discussion-first',
+    hook: idea => `A creator ops thought: ${idea}`,
+    caption: ({ idea, brandName, targetAudience }) =>
+      `${brandName || 'A creator team'} can turn "${idea}" into a full content workflow without losing the human review step. For ${targetAudience || 'teams'}, that matters more than just generating another caption.`,
+    cta: 'Would you use this workflow, or change the approval step?',
+    hashtags: ['#CreatorOps'],
+    fitWords: ['thought', 'workflow', 'would', 'discussion']
+  },
+  x: {
+    name: 'X',
+    style: 'concise, punchy, max-short format',
+    hook: idea => `One idea. Many platforms.`,
+    caption: ({ idea }) =>
+      `Creator teams do not need another disconnected draft. They need one workflow: idea -> variants -> approval -> schedule -> simulator publish. Example: ${idea}`,
+    cta: 'Reply with the step your team struggles with most.',
+    hashtags: ['#CreatorOps'],
+    fitWords: ['workflow', 'reply', 'idea', 'approval']
+  },
+  pinterest: {
+    name: 'Pinterest',
+    style: 'descriptive pin title and keyword-rich description',
+    hook: idea => `Creator workflow template for ${idea.toLowerCase()}`,
+    caption: ({ idea, brandName }) =>
+      `Pin title: Creator Content Workflow System\n\nDescription: Save this ${brandName || 'creator workflow'} idea for planning content across Instagram, TikTok, YouTube, LinkedIn, and more. Use "${idea}" as the starting point for platform-specific drafts, approvals, and scheduling.`,
+    cta: 'Save this pin for your next content planning session.',
+    hashtags: ['#ContentPlanning', '#CreatorTools', '#Workflow'],
+    fitWords: ['pin', 'save', 'planning', 'template']
+  },
+  blog: {
+    name: 'Blog',
+    style: 'article title, intro, and outline',
+    hook: idea => `How Creator Teams Can Operationalize ${idea}`,
+    caption: ({ idea, brandName, targetAudience }) =>
+      `Article intro: ${brandName || 'CreatorOps OS'} shows how "${idea}" can become a repeatable content workflow for ${targetAudience || 'creator teams'}.\n\nOutline:\n1. Start with one raw idea.\n2. Adapt it for each platform.\n3. Review with clear roles.\n4. Schedule through a simulator.\n5. Track events and versions.`,
+    cta: 'Read the full workflow and adapt it for your team.',
+    hashtags: [],
+    fitWords: ['article', 'outline', 'read', 'workflow']
+  },
+  shopify: {
+    name: 'Shopify',
+    style: 'product/content marketing with shop-oriented CTA',
+    hook: idea => `Turn content operations into a product-ready workflow`,
+    caption: ({ idea, brandName }) =>
+      `${brandName || 'This creator workflow'} helps teams turn "${idea}" into content that supports campaigns, product education, and shop updates. Keep the message practical, brand-safe, and easy to publish through the simulator.`,
+    cta: 'View the campaign workflow and connect it to your next shop update.',
+    hashtags: ['#ShopUpdate', '#CreatorStore', '#ContentMarketing'],
+    fitWords: ['shop', 'product', 'campaign', 'view']
   }
 };
 
@@ -116,7 +186,14 @@ const captionLengthPenalty = (platform, caption) => {
   if (platform === 'instagram') return length < 45 || length > 360 ? 8 : 0;
   if (platform === 'linkedin') return length < 120 || length > 1200 ? 8 : 0;
   if (platform === 'tiktok') return length < 35 || length > 260 ? 8 : 0;
+  if (platform === 'facebook') return length < 80 || length > 1200 ? 8 : 0;
+  if (platform === 'youtube') return length < 120 || length > 1800 ? 8 : 0;
   if (platform === 'youtube_shorts') return length < 70 || length > 420 ? 8 : 0;
+  if (platform === 'threads') return length < 30 || length > 500 ? 8 : 0;
+  if (platform === 'x') return length < 25 || length > 280 ? 8 : 0;
+  if (platform === 'pinterest') return length < 70 || length > 500 ? 8 : 0;
+  if (platform === 'blog') return length < 180 || length > 2500 ? 8 : 0;
+  if (platform === 'shopify') return length < 80 || length > 900 ? 8 : 0;
 
   return 0;
 };
@@ -324,7 +401,7 @@ const withTimeout = async (promiseFactory, timeoutMs) => {
 
 const buildProviderPrompt = ({ contentItem, campaign, brandProfile, platforms }) => ({
   instruction:
-    'Return strict JSON with a variants array. Each item must include platform, caption, hook, cta, hashtags. Use only these exact platform values: instagram, linkedin, tiktok, youtube_shorts. No markdown.',
+    `Return strict JSON with a variants array. Each item must include platform, caption, hook, cta, hashtags. Use only these exact platform values: ${platforms.join(', ')}. No markdown.`,
   contentIdea: getContentIdea(contentItem),
   campaign: {
     name: campaign?.name,

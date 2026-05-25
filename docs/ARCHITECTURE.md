@@ -23,6 +23,8 @@ The frontend provides the browser demo for editors and creator/admins:
 - dashboard
 - campaigns
 - campaign detail workflow
+- platform accounts
+- unified publishing center
 - approvals
 - scheduling
 - live workflow events
@@ -34,7 +36,7 @@ The Express API exposes workflow routes and delegates business logic to services
 
 ### MongoDB And Mongoose
 
-MongoDB stores workspace-scoped records for users, campaigns, content, variants, approvals, schedules, versions, and workflow events. Mongoose models define relationships, indexes, enums, and timestamps.
+MongoDB stores workspace-scoped records for users, campaigns, content, variants, platform accounts, platform format rules, approvals, schedules, versions, and workflow events. Mongoose models define relationships, indexes, enums, and timestamps.
 
 ### JWT Auth
 
@@ -54,13 +56,21 @@ The AI service supports:
 
 Provider failure never breaks the demo. The service always returns valid structured variants.
 
+### Platform Account Service
+
+The platform account service manages simulated connected accounts for Facebook, Instagram, TikTok, YouTube, YouTube Shorts, Threads, LinkedIn, X, Pinterest, Blog, and Shopify. It stores no OAuth tokens or external API secrets.
+
+### Platform Format Service
+
+The platform format service exposes caption limits, hashtag limits, media capability flags, platform style guidance, CTA guidance, and readiness checklist data.
+
 ### Approval Service
 
 The approval service manages pending review requests and creator/admin decisions. It blocks duplicate pending requests, updates variant/content status, writes version snapshots, and creates workflow events.
 
 ### Scheduling Service
 
-The scheduling service creates queued jobs for approved variants and marks content/variants as scheduled. It assigns simulator adapter names based on platform.
+The scheduling service creates queued jobs for approved variants and marks content/variants as scheduled. It requires a matching active platform account, stores an account snapshot, and assigns simulator adapter names based on platform.
 
 ### Publishing Worker
 
@@ -91,6 +101,8 @@ AI Repurpose Service
   v
 Platform Variants
   |
+  +--> Platform format rules and readiness checklist
+  |
   v
 Submit For Review
   |
@@ -109,10 +121,10 @@ Creator/Admin Decision
   +--> Request changes -> editor revises later
   |
   v
-Schedule Approved Variant
+Schedule Approved Variant To Matching Account
   |
   v
-ScheduleJob queued
+ScheduleJob queued with account snapshot
   |
   v
 Publishing Worker or Run Now
@@ -134,13 +146,14 @@ WorkflowEvent persisted and broadcast
 6. Event service persists workflow events.
 7. Socket.IO broadcasts events after persistence.
 8. Frontend listens for `workflow:event` and also fetches persisted events.
+9. Campaign tracking aggregates stored content, variants, schedules, accounts, and events.
 
 ## Scalability Strategy
 
 Future production work can scale the same architecture without rewriting the MVP:
 
 - Replace in-process publishing worker with Redis and BullMQ.
-- Add real platform adapters for Instagram, TikTok, YouTube, and LinkedIn.
+- Add real platform adapters for Facebook, Instagram, TikTok, YouTube, Threads, LinkedIn, X, Pinterest, Blog, and Shopify.
 - Use workspace-specific socket rooms instead of global event broadcast.
 - Add an analytics pipeline for campaign performance and content attribution.
 - Store images/videos in object storage.

@@ -8,6 +8,7 @@ export const createScheduleJobHandler = async (req, res, next) => {
   try {
     const scheduleJob = await createScheduleJob({
       variantId: req.body.variantId,
+      platformAccountId: req.body.platformAccountId,
       scheduledAt: req.body.scheduledAt,
       user: req.user
     });

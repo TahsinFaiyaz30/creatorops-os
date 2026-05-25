@@ -1,4 +1,9 @@
-import { createCampaign, getCampaignById, listCampaigns } from '../services/campaign.service.js';
+import {
+  createCampaign,
+  getCampaignById,
+  getCampaignTracking,
+  listCampaigns
+} from '../services/campaign.service.js';
 
 export const createCampaignHandler = async (req, res, next) => {
   try {
@@ -22,6 +27,15 @@ export const getCampaignHandler = async (req, res, next) => {
   try {
     const campaign = await getCampaignById(req.user, req.params.id);
     res.json({ data: { campaign } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getCampaignTrackingHandler = async (req, res, next) => {
+  try {
+    const tracking = await getCampaignTracking(req.user, req.params.id);
+    res.json({ data: { tracking } });
   } catch (error) {
     next(error);
   }

@@ -1,15 +1,10 @@
 import ScheduleJob from '../models/ScheduleJob.js';
 import ContentItem from '../models/ContentItem.js';
 import PlatformVariant from '../models/PlatformVariant.js';
+import { adapterByPlatform } from '../constants/platforms.js';
 import { createWorkflowEvent } from './event.service.js';
+import { resolveSchedulePlatformAccount } from './platformAccount.service.js';
 import { createVariantVersion } from './versioning.service.js';
-
-const adapterByPlatform = {
-  instagram: 'InstagramAdapterSimulator',
-  linkedin: 'LinkedInAdapterSimulator',
-  tiktok: 'TikTokAdapterSimulator',
-  youtube_shorts: 'YouTubeShortsAdapterSimulator'
-};
 
 const createHttpError = (message, statusCode) => {
   const error = new Error(message);
@@ -93,11 +88,21 @@ const createScheduleVersion = async ({ user, contentItem, variant, job, changeNo
       scheduleJobStatus: job.status,
       scheduledAt: job.scheduledAt,
       adapterName: job.adapterName,
-      resultMessage: job.resultMessage
+      resultMessage: job.resultMessage,
+      platformAccountId: job.platformAccountId,
+      platformAccountSnapshot: job.platformAccountSnapshot
     }
   });
 
-export const createScheduleJob = async ({ variantId, scheduledAt, user }) => {
+const buildAccountSnapshot = account => ({
+  platform: account.platform,
+  accountName: account.accountName,
+  accountHandle: account.accountHandle,
+  accountType: account.accountType,
+  status: account.status
+});
+
+export const createScheduleJob = async ({ variantId, platformAccountId, scheduledAt, user }) => {
   requireCreatorAdmin(user);
 
   if (!variantId) {
@@ -114,11 +119,19 @@ export const createScheduleJob = async ({ variantId, scheduledAt, user }) => {
   const contentItem = await findScopedContentItem(user.workspaceId, variant.contentItemId);
   const previousStatus = variant.status;
   const adapterName = adapterByPlatform[variant.platform] || 'GenericAdapterSimulator';
+  const platformAccount = await resolveSchedulePlatformAccount({
+    user,
+    platform: variant.platform,
+    platformAccountId
+  });
+  const platformAccountSnapshot = buildAccountSnapshot(platformAccount);
 
   const job = await ScheduleJob.create({
     workspaceId: user.workspaceId,
     contentItemId: contentItem._id,
     variantId: variant._id,
+    platformAccountId: platformAccount._id,
+    platformAccountSnapshot,
     platform: variant.platform,
     scheduledAt: scheduledDate,
     status: 'queued',
@@ -147,7 +160,7 @@ export const createScheduleJob = async ({ variantId, scheduledAt, user }) => {
     workspaceId: user.workspaceId,
     actorId: user._id,
     eventType: 'schedule.created',
-    message: `Scheduled ${variant.platform} variant for publishing.`,
+    message: `Scheduled ${variant.platform} variant for the publishing simulator.`,
     entityType: 'ScheduleJob',
     entityId: job._id,
     metadata: {
@@ -155,6 +168,8 @@ export const createScheduleJob = async ({ variantId, scheduledAt, user }) => {
       contentItemId: contentItem._id,
       variantId: variant._id,
       platform: variant.platform,
+      platformAccountId: platformAccount._id,
+      accountHandle: platformAccount.accountHandle,
       scheduledAt: job.scheduledAt,
       previousStatus,
       newStatus: variant.status
@@ -170,6 +185,7 @@ export const getScheduleJobById = async ({ user, scheduleJobId }) =>
     workspaceId: user.workspaceId
   })
     .populate('variantId', 'platform caption hook cta hashtags status brandScore readinessScore aiProvider')
+    .populate('platformAccountId', 'platform accountName accountHandle accountType status isActive')
     .populate('contentItemId', 'title rawIdea status')
     .populate('createdBy', 'name email role');
 
@@ -179,6 +195,7 @@ export const getScheduleJobs = async ({ user }) =>
   })
     .sort({ scheduledAt: 1, createdAt: -1 })
     .populate('variantId', 'platform caption hook cta hashtags status brandScore readinessScore aiProvider')
+    .populate('platformAccountId', 'platform accountName accountHandle accountType status isActive')
     .populate('contentItemId', 'title rawIdea status')
     .populate('createdBy', 'name email role');
 
@@ -231,6 +248,8 @@ export const publishJob = async ({ job }) => {
         contentItemId: contentItem._id,
         variantId: variant._id,
         platform: variant.platform,
+        platformAccountId: processingJob.platformAccountId,
+        accountHandle: processingJob.platformAccountSnapshot?.accountHandle,
         adapterName: processingJob.adapterName,
         previousStatus,
         newStatus: 'processing'
@@ -238,7 +257,10 @@ export const publishJob = async ({ job }) => {
     });
 
     processingJob.status = 'published';
-    processingJob.resultMessage = `Published successfully via ${processingJob.adapterName}`;
+    const accountHandle = processingJob.platformAccountSnapshot?.accountHandle;
+    processingJob.resultMessage = accountHandle
+      ? `Published successfully to ${accountHandle} via ${processingJob.adapterName}`
+      : `Published successfully via ${processingJob.adapterName}`;
     await processingJob.save();
 
     variant.status = 'published';
@@ -267,6 +289,8 @@ export const publishJob = async ({ job }) => {
         contentItemId: contentItem._id,
         variantId: variant._id,
         platform: variant.platform,
+        platformAccountId: processingJob.platformAccountId,
+        accountHandle,
         adapterName: processingJob.adapterName,
         resultMessage: processingJob.resultMessage,
         previousStatus,

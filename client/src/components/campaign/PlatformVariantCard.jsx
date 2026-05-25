@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Bot, CheckCircle2, Send, ShieldAlert, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { formatPlatform } from '../../lib/platforms';
 import SchedulePanel from '../schedule/SchedulePanel';
 
 const statusClass = {
@@ -18,8 +19,26 @@ const statusClass = {
 export default function PlatformVariantCard({ variant, user, onRefresh }) {
   const [localVariant, setLocalVariant] = useState(variant);
   const [approvalId, setApprovalId] = useState(null);
+  const [formatRule, setFormatRule] = useState(null);
+  const [matchingAccounts, setMatchingAccounts] = useState([]);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setLocalVariant(variant);
+  }, [variant]);
+
+  useEffect(() => {
+    if (!localVariant?.platform) return;
+
+    Promise.allSettled([
+      api.get(`/api/platform-formats/${localVariant.platform}`),
+      api.get(`/api/platform-accounts?platform=${localVariant.platform}&active=true`)
+    ]).then(results => {
+      setFormatRule(results[0].value?.data?.rule || null);
+      setMatchingAccounts((results[1].value?.data?.accounts || []).filter(account => account.status === 'connected'));
+    });
+  }, [localVariant?.platform]);
 
   const submitForReview = async () => {
     setBusy(true);
@@ -76,7 +95,7 @@ export default function PlatformVariantCard({ variant, user, onRefresh }) {
     <article className="rounded-lg border border-line bg-panel p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="text-sm font-semibold uppercase tracking-wide text-cyan">{localVariant.platform}</div>
+          <div className="text-sm font-semibold uppercase tracking-wide text-cyan">{formatPlatform(localVariant.platform)}</div>
           <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
             <Bot size={14} />
             {localVariant.aiProvider}
@@ -115,6 +134,8 @@ export default function PlatformVariantCard({ variant, user, onRefresh }) {
           {localVariant.suggestions?.length > 0 && <p className="text-slate-400">Suggestions: {localVariant.suggestions.join(' ')}</p>}
         </div>
       )}
+
+      <FormatChecklist variant={localVariant} rule={formatRule} accountAvailable={matchingAccounts.length > 0} />
 
       <div className="mt-4 flex flex-wrap gap-2">
         <button
@@ -157,5 +178,42 @@ export default function PlatformVariantCard({ variant, user, onRefresh }) {
         </div>
       )}
     </article>
+  );
+}
+
+function FormatChecklist({ variant, rule, accountAvailable }) {
+  if (!rule) {
+    return null;
+  }
+
+  const captionLength = (variant.caption || '').length;
+  const hashtagCount = (variant.hashtags || []).length;
+  const items = [
+    ['Hook exists', Boolean(variant.hook)],
+    ['CTA exists', Boolean(variant.cta)],
+    ['Hashtags within limit', hashtagCount <= rule.maxHashtags],
+    ['Caption within limit', captionLength <= rule.maxCaptionLength],
+    ['Platform account available', accountAvailable],
+    ['Approved before publishing', ['approved', 'scheduled', 'published'].includes(variant.status)]
+  ];
+
+  return (
+    <div className="mt-4 rounded-md border border-line bg-ink/70 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-semibold text-white">Platform fit</div>
+        <div className="text-xs text-slate-400">
+          Caption {captionLength}/{rule.maxCaptionLength} | Hashtags {hashtagCount}/{rule.maxHashtags}
+        </div>
+      </div>
+      <p className="mt-1 text-xs text-slate-400">{rule.contentStyle}</p>
+      <div className="mt-3 grid gap-1 text-xs">
+        {items.map(([label, ok]) => (
+          <div key={label} className="flex items-center justify-between gap-3">
+            <span className="text-slate-300">{label}</span>
+            <span className={ok ? 'text-mint' : 'text-gold'}>{ok ? 'yes' : 'needs work'}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

@@ -23,6 +23,18 @@ const scheduleJobSchema = new Schema(
       ref: 'PlatformVariant',
       required: true
     },
+    platformAccountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PlatformAccount',
+      default: null
+    },
+    platformAccountSnapshot: {
+      platform: { type: String, default: '' },
+      accountName: { type: String, default: '' },
+      accountHandle: { type: String, default: '' },
+      accountType: { type: String, default: '' },
+      status: { type: String, default: '' }
+    },
     platform: {
       type: String,
       enum: SUPPORTED_PLATFORMS,
@@ -57,6 +69,7 @@ const scheduleJobSchema = new Schema(
 scheduleJobSchema.index({ workspaceId: 1 });
 scheduleJobSchema.index({ status: 1 });
 scheduleJobSchema.index({ scheduledAt: 1 });
+scheduleJobSchema.index({ platformAccountId: 1 });
 
 const ScheduleJob = mongoose.model('ScheduleJob', scheduleJobSchema);
 

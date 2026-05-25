@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CalendarClock, Send } from 'lucide-react';
 import { api } from '../../lib/api';
+import { formatPlatform } from '../../lib/platforms';
 
 export default function SchedulePanel({ variant, user, onDone }) {
   const defaultTime = useMemo(() => {
@@ -10,9 +11,24 @@ export default function SchedulePanel({ variant, user, onDone }) {
     return date.toISOString().slice(0, 16);
   }, []);
   const [scheduledAt, setScheduledAt] = useState(defaultTime);
+  const [accounts, setAccounts] = useState([]);
+  const [platformAccountId, setPlatformAccountId] = useState('');
   const [job, setJob] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (!variant?.platform || !['approved', 'scheduled', 'published'].includes(variant.status)) return;
+
+    api
+      .get(`/api/platform-accounts?platform=${variant.platform}&active=true`)
+      .then(payload => {
+        const matching = (payload.data.accounts || []).filter(account => account.status === 'connected');
+        setAccounts(matching);
+        setPlatformAccountId(current => current || matching[0]?._id || '');
+      })
+      .catch(err => setMessage(err.message));
+  }, [variant?.platform, variant?.status]);
 
   if (!variant || !['approved', 'scheduled', 'published'].includes(variant.status)) {
     return null;
@@ -23,12 +39,18 @@ export default function SchedulePanel({ variant, user, onDone }) {
     setMessage('');
     try {
       const iso = new Date(scheduledAt).toISOString();
-      const payload = await api.post('/api/schedule', { variantId: variant._id, scheduledAt: iso });
+      const payload = await api.post('/api/schedule', { variantId: variant._id, platformAccountId, scheduledAt: iso });
       setJob(payload.data.scheduleJob);
       setMessage('Schedule job created.');
       onDone?.();
     } catch (err) {
-      setMessage(err.status === 403 ? 'Backend blocked scheduling: only Creator/Admin can schedule.' : err.message);
+      if (err.status === 403) {
+        setMessage('Backend blocked scheduling: only Creator/Admin can schedule.');
+      } else if (err.status === 400 && err.message.includes('approved')) {
+        setMessage('Only approved variants can be scheduled.');
+      } else {
+        setMessage(err.message);
+      }
     } finally {
       setBusy(false);
     }
@@ -54,9 +76,25 @@ export default function SchedulePanel({ variant, user, onDone }) {
     <div className="mt-3 rounded-md border border-line bg-ink/70 p-3">
       <div className="flex items-center gap-2 text-sm font-semibold text-white">
         <CalendarClock size={16} />
-        Schedule approved variant
+        Publishing Simulator
       </div>
+      <p className="mt-1 text-xs text-slate-400">Target a simulated connected {formatPlatform(variant.platform)} account.</p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
+        <select
+          value={platformAccountId}
+          onChange={event => setPlatformAccountId(event.target.value)}
+          className="focus-ring rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+        >
+          {accounts.length === 0 ? (
+            <option value="">No matching account</option>
+          ) : (
+            accounts.map(account => (
+              <option key={account._id} value={account._id}>
+                {account.accountName} ({account.accountHandle})
+              </option>
+            ))
+          )}
+        </select>
         <input
           type="datetime-local"
           value={scheduledAt}
@@ -66,7 +104,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
         <button
           type="button"
           onClick={schedule}
-          disabled={busy || variant.status === 'published'}
+          disabled={busy || variant.status !== 'approved' || !platformAccountId}
           className="focus-ring inline-flex items-center gap-2 rounded-md bg-gold px-3 py-2 text-sm font-semibold text-ink"
         >
           <CalendarClock size={15} />
@@ -84,7 +122,13 @@ export default function SchedulePanel({ variant, user, onDone }) {
           </button>
         )}
       </div>
-      {job && <p className="mt-2 text-xs text-slate-400">Job status: {job.status}</p>}
+      {accounts.length === 0 && <p className="mt-2 text-xs text-gold">Create a connected {formatPlatform(variant.platform)} account before scheduling.</p>}
+      {job && (
+        <p className="mt-2 text-xs text-slate-400">
+          Job status: {job.status}
+          {job.platformAccountSnapshot?.accountHandle ? ` for ${job.platformAccountSnapshot.accountHandle}` : ''}
+        </p>
+      )}
       {message && <p className="mt-2 text-sm text-slate-300">{message}</p>}
     </div>
   );

@@ -10,6 +10,8 @@ import brandRoutes from './routes/brand.routes.js';
 import campaignRoutes from './routes/campaign.routes.js';
 import contentRoutes from './routes/content.routes.js';
 import eventRoutes from './routes/event.routes.js';
+import platformAccountRoutes from './routes/platformAccount.routes.js';
+import platformFormatRoutes from './routes/platformFormat.routes.js';
 import scheduleRoutes from './routes/schedule.routes.js';
 
 const app = express();
@@ -37,6 +39,8 @@ app.use('/api/brand-profile', brandRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/events', eventRoutes);
+app.use('/api/platform-accounts', platformAccountRoutes);
+app.use('/api/platform-formats', platformFormatRoutes);
 app.use('/api/schedule', scheduleRoutes);
 
 app.use(notFoundHandler);

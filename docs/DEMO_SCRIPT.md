@@ -31,11 +31,18 @@ admin@creatorops.dev / password123
 
 1. Go to Campaigns.
 2. Create a campaign.
-3. Select:
-   - instagram
-   - linkedin
-   - tiktok
-   - youtube_shorts
+3. Select several platforms or all supported platforms:
+   - Facebook
+   - Instagram
+   - TikTok
+   - YouTube
+   - YouTube Shorts
+   - Threads
+   - LinkedIn
+   - X
+   - Pinterest
+   - Blog
+   - Shopify
 4. Open the campaign detail page.
 
 ## Part 4: Create Brand Profile
@@ -61,17 +68,13 @@ Talking point:
 
 Talking point:
 
-"This starts from one idea, not four separate manual drafts."
+"This starts from one idea, not a separate manual draft for every platform."
 
 ## Part 6: AI Repurpose Into 4 Platform Variants
 
 1. Click AI Repurpose.
 2. Wait for generated cards.
-3. Confirm four variants appear:
-   - Instagram
-   - LinkedIn
-   - TikTok
-   - YouTube Shorts
+3. Confirm variants appear for the selected platforms.
 
 ## Part 7: Show Scores, Provider, Warnings, Suggestions
 
@@ -88,6 +91,8 @@ For each variant, point out:
 - suggestions
 - provider used
 - status
+- platform fit checklist
+- simulated platform account availability
 
 Talking point:
 
@@ -135,20 +140,33 @@ Talking point:
 
 ## Part 13: Schedule Approved Variant
 
-1. Use the Schedule panel on an approved variant.
-2. Use the default scheduled time or pick a time.
-3. Click Schedule.
-4. Show job status as queued.
+1. Open Accounts and show seeded simulated connected accounts.
+2. Return to an approved variant.
+3. Use the Schedule panel on the approved variant.
+4. Select a matching simulated account.
+5. Use the default scheduled time or pick a time.
+6. Click Schedule.
+7. Show job status as queued.
 
 ## Part 14: Run Publishing Simulator
 
 1. Click Run now.
 2. Show the job status becomes published.
-3. Show the result message with the platform simulator adapter.
+3. Show the result message with the account handle and platform simulator adapter.
 
 Talking point:
 
 "No real social API is called. This safely demonstrates the backend publishing pipeline."
+
+## Part 14.5: Show Unified Publishing Center
+
+1. Open Publishing.
+2. Show jobs grouped by:
+   - queued
+   - processing
+   - published
+   - failed
+3. Point out platform, account name/handle, caption preview, adapter, and result message.
 
 ## Part 15: Show Live Workflow Events
 
@@ -177,6 +195,16 @@ Talking point:
    - approval
    - schedule
    - publish
+
+Also show the Campaign Tracking panel:
+
+- total variants
+- approved count
+- scheduled count
+- published count
+- rejected count
+- platform breakdown
+- account breakdown
 
 ## Part 17: Show Architecture Page
 

@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 
+import { SUPPORTED_PLATFORMS } from '../constants/platforms.js';
+
 const { Schema } = mongoose;
 
 const campaignSchema = new Schema(
@@ -24,6 +26,7 @@ const campaignSchema = new Schema(
     },
     platforms: {
       type: [String],
+      enum: SUPPORTED_PLATFORMS,
       default: []
     },
     status: {

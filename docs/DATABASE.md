@@ -169,10 +169,17 @@ Relationships:
 
 Supported platforms:
 
+- `facebook`
 - `instagram`
-- `linkedin`
 - `tiktok`
+- `youtube`
 - `youtube_shorts`
+- `threads`
+- `linkedin`
+- `x`
+- `pinterest`
+- `blog`
+- `shopify`
 
 Indexes:
 
@@ -266,6 +273,8 @@ Important fields:
 - `workspaceId`
 - `contentItemId`
 - `variantId`
+- `platformAccountId`
+- `platformAccountSnapshot`
 - `platform`
 - `scheduledAt`
 - `status`
@@ -278,6 +287,7 @@ Relationships:
 - Belongs to one `Workspace`
 - References one `ContentItem`
 - References one `PlatformVariant`
+- References one simulated `PlatformAccount`
 - Created by a `User`
 
 Statuses:
@@ -293,6 +303,81 @@ Indexes:
 - `workspaceId`
 - `status`
 - `scheduledAt`
+- `platformAccountId`
+
+## PlatformAccount
+
+Purpose:
+
+Stores simulated connected platform account profiles for local MVP publishing targets. No OAuth tokens or external API secrets are stored.
+
+Important fields:
+
+- `workspaceId`
+- `platform`
+- `accountName`
+- `accountHandle`
+- `accountType`
+- `status`
+- `isActive`
+- `createdBy`
+
+Relationships:
+
+- Belongs to one `Workspace`
+- Created by a `User`
+- Can be referenced by `ScheduleJob`
+
+Supported account types:
+
+- `brand`
+- `creator`
+- `client`
+- `page`
+- `shop`
+- `blog`
+
+Statuses:
+
+- `connected`
+- `disconnected`
+- `expired`
+- `missing_permissions`
+- `blocked`
+
+Indexes:
+
+- `workspaceId`
+- `platform`
+- `status`
+- `isActive`
+- unique `workspaceId`, `platform`, `accountHandle`
+
+## PlatformFormatRule
+
+Purpose:
+
+Stores platform-specific content rules used by frontend readiness checklists and future optimization workflows.
+
+Important fields:
+
+- `platform`
+- `displayName`
+- `maxCaptionLength`
+- `maxHashtags`
+- `recommendedHashtags`
+- `supportsLongText`
+- `supportsShortVideo`
+- `supportsImage`
+- `supportsLinks`
+- `contentStyle`
+- `ctaStyle`
+- `requirements`
+
+Relationships:
+
+- Referenced by platform value
+- Used by generated `PlatformVariant` UI checks
 
 ## WorkflowEvent
 

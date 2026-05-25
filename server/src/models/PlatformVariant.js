@@ -1,10 +1,11 @@
 import mongoose from 'mongoose';
 
+import { SUPPORTED_PLATFORMS } from '../constants/platforms.js';
 import { CONTENT_STATUSES } from './ContentItem.js';
 
 const { Schema } = mongoose;
 
-export const SUPPORTED_PLATFORMS = ['instagram', 'linkedin', 'tiktok', 'youtube_shorts'];
+export { SUPPORTED_PLATFORMS };
 
 const platformVariantSchema = new Schema(
   {

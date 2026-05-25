@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
-
-const platformOptions = ['instagram', 'linkedin', 'tiktok', 'youtube_shorts'];
+import { formatPlatform, platformOptions } from '../../lib/platforms';
 
 export default function CampaignForm({ onCreate }) {
   const [form, setForm] = useState({
@@ -69,7 +68,7 @@ export default function CampaignForm({ onCreate }) {
                 checked={form.platforms.includes(platform)}
                 onChange={() => togglePlatform(platform)}
               />
-              {platform}
+              {formatPlatform(platform)}
             </label>
           ))}
         </div>

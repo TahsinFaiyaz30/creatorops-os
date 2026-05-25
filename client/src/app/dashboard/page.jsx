@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CalendarClock, GitBranch, Radio } from 'lucide-react';
+import { CalendarClock, CheckCircle2, GitBranch, Radio, RadioTower } from 'lucide-react';
 import AppShell from '../../components/layout/AppShell';
 import LiveEventFeed from '../../components/events/LiveEventFeed';
 import RoleBadge from '../../components/layout/RoleBadge';
@@ -10,19 +10,23 @@ import { getUser } from '../../lib/auth';
 
 export default function DashboardPage() {
   const [user, setUser] = useState(null);
-  const [stats, setStats] = useState({ campaigns: 0, events: 0, scheduled: 0 });
+  const [stats, setStats] = useState({ campaigns: 0, accounts: 0, queued: 0, published: 0, events: 0 });
 
   useEffect(() => {
     setUser(getUser());
     Promise.allSettled([
       api.get('/api/campaigns'),
       api.get('/api/events?limit=30'),
-      api.get('/api/schedule')
+      api.get('/api/schedule'),
+      api.get('/api/platform-accounts')
     ]).then(results => {
+      const scheduleJobs = results[2].value?.data?.scheduleJobs || [];
       setStats({
         campaigns: results[0].value?.data?.campaigns?.length || 0,
+        accounts: results[3].value?.data?.accounts?.length || 0,
+        queued: scheduleJobs.filter(job => job.status === 'queued').length,
+        published: scheduleJobs.filter(job => job.status === 'published').length,
         events: results[1].value?.data?.events?.length || 0,
-        scheduled: results[2].value?.data?.scheduleJobs?.length || 0
       });
     });
   }, []);
@@ -40,10 +44,12 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className="grid gap-4 md:grid-cols-5">
           <StatCard icon={GitBranch} label="Campaigns" value={stats.campaigns} />
+          <StatCard icon={RadioTower} label="Accounts" value={stats.accounts} />
+          <StatCard icon={CalendarClock} label="Queued jobs" value={stats.queued} />
+          <StatCard icon={CheckCircle2} label="Published jobs" value={stats.published} />
           <StatCard icon={Radio} label="Recent events" value={stats.events} />
-          <StatCard icon={CalendarClock} label="Schedule jobs" value={stats.scheduled} />
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[1fr_420px]">

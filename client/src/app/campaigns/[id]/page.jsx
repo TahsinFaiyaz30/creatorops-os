@@ -8,6 +8,7 @@ import ContentBoard from '../../../components/campaign/ContentBoard';
 import LiveEventFeed from '../../../components/events/LiveEventFeed';
 import { api } from '../../../lib/api';
 import { getUser } from '../../../lib/auth';
+import { formatPlatform, platformOptions } from '../../../lib/platforms';
 
 export default function CampaignDetailPage() {
   const params = useParams();
@@ -24,17 +25,20 @@ export default function CampaignDetailPage() {
   });
   const [contentItems, setContentItems] = useState([]);
   const [variantsByContent, setVariantsByContent] = useState({});
+  const [tracking, setTracking] = useState(null);
   const [message, setMessage] = useState('');
 
   const load = async () => {
-    const [campaignPayload, brandPayload, contentPayload] = await Promise.all([
+    const [campaignPayload, brandPayload, contentPayload, trackingPayload] = await Promise.all([
       api.get(`/api/campaigns/${campaignId}`),
       api.get('/api/brand-profile'),
-      api.get(`/api/content/campaign/${campaignId}`)
+      api.get(`/api/content/campaign/${campaignId}`),
+      api.get(`/api/campaigns/${campaignId}/tracking`)
     ]);
 
     const brand = brandPayload.data.brandProfile;
     setCampaign(campaignPayload.data.campaign);
+    setTracking(trackingPayload.data.tracking);
     setBrandProfile(brand);
     if (brand) {
       setBrandForm({
@@ -68,7 +72,7 @@ export default function CampaignDetailPage() {
     const body = {
       ...brandForm,
       bannedWords: brandForm.bannedWords.split(',').map(item => item.trim()).filter(Boolean),
-      preferredPlatforms: campaign?.platforms || ['instagram', 'linkedin', 'tiktok', 'youtube_shorts']
+      preferredPlatforms: campaign?.platforms?.length ? campaign.platforms : platformOptions
     };
 
     try {
@@ -94,7 +98,16 @@ export default function CampaignDetailPage() {
           <p className="text-sm uppercase tracking-[0.18em] text-cyan">Campaign</p>
           <h1 className="mt-2 text-3xl font-bold text-white">{campaign?.name || 'Loading campaign'}</h1>
           <p className="mt-2 text-sm text-slate-400">{campaign?.goal}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(campaign?.platforms || []).map(platform => (
+              <span key={platform} className="rounded-full bg-cyan/10 px-2.5 py-1 text-xs text-cyan">
+                {formatPlatform(platform)}
+              </span>
+            ))}
+          </div>
         </header>
+
+        <CampaignTrackingPanel tracking={tracking} />
 
         <section className="grid gap-4 xl:grid-cols-[420px_1fr]">
           <div className="space-y-4">
@@ -127,5 +140,70 @@ export default function CampaignDetailPage() {
         <LiveEventFeed compact />
       </div>
     </AppShell>
+  );
+}
+
+function CampaignTrackingPanel({ tracking }) {
+  if (!tracking) {
+    return null;
+  }
+
+  const variants = tracking.variantsByStatus || {};
+  const platforms = tracking.platformBreakdown || {};
+  const accounts = Object.values(tracking.accountBreakdown || {});
+
+  return (
+    <section className="rounded-lg border border-line bg-panel p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-white">Campaign Tracking</h2>
+          <p className="mt-1 text-sm text-slate-400">Counts come from stored content, variants, schedule jobs, and workflow events.</p>
+        </div>
+        <div className="text-right text-xs text-slate-400">
+          <div>{tracking.totalContentItems} content items</div>
+          <div>{tracking.totalVariants} variants</div>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-5">
+        <TrackStat label="Approved" value={variants.approved || 0} />
+        <TrackStat label="Scheduled" value={variants.scheduled || 0} />
+        <TrackStat label="Published" value={variants.published || 0} />
+        <TrackStat label="Rejected" value={variants.rejected || 0} />
+        <TrackStat label="Changes" value={variants.changes_requested || 0} />
+      </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Breakdown title="Platform breakdown" items={Object.entries(platforms).map(([key, value]) => [formatPlatform(key), value])} />
+        <Breakdown title="Account breakdown" items={accounts.map(item => [`${item.accountName || item.accountHandle} (${formatPlatform(item.platform)})`, item.count])} />
+      </div>
+    </section>
+  );
+}
+
+function TrackStat({ label, value }) {
+  return (
+    <div className="rounded-md border border-line bg-ink p-3">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className="mt-1 text-2xl font-bold text-white">{value}</div>
+    </div>
+  );
+}
+
+function Breakdown({ title, items }) {
+  return (
+    <div className="rounded-md border border-line bg-ink p-3">
+      <h3 className="text-sm font-semibold text-white">{title}</h3>
+      <div className="mt-3 grid gap-2 text-xs text-slate-300">
+        {items.length === 0 ? (
+          <span className="text-slate-500">No records yet.</span>
+        ) : (
+          items.map(([label, value]) => (
+            <div key={label} className="flex items-center justify-between gap-3">
+              <span>{label}</span>
+              <span className="font-semibold text-cyan">{value}</span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 }

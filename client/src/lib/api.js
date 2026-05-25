@@ -51,5 +51,6 @@ export const apiFetch = async (path, options = {}) => {
 export const api = {
   get: path => apiFetch(path),
   post: (path, body) => apiFetch(path, { method: 'POST', body }),
-  patch: (path, body) => apiFetch(path, { method: 'PATCH', body })
+  patch: (path, body) => apiFetch(path, { method: 'PATCH', body }),
+  delete: path => apiFetch(path, { method: 'DELETE' })
 };

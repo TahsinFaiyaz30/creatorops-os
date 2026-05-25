@@ -50,9 +50,13 @@ export default function VersionHistory({ contentItemId }) {
                 </div>
                 <p className="mt-1 text-slate-400">{version.changeNote || 'Snapshot saved'}</p>
                 <div className="mt-2 grid gap-1 text-slate-400">
+                  {version.changedBy?.email && <span>Changed by: {version.changedBy.email}</span>}
+                  {version.snapshot?.platform && <span>Platform: {version.snapshot.platform}</span>}
                   <span>Status: {version.snapshot?.status || version.snapshot?.variantStatus || version.snapshot?.contentItemStatus || 'n/a'}</span>
                   {version.snapshot?.approvalStatus && <span>Approval: {version.snapshot.approvalStatus}</span>}
                   {version.snapshot?.scheduleJobStatus && <span>Schedule: {version.snapshot.scheduleJobStatus}</span>}
+                  {version.snapshot?.platformAccountSnapshot?.accountHandle && <span>Account: {version.snapshot.platformAccountSnapshot.accountHandle}</span>}
+                  {version.snapshot?.resultMessage && <span>Publish result: {version.snapshot.resultMessage}</span>}
                 </div>
               </div>
             ))}

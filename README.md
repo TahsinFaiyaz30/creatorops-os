@@ -2,7 +2,7 @@
 
 Content workflow infrastructure for creator teams.
 
-CreatorOps OS turns one raw content idea into platform-specific variants, checks brand fit, routes work through approval, schedules approved content, simulates publishing, and records the whole workflow as realtime events.
+CreatorOps OS turns one raw content idea into platform-specific variants, checks brand fit, routes work through approval, schedules approved content to simulated platform accounts, runs a publishing simulator, and records the whole workflow as realtime events.
 
 ## Short Pitch
 
@@ -17,7 +17,7 @@ Creators and small content teams often manage ideas, AI drafts, reviews, platfor
 CreatorOps OS provides a single workflow:
 
 1. An editor creates a campaign and content idea.
-2. AI repurposes the idea into Instagram, LinkedIn, TikTok, and YouTube Shorts variants.
+2. AI repurposes the idea into selected platform variants across the supported Area 1 platforms.
 3. Each variant receives a brand score, readiness score, warnings, suggestions, and provider label.
 4. The editor submits a variant for review.
 5. The backend blocks editors from approving content.
@@ -43,15 +43,19 @@ This project is not a static CRUD dashboard. The backend enforces real workflow 
 - Workspace-scoped data access
 - Brand profile rules for tone, audience, banned words, CTA style, and preferred platforms
 - Campaign and content idea management
-- AI repurposing into four platform variants
+- AI repurposing into selected platform variants
+- Support for Facebook, Instagram, TikTok, YouTube, YouTube Shorts, Threads, LinkedIn, X, Pinterest, Blog, and Shopify
+- Simulated multi-account management
+- Platform format rules and readiness checklist
 - Optional Gemini and Groq providers
 - Guaranteed JavaScript template fallback when AI keys are missing or providers fail
 - Brand and readiness scoring
 - Warnings and suggestions for generated content
 - Backend-enforced approval workflow
 - Version history for content and variant changes
-- Scheduling API for approved variants
-- Publishing simulator with platform adapter names
+- Account-targeted scheduling API for approved variants
+- Unified Publishing page grouped by queued, processing, published, and failed jobs
+- Publishing simulator with platform adapter names and account handles
 - Socket.IO realtime workflow event feed
 - Judge-friendly architecture page in the frontend
 
@@ -62,11 +66,11 @@ This project is not a static CRUD dashboard. The backend enforces real workflow 
 3. Start the backend and frontend.
 4. Open `http://localhost:3000`.
 5. Login as Editor.
-6. Create a campaign with all four platforms selected.
+6. Create a campaign with selected platforms.
 7. Create or update the brand profile.
 8. Create a raw content idea.
 9. Click AI Repurpose.
-10. Confirm four platform variants appear.
+10. Confirm platform variants appear for the selected platforms.
 11. Submit one variant for review.
 12. Try approval as Editor and confirm the backend returns 403.
 13. Logout.
@@ -77,7 +81,9 @@ This project is not a static CRUD dashboard. The backend enforces real workflow 
 18. Schedule the approved variant.
 19. Run the publishing simulator.
 20. Confirm workflow events and version history.
-21. Open Architecture for the judge explanation.
+21. Open Publishing to see queued/published simulator jobs.
+22. Open Accounts to see simulated connected accounts.
+23. Open Architecture for the judge explanation.
 
 ## Tech Stack
 
@@ -115,6 +121,9 @@ CreatorOps OS is a modular monolith. The backend is one Express application with
 - Event service
 - Publishing worker
 - Socket.IO broadcaster
+- Platform account management
+- Platform format rules
+- Campaign tracking summaries
 
 This keeps the MVP simple enough to run locally while still showing production-shaped boundaries that could later move into queues, workers, or separate services.
 
@@ -132,6 +141,8 @@ MongoDB stores:
 - `ApprovalRequest`: pending and completed review decisions
 - `ScheduleJob`: queued, processing, published, or failed publishing simulations
 - `WorkflowEvent`: persisted event stream for dashboard and realtime UI
+- `PlatformAccount`: simulated connected platform account profiles
+- `PlatformFormatRule`: platform-specific formatting limits and style rules
 
 ## Authentication And RBAC
 
@@ -184,9 +195,15 @@ Duplicate pending approval requests are blocked. Every approval action creates a
 
 ## Scheduling And Publishing Simulator
 
-Only creator/admin users can schedule approved variants. Scheduling creates a `ScheduleJob`, sets content/variant status to `scheduled`, and records a version snapshot.
+Only creator/admin users can schedule approved variants. Scheduling targets a matching simulated platform account, creates a `ScheduleJob`, sets content/variant status to `scheduled`, and records a version snapshot.
 
 The publishing worker checks queued jobs and simulates platform publishing. The demo also includes a Run Now button so judges do not have to wait. Publishing updates the job, variant, content item, versions, and workflow events. No real social platform APIs are called.
+
+Example simulator result:
+
+```text
+Published successfully to @codesprint_main via InstagramAdapterSimulator
+```
 
 ## Realtime Event System
 
@@ -304,6 +321,8 @@ Campaigns:
 
 - `POST /api/campaigns`
 - `GET /api/campaigns`
+- `GET /api/campaigns/:id/tracking`
+- `GET /api/campaigns/:id/publish-summary`
 - `GET /api/campaigns/:id`
 
 Content:
@@ -314,6 +333,19 @@ Content:
 - `PATCH /api/content/:id/status`
 - `GET /api/content/:id/versions`
 - `GET /api/content/:id/variants`
+
+Platform Accounts:
+
+- `POST /api/platform-accounts`
+- `GET /api/platform-accounts`
+- `GET /api/platform-accounts/:id`
+- `PATCH /api/platform-accounts/:id`
+- `DELETE /api/platform-accounts/:id`
+
+Platform Formats:
+
+- `GET /api/platform-formats`
+- `GET /api/platform-formats/:platform`
 
 AI:
 
@@ -340,6 +372,8 @@ Events:
 
 Full route details are in [docs/API.md](docs/API.md).
 
+Area 1 completion details are in [docs/AREA1_COMPLETION.md](docs/AREA1_COMPLETION.md).
+
 ## Testing Checklist
 
 - `npm run seed` succeeds in `server/`
@@ -351,12 +385,17 @@ Full route details are in [docs/API.md](docs/API.md).
 - Campaign creation works
 - Brand profile save works
 - Content idea creation works
-- AI repurpose returns four variants
+- AI repurpose returns variants for every selected supported platform
+- Platform accounts page lists seeded simulated accounts
+- Platform format checklist appears on generated variants
 - Editor approval attempt returns 403
 - Admin approval queue loads
 - Admin approve/reject/request changes work
 - Scheduling creates a queued job
+- Schedule job targets a matching platform account
 - Run Now marks job published
+- Publishing page shows queued/published simulator jobs
+- Campaign tracking panel shows real stored counts
 - Workflow events appear
 - Version history appears
 - Architecture page loads
@@ -364,7 +403,8 @@ Full route details are in [docs/API.md](docs/API.md).
 ## Known Limitations
 
 - No deployment is included.
-- No real Instagram, TikTok, YouTube, or LinkedIn publishing is performed.
+- No real external social or commerce platform publishing is performed.
+- Platform accounts are simulated local profiles and do not store OAuth tokens.
 - The worker is in-process and meant for local demo reliability.
 - Analytics are intentionally minimal.
 - Media asset upload/storage is not included.

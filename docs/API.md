@@ -54,7 +54,7 @@ Example body:
   "targetAudience": "beginner programmers and university students",
   "bannedWords": ["guaranteed income", "easy money"],
   "ctaStyle": "clear, motivational, action-focused",
-  "preferredPlatforms": ["instagram", "linkedin", "tiktok", "youtube_shorts"]
+  "preferredPlatforms": ["facebook", "instagram", "tiktok", "youtube", "youtube_shorts", "threads", "linkedin", "x", "pinterest", "blog", "shopify"]
 }
 ```
 
@@ -64,6 +64,8 @@ Example body:
 | --- | --- | --- | --- | --- |
 | POST | `/api/campaigns` | Yes | Any | Create a campaign. |
 | GET | `/api/campaigns` | Yes | Any | List workspace campaigns. |
+| GET | `/api/campaigns/:id/tracking` | Yes | Any | Return campaign content, variant, schedule, account, platform, event, and publish summary counts. |
+| GET | `/api/campaigns/:id/publish-summary` | Yes | Any | Alias for the campaign tracking summary. |
 | GET | `/api/campaigns/:id` | Yes | Any | Get one workspace campaign. |
 
 Example body:
@@ -73,9 +75,23 @@ Example body:
   "name": "Launch Week",
   "goal": "Show the complete creator operations workflow",
   "targetAudience": "hackathon judges and creator team leads",
-  "platforms": ["instagram", "linkedin", "tiktok", "youtube_shorts"]
+  "platforms": ["facebook", "instagram", "tiktok", "youtube", "youtube_shorts", "threads", "linkedin", "x", "pinterest", "blog", "shopify"]
 }
 ```
+
+Supported platform values:
+
+- `facebook`
+- `instagram`
+- `tiktok`
+- `youtube`
+- `youtube_shorts`
+- `threads`
+- `linkedin`
+- `x`
+- `pinterest`
+- `blog`
+- `shopify`
 
 ## Content
 
@@ -93,7 +109,7 @@ Example create body:
 ```json
 {
   "campaignId": "campaign_id_here",
-  "title": "One idea to four platform variants",
+  "title": "One idea to multi-platform variants",
   "rawIdea": "Show how CreatorOps OS turns one raw idea into platform-specific content, approval, and scheduling."
 }
 ```
@@ -152,6 +168,45 @@ Generated variant fields include:
 
 The API always returns valid structured output by falling back to template generation when optional providers fail or keys are missing.
 
+## Platform Accounts
+
+| Method | Path | Auth | Role | Purpose |
+| --- | --- | --- | --- | --- |
+| POST | `/api/platform-accounts` | Yes | `creator_admin` | Create a simulated connected platform account. |
+| GET | `/api/platform-accounts` | Yes | Any | List workspace platform accounts. |
+| GET | `/api/platform-accounts/:id` | Yes | Any | Get one workspace platform account. |
+| PATCH | `/api/platform-accounts/:id` | Yes | `creator_admin` | Update a simulated platform account. |
+| DELETE | `/api/platform-accounts/:id` | Yes | `creator_admin` | Soft-delete by setting `isActive=false`. |
+
+Example create body:
+
+```json
+{
+  "platform": "instagram",
+  "accountName": "CodeSprint Instagram",
+  "accountHandle": "@codesprint_main",
+  "accountType": "brand",
+  "status": "connected"
+}
+```
+
+Optional list filters:
+
+```text
+/api/platform-accounts?platform=instagram&status=connected&active=true
+```
+
+No OAuth tokens or secrets are stored. These records are local simulator targets.
+
+## Platform Formats
+
+| Method | Path | Auth | Role | Purpose |
+| --- | --- | --- | --- | --- |
+| GET | `/api/platform-formats` | Yes | Any | List platform formatting rules. |
+| GET | `/api/platform-formats/:platform` | Yes | Any | Get one platform formatting rule. |
+
+Format rules include caption limits, hashtag limits, supported media flags, content style, CTA style, and requirements.
+
 ## Approvals
 
 | Method | Path | Auth | Role | Purpose |
@@ -194,11 +249,14 @@ Example schedule body:
 ```json
 {
   "variantId": "variant_id_here",
+  "platformAccountId": "platform_account_id_here",
   "scheduledAt": "2026-05-25T06:30:00.000Z"
 }
 ```
 
 Only approved variants can be scheduled. Editors receive `403` if they try to schedule or run the simulator.
+
+`platformAccountId` is optional only when exactly one active connected matching account exists. If there are multiple matching accounts, the backend returns `400` and requires a target account. If the selected account platform does not match the variant platform, the backend returns `400`.
 
 ## Events
 
