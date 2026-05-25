@@ -48,6 +48,7 @@ approvalRequestSchema.index({ workspaceId: 1 });
 approvalRequestSchema.index({ status: 1 });
 approvalRequestSchema.index({ requestedBy: 1 });
 approvalRequestSchema.index({ reviewedBy: 1 });
+approvalRequestSchema.index({ workspaceId: 1, variantId: 1, status: 1 });
 
 const ApprovalRequest = mongoose.model('ApprovalRequest', approvalRequestSchema);
 

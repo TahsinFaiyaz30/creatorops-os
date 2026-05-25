@@ -4,7 +4,7 @@ import { SUPPORTED_PLATFORMS } from './PlatformVariant.js';
 
 const { Schema } = mongoose;
 
-export const SCHEDULE_STATUSES = ['scheduled', 'published', 'failed', 'cancelled'];
+export const SCHEDULE_STATUSES = ['queued', 'processing', 'published', 'failed', 'cancelled'];
 
 const scheduleJobSchema = new Schema(
   {
@@ -35,7 +35,7 @@ const scheduleJobSchema = new Schema(
     status: {
       type: String,
       enum: SCHEDULE_STATUSES,
-      default: 'scheduled'
+      default: 'queued'
     },
     adapterName: {
       type: String,

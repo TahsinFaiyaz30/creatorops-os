@@ -1,4 +1,5 @@
 import WorkflowEvent from '../models/WorkflowEvent.js';
+import { emitWorkflowEvent } from '../sockets/socket.js';
 
 export const createWorkflowEvent = async ({
   workspaceId,
@@ -8,8 +9,8 @@ export const createWorkflowEvent = async ({
   entityType = '',
   entityId = null,
   metadata = {}
-}) =>
-  WorkflowEvent.create({
+}) => {
+  const event = await WorkflowEvent.create({
     workspaceId,
     actorId,
     eventType,
@@ -18,6 +19,15 @@ export const createWorkflowEvent = async ({
     entityId,
     metadata
   });
+
+  try {
+    emitWorkflowEvent(event);
+  } catch (_error) {
+    // Event persistence is the source of truth; realtime broadcast is best-effort.
+  }
+
+  return event;
+};
 
 export const listWorkflowEvents = async (user, query = {}) => {
   const filter = { workspaceId: user.workspaceId };

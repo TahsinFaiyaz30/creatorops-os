@@ -10,6 +10,9 @@ const PROVIDER_TEMPLATE = 'template-fallback';
 const PROVIDER_GEMINI = 'gemini';
 const PROVIDER_GROQ = 'groq';
 
+const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
+const GEMINI_FALLBACK_MODELS = ['gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+
 const platformRules = {
   instagram: {
     name: 'Instagram',
@@ -321,7 +324,7 @@ const withTimeout = async (promiseFactory, timeoutMs) => {
 
 const buildProviderPrompt = ({ contentItem, campaign, brandProfile, platforms }) => ({
   instruction:
-    'Return strict JSON with a variants array. Each item must include platform, caption, hook, cta, hashtags. No markdown.',
+    'Return strict JSON with a variants array. Each item must include platform, caption, hook, cta, hashtags. Use only these exact platform values: instagram, linkedin, tiktok, youtube_shorts. No markdown.',
   contentIdea: getContentIdea(contentItem),
   campaign: {
     name: campaign?.name,
@@ -333,20 +336,35 @@ const buildProviderPrompt = ({ contentItem, campaign, brandProfile, platforms })
   platformRules
 });
 
-const tryGeminiRepurpose = async ({ contentItem, campaign, brandProfile, platforms }) => {
-  if (!env.geminiApiKey) return null;
+const getGeminiModelCandidates = () => {
+  const model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
 
-  const prompt = JSON.stringify(buildProviderPrompt({ contentItem, campaign, brandProfile, platforms }));
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${env.geminiApiKey}`;
+  if (model !== DEFAULT_GEMINI_MODEL) {
+    return [model];
+  }
 
-  return withTimeout(
+  return unique([model, ...GEMINI_FALLBACK_MODELS]);
+};
+
+const callGeminiModel = async ({ model, prompt, platforms, brandProfile }) =>
+  withTimeout(
     async signal => {
-      const response = await fetch(endpoint, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': process.env.GEMINI_API_KEY || env.geminiApiKey
+        },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json' }
+          contents: [
+            {
+              parts: [
+                {
+                  text: prompt
+                }
+              ]
+            }
+          ]
         }),
         signal
       });
@@ -356,7 +374,12 @@ const tryGeminiRepurpose = async ({ contentItem, campaign, brandProfile, platfor
       }
 
       const payload = await response.json();
-      const text = payload?.candidates?.[0]?.content?.parts?.map(part => part.text).join('') || '';
+      const text = payload?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+      if (!text) {
+        throw new Error('Gemini response did not include text.');
+      }
+
       return validateProviderVariants({
         variants: parseJsonFromText(text),
         platforms,
@@ -366,6 +389,21 @@ const tryGeminiRepurpose = async ({ contentItem, campaign, brandProfile, platfor
     },
     env.aiTimeoutMs
   );
+
+const tryGeminiRepurpose = async ({ contentItem, campaign, brandProfile, platforms }) => {
+  if (!(process.env.GEMINI_API_KEY || env.geminiApiKey)) return null;
+
+  const prompt = JSON.stringify(buildProviderPrompt({ contentItem, campaign, brandProfile, platforms }));
+
+  for (const model of getGeminiModelCandidates()) {
+    try {
+      return await callGeminiModel({ model, prompt, platforms, brandProfile });
+    } catch (_error) {
+      continue;
+    }
+  }
+
+  return null;
 };
 
 const tryGroqRepurpose = async ({ contentItem, campaign, brandProfile, platforms }) => {

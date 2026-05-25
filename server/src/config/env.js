@@ -10,8 +10,10 @@ const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
   groqApiKey: process.env.GROQ_API_KEY || '',
-  aiProvider: process.env.AI_PROVIDER || 'auto',
+  aiProvider: (process.env.AI_PROVIDER || 'auto').toLowerCase(),
+  aiFallback: process.env.AI_FALLBACK || 'template',
   aiTimeoutMs: Number(process.env.AI_TIMEOUT_MS || 8000)
 };
 

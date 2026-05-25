@@ -17,8 +17,9 @@ const buildContentSnapshot = contentItem => ({
   currentVersion: contentItem.currentVersion
 });
 
-const buildVariantSnapshot = variant => ({
+const buildVariantSnapshot = (variant, contentItem, extraSnapshot = {}) => ({
   type: 'platform_variant',
+  contentItemStatus: contentItem?.status,
   platform: variant.platform,
   caption: variant.caption,
   hook: variant.hook,
@@ -29,7 +30,8 @@ const buildVariantSnapshot = variant => ({
   readinessScore: variant.readinessScore,
   warnings: variant.warnings,
   suggestions: variant.suggestions,
-  aiProvider: variant.aiProvider
+  aiProvider: variant.aiProvider,
+  ...extraSnapshot
 });
 
 export const createContentVersion = async ({ user, contentItem, changeNote = '' }) => {
@@ -60,7 +62,7 @@ export const createContentVersion = async ({ user, contentItem, changeNote = '' 
   return version;
 };
 
-export const createVariantVersion = async ({ user, contentItem, variant, changeNote = '' }) => {
+export const createVariantVersion = async ({ user, contentItem, variant, changeNote = '', extraSnapshot = {} }) => {
   const latestVersion = await ContentVersion.findOne({
     workspaceId: user.workspaceId,
     contentItemId: contentItem._id,
@@ -74,7 +76,7 @@ export const createVariantVersion = async ({ user, contentItem, variant, changeN
     contentItemId: contentItem._id,
     variantId: variant._id,
     versionNumber,
-    snapshot: buildVariantSnapshot(variant),
+    snapshot: buildVariantSnapshot(variant, contentItem, extraSnapshot),
     changedBy: user._id,
     changeNote
   });
