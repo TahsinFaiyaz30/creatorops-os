@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 
 const { Schema } = mongoose;
 
-export const USER_ROLES = ['editor', 'creator_admin'];
+export const USER_ROLES = ['editor', 'creator_admin', 'brand_rep'];
 
 const userSchema = new Schema(
   {

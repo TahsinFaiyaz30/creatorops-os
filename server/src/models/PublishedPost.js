@@ -5,6 +5,7 @@ import { SUPPORTED_PLATFORMS } from '../constants/platforms.js';
 const { Schema } = mongoose;
 
 export const PUBLISHED_POST_STATUSES = ['queued', 'publishing', 'published', 'failed', 'blocked'];
+export const PUBLISHED_POST_VISIBILITIES = ['public', 'private', 'friends_only'];
 
 const publishedPostSchema = new Schema(
   {
@@ -19,6 +20,7 @@ const publishedPostSchema = new Schema(
     platform: { type: String, enum: SUPPORTED_PLATFORMS, required: true },
     accountSnapshot: { type: Schema.Types.Mixed, default: {} },
     caption: { type: String, default: '' },
+    visibility: { type: String, enum: PUBLISHED_POST_VISIBILITIES, default: 'public' },
     status: { type: String, enum: PUBLISHED_POST_STATUSES, default: 'queued', index: true },
     providerPostId: { type: String, default: '', index: true },
     providerPostUrl: { type: String, default: '' },

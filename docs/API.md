@@ -48,6 +48,7 @@ Supported platform values: `facebook`, `instagram`, `tiktok`, `youtube`, `youtub
 | POST | `/api/ai/repurpose` | Auth | Generate platform variants |
 | POST | `/api/ai/optimize` | Auth | Optimize one variant |
 | POST | `/api/ai/customize-captions` | Auth | Customize compose captions per selected real connection |
+| POST | `/api/ai/script` | Auth | Send a conversational scripting prompt and receive structured script output |
 
 Caption customization body:
 
@@ -123,9 +124,54 @@ Publish body:
   "variantId": "...",
   "mediaAssetIds": ["..."],
   "caption": "Final caption",
+  "visibility": "public",
   "scheduledAt": "2026-05-26T12:00:00.000Z"
 }
 ```
+
+Visibility values are `public`, `private`, and `friends_only`. The backend validates each value against connector/platform support and blocks unsupported settings honestly.
+
+## Brand Circulars And Applications
+
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/brand-circulars` | `brand_rep` | Create a brand representative circular |
+| GET | `/api/brand-circulars` | Auth | List own circulars for brand reps or published circulars for creators |
+| GET | `/api/brand-circulars/:id` | Auth | Get circular detail |
+| PATCH | `/api/brand-circulars/:id` | `brand_rep` | Update own draft/published circular |
+| POST | `/api/brand-circulars/:id/publish` | `brand_rep` | Publish own circular |
+| POST | `/api/brand-circulars/:id/close` | `brand_rep` | Close own circular |
+| POST | `/api/brand-circulars/:id/archive` | `brand_rep` | Archive own circular |
+| POST | `/api/brand-circulars/:id/apply` | Auth | Creator applies to an open circular with stats snapshot |
+| GET | `/api/brand-circulars/:id/applications` | `brand_rep` | List applications for own circular |
+| GET | `/api/applications` | Auth | List applications relevant to the current user |
+| POST | `/api/applications/:id/view-profile` | `brand_rep` | Mark profile viewed and notify creator |
+| POST | `/api/applications/:id/shortlist` | `brand_rep` | Shortlist creator and notify creator |
+| POST | `/api/applications/:id/reject` | `brand_rep` | Reject creator and notify creator |
+| POST | `/api/applications/:id/accept` | `brand_rep` | Accept creator and notify creator |
+
+## Statistics
+
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/statistics/creator` | Auth | Combined and per-platform creator statistics from real synced data |
+| POST | `/api/statistics/snapshot` | Auth | Save a statistics snapshot for application attachment |
+
+## Scripts
+
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/scripts` | Auth | List script conversations |
+| GET | `/api/scripts/:id` | Auth | Get one script conversation |
+| POST | `/api/scripts/:id/convert-to-content` | Auth | Convert final script into a campaign content item |
+
+## Calendar And Notifications
+
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/calendar/feed` | Auth | Scheduled posts, published posts, circular deadlines, applications, campaign milestones, workflow events |
+| GET | `/api/notifications` | Auth | List current user notifications |
+| POST | `/api/notifications/:id/read` | Auth | Mark one notification as read |
 
 ## Social
 
@@ -155,6 +201,11 @@ Realtime events:
 - `social:metrics_updated`
 - `social:comments_synced`
 - `social:reply_created`
+- `circular:application_submitted`
+- `circular:application_updated`
+- `notification:created`
+- `notification:read`
+- `calendar:updated`
 
 ## Legacy Schedule Route
 

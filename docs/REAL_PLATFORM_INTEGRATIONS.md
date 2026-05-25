@@ -22,3 +22,5 @@ Empty env vars do not crash the app. Account cards show not configured, and publ
 ## No Fake Data
 
 The connector layer does not fabricate provider post IDs, URLs, metrics, comments, replies, or success messages.
+
+Creator statistics, circular applications, and calendar summaries reuse the same real stored publish/social records. They do not invent followers, engagement, comments, replies, likes, shares, views, or growth numbers.

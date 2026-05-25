@@ -28,6 +28,8 @@ Raw idea and workflow status. Related to campaign and variants.
 
 Platform-specific caption, hook, CTA, hashtags, AI provider, brand/readiness scores, warnings, suggestions, and approval/publish status.
 
+Also stores platform notes, allowed visibility options, and recommended visibility for platform-aware publishing UX.
+
 ### ContentVersion
 
 Audit snapshot for content/variant changes, approval decisions, publish state changes, and related metadata.
@@ -73,9 +75,13 @@ Original uploaded image/video metadata. Stores local path privately, public URL,
 
 Queued/scheduled publishing work. Tracks connection, media, caption, status, scheduledAt, provider post id/url, errors, retry count, and attempts.
 
+Stores requested post visibility. Unsupported visibility settings are blocked before connector publish calls.
+
 ### PublishedPost
 
 Stored only when an official connector returns real publish success. Keeps provider IDs/URLs, account snapshot, media, caption, and publishedAt.
+
+Stores the visibility that was accepted by the connector/platform workflow.
 
 ### SocialMetricSnapshot
 
@@ -88,6 +94,28 @@ Comments fetched from official APIs only. Stores provider comment id, author, te
 ### SocialReply
 
 Replies created through the same connected platform account. Stores provider reply id and account snapshot.
+
+## Brand Representative And Creator Models
+
+### BrandCircular
+
+Brand representative opportunity record for creators. Stores product details, target audience, objective, needed platforms, deliverables, content formats, deadline, budget/currency, eligibility, brand demands, judging criteria, media assets, status, and owning brand representative.
+
+### CircularApplication
+
+Creator application to a brand circular. Stores creator summary, message, selected real posts/media, combined and per-platform statistics snapshot, review status, viewed/shortlisted timestamps, reviewer, and review comment.
+
+### CreatorStatisticSnapshot
+
+Point-in-time statistics export for a creator. Source is explicit: `real_sync`, `application_snapshot`, `manual_import`, or `unavailable`. The current implementation computes from stored real social metric snapshots only.
+
+### CreatorNotification
+
+Workspace-scoped user notification for application viewed, shortlisted, rejected, accepted, and calendar reminder events.
+
+### ScriptConversation
+
+Conversational AI scripting history. Stores user/assistant messages, platform, script type, final structured script, provider, and optional campaign association.
 
 ## Legacy Models
 

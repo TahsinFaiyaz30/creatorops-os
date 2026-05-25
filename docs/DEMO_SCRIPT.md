@@ -6,6 +6,8 @@ Editor: `editor@creatorops.dev` / `password123`
 
 Creator/Admin: `admin@creatorops.dev` / `password123`
 
+Brand Representative: `brand@creatorops.dev` / `password123`
+
 ## Part 1: Problem
 
 Explain that creator teams need operational infrastructure, not just AI captions: platform adaptation, approval, account targeting, real publishing checks, and accountability.
@@ -71,6 +73,25 @@ Explain that creator teams need operational infrastructure, not just AI captions
 1. Show live events updating after approval/publish/social actions.
 2. Open Architecture.
 3. Explain modular monolith, encrypted connections, connector registry, publish worker, social sync, and honest unavailable states.
+
+## Part 9: Brand Circulars And Creator Stats
+
+1. Login as Brand Representative.
+2. Open Brand Circulars and create a circular for a product/campaign.
+3. Publish the circular.
+4. Login as Editor/creator and apply with the current statistics snapshot.
+5. Login as Brand Representative and open Applications.
+6. View profile, shortlist, reject, or accept.
+7. Login as creator and show the notification.
+8. Open Statistics and show combined graph plus per-platform graphs. Empty platform data is shown honestly.
+
+## Part 10: Script AI And Calendar
+
+1. Open Script AI.
+2. Ask for a UGC ad, Shorts script, or scene-by-scene script.
+3. Show structured output and provider/fallback behavior.
+4. Open the floating calendar drawer with the right-side `<` button.
+5. Show scheduled posts, recent posts, circular deadlines, applications, campaigns, and workflow milestones.
 
 ## Closing Pitch
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from './Sidebar';
+import FloatingCalendarDrawer from '../calendar/FloatingCalendarDrawer';
 import { getToken, getUser, saveSession } from '../../lib/auth';
 import { api } from '../../lib/api';
 
@@ -44,6 +45,7 @@ export default function AppShell({ children }) {
       <div className="flex">
         <Sidebar user={user} />
         <main className="min-h-screen flex-1 overflow-x-hidden p-6">{children}</main>
+        <FloatingCalendarDrawer />
       </div>
     </div>
   );

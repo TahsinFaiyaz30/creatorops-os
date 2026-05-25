@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { CalendarClock, ImagePlus, Sparkles, Send } from 'lucide-react';
 import AppShell from '../../components/layout/AppShell';
+import VisibilitySelector from '../../components/publish/VisibilitySelector';
 import { api } from '../../lib/api';
 import { getUser } from '../../lib/auth';
 import { formatPlatform, getPlatformCaptionLimit } from '../../lib/platforms';
@@ -34,6 +35,7 @@ export default function ComposePage() {
   const [fit, setFit] = useState('cover');
   const [position, setPosition] = useState({ x: 50, y: 50 });
   const [scheduledAt, setScheduledAt] = useState(() => new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16));
+  const [visibility, setVisibility] = useState('public');
   const [message, setMessage] = useState('');
   const [publishResults, setPublishResults] = useState([]);
   const [busy, setBusy] = useState('');
@@ -153,6 +155,7 @@ export default function ComposePage() {
             platformConnectionId: connection._id,
             mediaAssetIds: mediaIds,
             caption: customized?.caption || baseCaption,
+            visibility,
             scheduledAt: new Date(scheduledAt).toISOString()
           });
           const publishJob = payload.data.publishJob;
@@ -358,6 +361,9 @@ export default function ComposePage() {
             </div>
 
             <div className="rounded-lg border border-line bg-panel p-4">
+              <div className="mb-4">
+                <VisibilitySelector value={visibility} onChange={setVisibility} mediaType={mediaAsset?.mediaType || ''} />
+              </div>
               <div className="flex flex-wrap items-center gap-3">
                 <input type="datetime-local" value={scheduledAt} onChange={event => setScheduledAt(event.target.value)} className="focus-ring rounded-md border border-line bg-ink px-3 py-2 text-sm text-white" />
                 <button type="button" disabled={busy === 'now' || selectedIds.length === 0 || (!baseCaption && !mediaAsset)} onClick={() => publish({ mode: 'now' })} className="focus-ring inline-flex items-center gap-2 rounded-md bg-mint px-3 py-2 text-sm font-semibold text-ink disabled:opacity-50">

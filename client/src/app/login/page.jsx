@@ -8,7 +8,8 @@ import { saveSession } from '../../lib/auth';
 
 const demos = [
   { label: 'Login as Editor', email: 'editor@creatorops.dev', password: 'password123' },
-  { label: 'Login as Creator/Admin', email: 'admin@creatorops.dev', password: 'password123' }
+  { label: 'Login as Creator/Admin', email: 'admin@creatorops.dev', password: 'password123' },
+  { label: 'Login as Brand Rep', email: 'brand@creatorops.dev', password: 'password123' }
 ];
 
 export default function LoginPage() {

@@ -135,6 +135,7 @@ function JobCard({ job, user, busy, onRetry, onCancel }) {
       <p className="mt-3 line-clamp-4 text-xs text-slate-300">{job.caption || job.variantId?.caption || 'No caption'}</p>
       <div className="mt-3 grid gap-1 text-xs text-slate-400">
         <span>Account: {account.accountName || 'n/a'} {account.accountHandle ? `(${account.accountHandle})` : ''}</span>
+        <span>Visibility: {job.visibility || 'public'}</span>
         {job.providerPostUrl ? (
           <a href={job.providerPostUrl} target="_blank" rel="noreferrer" className="text-cyan underline">View on platform</a>
         ) : (

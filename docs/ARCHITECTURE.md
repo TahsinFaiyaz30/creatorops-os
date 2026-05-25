@@ -17,6 +17,11 @@ CreatorOps OS is a modular monolith. That choice is intentional: the hackathon M
 - Media upload service
 - Publish job service and worker
 - Social sync service
+- Brand circular/application service
+- Creator statistics service
+- Script conversation service
+- Calendar feed service
+- Notification service
 - Workflow event service
 - Socket.IO realtime stream
 
@@ -45,6 +50,18 @@ Social sync
   -> official platform API
   -> metrics/comments/replies if supported
   -> stored real records + realtime updates
+
+Brand circulars
+  -> brand_rep creates/publishes opportunity
+  -> creator applies with real statistics snapshot
+  -> brand_rep reviews/shortlists/accepts/rejects
+  -> notifications + workflow events + calendar feed
+
+Script AI
+  -> conversational prompt
+  -> Gemini/Groq when available
+  -> JavaScript fallback script draft
+  -> optional conversion to ContentItem
 ```
 
 ## Real Integration Rule
@@ -86,4 +103,5 @@ Common codes:
 - Use workspace-specific Socket.IO rooms.
 - Add provider webhooks where platforms support them.
 - Add a metrics ingestion pipeline.
+- Add richer creator profile imports where creators authorize platform profile APIs.
 - Add monitoring, CI/CD, and audit exports.

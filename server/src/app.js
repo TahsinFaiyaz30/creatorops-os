@@ -7,17 +7,22 @@ import { errorHandler, notFoundHandler } from './middleware/error.middleware.js'
 import aiRoutes from './routes/ai.routes.js';
 import approvalRoutes from './routes/approval.routes.js';
 import authRoutes from './routes/auth.routes.js';
+import brandCircularRoutes from './routes/brandCircular.routes.js';
 import brandRoutes from './routes/brand.routes.js';
+import calendarRoutes from './routes/calendar.routes.js';
 import campaignRoutes from './routes/campaign.routes.js';
 import contentRoutes from './routes/content.routes.js';
 import eventRoutes from './routes/event.routes.js';
 import mediaRoutes from './routes/media.routes.js';
+import notificationRoutes from './routes/notification.routes.js';
 import oauthRoutes from './routes/oauth.routes.js';
 import platformConnectionRoutes from './routes/platformConnection.routes.js';
 import platformFormatRoutes from './routes/platformFormat.routes.js';
 import publishRoutes from './routes/publish.routes.js';
 import scheduleRoutes from './routes/schedule.routes.js';
+import scriptRoutes from './routes/script.routes.js';
 import socialRoutes from './routes/social.routes.js';
+import statisticsRoutes from './routes/statistics.routes.js';
 
 const app = express();
 
@@ -55,17 +60,22 @@ app.get('/health', (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/approvals', approvalRoutes);
+app.use('/api', brandCircularRoutes);
 app.use('/api/brand-profile', brandRoutes);
+app.use('/api/calendar', calendarRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/media', mediaRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/oauth', oauthRoutes);
 app.use('/api/platform-connections', platformConnectionRoutes);
 app.use('/api/platform-formats', platformFormatRoutes);
 app.use('/api/publish', publishRoutes);
 app.use('/api/schedule', scheduleRoutes);
+app.use('/api/scripts', scriptRoutes);
 app.use('/api/social', socialRoutes);
+app.use('/api/statistics', statisticsRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

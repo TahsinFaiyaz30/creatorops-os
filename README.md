@@ -30,6 +30,11 @@ CreatorOps OS has backend-enforced RBAC, version snapshots, workflow events, enc
 - Compose page for account-targeted caption customization and publish scheduling
 - Real publish jobs that only succeed after official API responses
 - Social metrics/comments/replies synced only from official APIs where supported
+- Brand representative circulars and creator applications with notifications
+- Creator statistics page built from real synced social metrics only
+- Script AI conversation for reels, Shorts, UGC ads, outlines, hooks, voiceover, and scenes
+- Video visibility controls with backend connector validation
+- Floating calendar drawer for scheduled posts, published posts, circular deadlines, applications, campaigns, and workflow milestones
 - Socket.IO updates for workflow, publishing, and social sync events
 - Public docs for setup, API, architecture, database, security, OAuth, and demo
 
@@ -69,6 +74,8 @@ Core operational models:
 - `PlatformFormatRule`, `MediaAsset`
 - `PublishJob`, `PublishedPost`
 - `SocialMetricSnapshot`, `SocialComment`, `SocialReply`
+- `BrandCircular`, `CircularApplication`
+- `CreatorStatisticSnapshot`, `CreatorNotification`, `ScriptConversation`
 
 ## Auth And RBAC
 
@@ -184,6 +191,11 @@ Creator/Admin:
 - `admin@creatorops.dev`
 - `password123`
 
+Brand Representative:
+
+- `brand@creatorops.dev`
+- `password123`
+
 ## API Summary
 
 - Auth: `/api/auth/*`
@@ -197,6 +209,11 @@ Creator/Admin:
 - Media: `/api/media/*`
 - Publish: `/api/publish/*`
 - Social: `/api/social/*`
+- Brand Circulars: `/api/brand-circulars`, `/api/applications`
+- Statistics: `/api/statistics/*`
+- Scripts: `/api/scripts`, `/api/ai/script`
+- Calendar: `/api/calendar/feed`
+- Notifications: `/api/notifications`
 - Events: `/api/events`
 - Platform formats: `/api/platform-formats`
 
@@ -219,7 +236,11 @@ Creator/Admin:
 15. Show blocked state when credentials/scopes/app review are missing.
 16. If a real connector succeeds, sync analytics/comments and reply through the same account.
 17. Show live events and version history.
-18. Open Architecture for judge explanation.
+18. Login as Brand Rep, create/publish a brand circular, and shortlist a creator application.
+19. Open Statistics to show real synced cross-platform stats or honest unavailable states.
+20. Open Script AI and create a structured platform script.
+21. Open the floating calendar drawer from the right-side button.
+22. Open Architecture for judge explanation.
 
 ## Testing Checklist
 

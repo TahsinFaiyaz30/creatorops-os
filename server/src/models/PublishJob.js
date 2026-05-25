@@ -5,6 +5,7 @@ import { SUPPORTED_PLATFORMS } from '../constants/platforms.js';
 const { Schema } = mongoose;
 
 export const PUBLISH_JOB_STATUSES = ['queued', 'publishing', 'published', 'failed', 'blocked', 'cancelled'];
+export const PUBLISH_VISIBILITIES = ['public', 'private', 'friends_only'];
 
 const accountSnapshotSchema = new Schema(
   {
@@ -69,6 +70,11 @@ const publishJobSchema = new Schema(
     caption: {
       type: String,
       default: ''
+    },
+    visibility: {
+      type: String,
+      enum: PUBLISH_VISIBILITIES,
+      default: 'public'
     },
     status: {
       type: String,

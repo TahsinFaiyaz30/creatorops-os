@@ -45,6 +45,19 @@ const platformVariantSchema = new Schema(
       type: [String],
       default: []
     },
+    platformNotes: {
+      type: [String],
+      default: []
+    },
+    visibilityOptions: {
+      type: [String],
+      default: ['public']
+    },
+    recommendedVisibility: {
+      type: String,
+      enum: ['public', 'private', 'friends_only'],
+      default: 'public'
+    },
     brandScore: {
       type: Number,
       default: 0,

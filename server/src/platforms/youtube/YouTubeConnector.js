@@ -120,13 +120,14 @@ export default class YouTubeConnector extends BasePlatformConnector {
     }
     const token = this.getAccessToken(connection);
     const fileBuffer = await fs.readFile(video.localPath);
+    const privacyStatus = payload.visibility === 'public' ? 'public' : 'private';
     const metadata = {
       snippet: {
         title: payload.caption?.split('\n')[0]?.slice(0, 95) || 'CreatorOps upload',
         description: payload.caption || '',
         categoryId: '22'
       },
-      status: { privacyStatus: 'private' }
+      status: { privacyStatus }
     };
     const boundary = `creatorops-${Date.now()}`;
     const body = Buffer.concat([

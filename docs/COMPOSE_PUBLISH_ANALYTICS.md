@@ -11,6 +11,7 @@ The Compose page supports:
 - crop preview metadata
 - account selection from real connected accounts
 - AI caption customization per selected account
+- video visibility selection: public, private, friends only
 
 Original media is not recompressed or reduced in quality.
 
@@ -26,6 +27,8 @@ Publishing uses:
 Jobs are processed by the backend worker. They can be queued, publishing, published, failed, blocked, or cancelled.
 
 `published` is only set after an official connector returns success.
+
+Visibility is saved on `PublishJob` and `PublishedPost`. Unsupported visibility values are blocked before publishing. The current YouTube connector maps `public` and `private` to official YouTube privacy status values; unsupported `friends_only` is not pretended.
 
 ## Analytics And Comments
 

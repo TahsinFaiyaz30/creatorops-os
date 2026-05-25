@@ -142,6 +142,15 @@ const platformFormatLimits = {
   shopify: { maxCaptionLength: 900, maxHashtags: 4 }
 };
 
+const topicHashtagMap = [
+  { terms: ['ai', 'automation', 'workflow'], tags: ['#AIAutomation', '#CreatorWorkflow', '#ContentSystem'] },
+  { terms: ['coding', 'programming', 'developer'], tags: ['#Coding', '#DeveloperTools', '#TechContent'] },
+  { terms: ['product', 'shop', 'ecommerce'], tags: ['#ProductMarketing', '#ShopUpdate', '#Ecommerce'] },
+  { terms: ['campus', 'student', 'university'], tags: ['#CampusCreators', '#StudentLife', '#Learning'] },
+  { terms: ['brand', 'marketing', 'campaign'], tags: ['#BrandStrategy', '#MarketingOps', '#CampaignPlanning'] },
+  { terms: ['movie', 'video', 'film'], tags: ['#VideoStrategy', '#Storytelling', '#CreatorTips'] }
+];
+
 const createHttpError = (message, statusCode) => {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -180,6 +189,24 @@ const includesText = (source, search) =>
   normalizeText(source).toLowerCase().includes(normalizeText(search).toLowerCase());
 
 const containsAny = (text, words) => toArray(words).some(word => word && includesText(text, word));
+
+export const generateHashtagSuggestions = ({ topic = '', platform = '', targetAudience = '', campaignGoal = '', tone = '' }) => {
+  const context = `${topic} ${targetAudience} ${campaignGoal} ${tone}`.toLowerCase();
+  const platformDefaults = platformRules[platform]?.hashtags || [];
+  const topicTags = topicHashtagMap
+    .filter(entry => entry.terms.some(term => context.includes(term)))
+    .flatMap(entry => entry.tags);
+  const audienceTags = targetAudience
+    ? targetAudience
+        .split(/[,\s]+/)
+        .map(word => word.replace(/[^a-z0-9]/gi, ''))
+        .filter(word => word.length > 3)
+        .slice(0, 2)
+        .map(word => `#${word[0].toUpperCase()}${word.slice(1)}`)
+    : [];
+  const { maxCaptionLength, maxHashtags } = getPlatformLimit(platform);
+  return unique([...topicTags, ...platformDefaults, ...audienceTags]).slice(0, maxHashtags);
+};
 
 const getBrandContext = brandProfile => ({
   brandName: normalizeText(brandProfile?.brandName),
@@ -360,6 +387,11 @@ const normalizeGeneratedVariant = ({ platform, generated, brandProfile, provider
   const warnings = detectWarnings({ platform, caption, hook, cta, hashtags, brandProfile });
   const suggestions = buildSuggestions({ platform, hook, cta, caption, brandProfile });
   const fallbackHashtags = (rules.hashtags || []).slice(0, maxHashtags);
+  const platformNotes = unique([
+    rules?.style ? `${rules.name || platform} style: ${rules.style}.` : '',
+    generated.platformNotes,
+    normalizeText(caption).length > maxCaptionLength ? `Caption should stay under ${maxCaptionLength} characters.` : ''
+  ]).filter(Boolean);
 
   return {
     platform,
@@ -367,6 +399,7 @@ const normalizeGeneratedVariant = ({ platform, generated, brandProfile, provider
     hook,
     cta,
     hashtags: hashtags.length > 0 ? hashtags : fallbackHashtags,
+    platformNotes,
     brandScore,
     readinessScore,
     warnings,
@@ -382,12 +415,20 @@ export const templateFallbackRepurpose = ({ contentItem, brandProfile, platforms
 
   return platforms.map(platform => {
     const rules = platformRules[platform];
+    const hashtags = generateHashtagSuggestions({
+      topic: idea,
+      platform,
+      targetAudience: brand.targetAudience,
+      campaignGoal: '',
+      tone: brand.tone
+    });
     const generated = {
       platform,
       hook: rules.hook(idea),
       caption: rules.caption({ idea, ...brand }),
       cta: brand.ctaStyle ? `${rules.cta} Keep the action ${brand.ctaStyle}.` : rules.cta,
-      hashtags: rules.hashtags
+      hashtags,
+      platformNotes: `${rules.name} caption follows ${rules.style} formatting.`
     };
 
     return normalizeGeneratedVariant({
@@ -894,8 +935,150 @@ export const customizeCaptions = async ({ user, baseCaption, connectionIds = [],
         characterCount: variant.caption.length,
         maxCaptionLength: limits.maxCaptionLength,
         maxHashtags: limits.maxHashtags,
+        platformNotes: variant.platformNotes || [],
         aiProvider: variant.aiProvider
       };
     })
+  };
+};
+
+const buildTemplateScriptDraft = ({ userMessage, platform, scriptType, brandProfile, campaign }) => {
+  const brand = getBrandContext(brandProfile);
+  const topic = compactText(userMessage || campaign?.goal || 'creator workflow');
+  const platformName = platformRules[platform]?.name || platform;
+  const hook = platform === 'tiktok' || platform === 'youtube_shorts'
+    ? `Stop scrolling: here is the fastest way to understand ${topic}.`
+    : `Here is a practical creator workflow for ${topic}.`;
+  const scenes = [
+    {
+      label: 'Scene 1',
+      description: 'Open with the problem and a visual proof point.',
+      dialogue: hook
+    },
+    {
+      label: 'Scene 2',
+      description: 'Show the product, process, or campaign benefit in one concrete example.',
+      dialogue: `${brand.brandName || 'This workflow'} helps ${brand.targetAudience || 'the audience'} get from idea to action.`
+    },
+    {
+      label: 'Scene 3',
+      description: 'Close with a clear next action and platform-native CTA.',
+      dialogue: platform === 'linkedin' ? 'What would you improve in this workflow?' : 'Follow, save, or comment with the next topic.'
+    }
+  ];
+
+  return {
+    title: `${platformName} ${scriptType}: ${topic.slice(0, 70)}`,
+    hook,
+    sceneBreakdown: scenes,
+    dialogue: scenes.map(scene => scene.dialogue).join('\n'),
+    voiceover: scenes.map(scene => `${scene.label}: ${scene.dialogue}`).join('\n'),
+    cta: platformRules[platform]?.cta || 'Comment with your next content idea.',
+    estimatedDuration: ['youtube', 'wordpress'].includes(platform) ? '3-6 minutes' : '30-45 seconds',
+    platform,
+    productionNotes: [
+      `Optimize for ${platformName}.`,
+      brand.tone ? `Keep tone ${brand.tone}.` : 'Keep the tone clear and useful.',
+      campaign?.goal ? `Tie the script to campaign goal: ${campaign.goal}.` : 'Keep the story focused on one outcome.'
+    ]
+  };
+};
+
+const validateScriptDraft = (payload, fallback) => ({
+  title: compactText(payload?.title || fallback.title),
+  hook: compactText(payload?.hook || fallback.hook),
+  sceneBreakdown: Array.isArray(payload?.sceneBreakdown) && payload.sceneBreakdown.length ? payload.sceneBreakdown : fallback.sceneBreakdown,
+  dialogue: compactText(payload?.dialogue || fallback.dialogue),
+  voiceover: compactText(payload?.voiceover || fallback.voiceover),
+  cta: compactText(payload?.cta || fallback.cta),
+  estimatedDuration: compactText(payload?.estimatedDuration || fallback.estimatedDuration),
+  platform: payload?.platform || fallback.platform,
+  productionNotes: Array.isArray(payload?.productionNotes) && payload.productionNotes.length ? payload.productionNotes : fallback.productionNotes,
+  hookOptions: Array.isArray(payload?.hookOptions) ? payload.hookOptions.slice(0, 5) : [fallback.hook]
+});
+
+const tryProviderScriptDraft = async ({ userMessage, conversationHistory, platform, scriptType, brandProfile, campaign, fallback }) => {
+  const prompt = JSON.stringify({
+    instruction: 'Return strict JSON for a creator video/script assistant. Include title, hook, sceneBreakdown, dialogue, voiceover, cta, estimatedDuration, platform, productionNotes, hookOptions. No markdown.',
+    userMessage,
+    conversationHistory: conversationHistory?.slice(-8),
+    platform,
+    scriptType,
+    brandProfile: getBrandContext(brandProfile),
+    campaign: campaign ? { name: campaign.name, goal: campaign.goal, targetAudience: campaign.targetAudience } : null
+  });
+
+  if ([PROVIDER_GEMINI, 'auto'].includes(env.aiProvider) && (process.env.GEMINI_API_KEY || env.geminiApiKey)) {
+    for (const model of getGeminiModelCandidates()) {
+      try {
+        const result = await withTimeout(async signal => {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': process.env.GEMINI_API_KEY || env.geminiApiKey
+            },
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+            signal
+          });
+          if (!response.ok) throw new Error(`Gemini failed with ${response.status}`);
+          const payload = await response.json();
+          const text = payload?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          return validateScriptDraft(parseJsonFromText(text), fallback);
+        }, env.aiTimeoutMs);
+        return { scriptDraft: result, aiProvider: PROVIDER_GEMINI };
+      } catch (_error) {
+        continue;
+      }
+    }
+  }
+
+  if ([PROVIDER_GROQ, 'auto'].includes(env.aiProvider) && env.groqApiKey) {
+    try {
+      const result = await withTimeout(async signal => {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${env.groqApiKey}`
+          },
+          body: JSON.stringify({
+            model: 'llama-3.1-8b-instant',
+            messages: [{ role: 'user', content: prompt }],
+            response_format: { type: 'json_object' },
+            temperature: 0.5
+          }),
+          signal
+        });
+        if (!response.ok) throw new Error(`Groq failed with ${response.status}`);
+        const payload = await response.json();
+        return validateScriptDraft(parseJsonFromText(payload?.choices?.[0]?.message?.content || ''), fallback);
+      }, env.aiTimeoutMs);
+      return { scriptDraft: result, aiProvider: PROVIDER_GROQ };
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  return null;
+};
+
+export const generateScriptDraft = async ({ userMessage, conversationHistory = [], platform = 'youtube_shorts', scriptType = 'reel script', brandProfile = null, campaign = null }) => {
+  const fallback = buildTemplateScriptDraft({ userMessage, platform, scriptType, brandProfile, campaign });
+  const providerResult = await tryProviderScriptDraft({
+    userMessage,
+    conversationHistory,
+    platform,
+    scriptType,
+    brandProfile,
+    campaign,
+    fallback
+  });
+  const scriptDraft = providerResult?.scriptDraft || fallback;
+  const aiProvider = providerResult?.aiProvider || PROVIDER_TEMPLATE;
+  return {
+    assistantMessage: `Drafted a ${scriptType} for ${platformRules[platform]?.name || platform}.`,
+    scriptDraft,
+    aiProvider
   };
 };

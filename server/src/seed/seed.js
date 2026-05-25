@@ -19,6 +19,12 @@ const DEMO_USERS = [
     email: 'admin@creatorops.dev',
     password: 'password123',
     role: 'creator_admin'
+  },
+  {
+    name: 'Demo Brand Rep',
+    email: 'brand@creatorops.dev',
+    password: 'password123',
+    role: 'brand_rep'
   }
 ];
 
@@ -26,43 +32,41 @@ const seed = async () => {
   validateEnv();
   await connectDb();
 
-  const workspaceId = new mongoose.Types.ObjectId();
-  const adminId = new mongoose.Types.ObjectId();
-
-  await User.deleteMany({ email: { $in: DEMO_USERS.map(user => user.email) } });
-  await Workspace.deleteOne({ name: DEMO_WORKSPACE_NAME });
-
-  await Workspace.create({
-    _id: workspaceId,
-    name: DEMO_WORKSPACE_NAME,
-    ownerId: adminId
-  });
-
-  await User.create([
-    {
+  let workspace = await Workspace.findOne({ name: DEMO_WORKSPACE_NAME });
+  if (!workspace) {
+    workspace = await Workspace.create({
       _id: new mongoose.Types.ObjectId(),
-      name: DEMO_USERS[0].name,
-      email: DEMO_USERS[0].email,
-      passwordHash: DEMO_USERS[0].password,
-      role: DEMO_USERS[0].role,
-      workspaceId
-    },
-    {
-      _id: adminId,
-      name: DEMO_USERS[1].name,
-      email: DEMO_USERS[1].email,
-      passwordHash: DEMO_USERS[1].password,
-      role: DEMO_USERS[1].role,
-      workspaceId
+      name: DEMO_WORKSPACE_NAME,
+      ownerId: new mongoose.Types.ObjectId()
+    });
+  }
+
+  for (const demoUser of DEMO_USERS) {
+    let user = await User.findOne({ email: demoUser.email }).select('+passwordHash');
+    if (!user) {
+      user = new User({
+        _id: new mongoose.Types.ObjectId(),
+        workspaceId: workspace._id
+      });
     }
-  ]);
+    user.name = demoUser.name;
+    user.email = demoUser.email;
+    user.passwordHash = demoUser.password;
+    user.role = demoUser.role;
+    user.workspaceId = workspace._id;
+    await user.save();
+    if (demoUser.role === 'creator_admin') {
+      workspace.ownerId = user._id;
+      await workspace.save();
+    }
+  }
 
   await ensureDefaultPlatformRules();
 
   console.log('Seed complete.');
   console.log(`Workspace: ${DEMO_WORKSPACE_NAME}`);
   console.log(`Platform format rules available: ${DEFAULT_PLATFORM_FORMAT_RULES.length}`);
-  console.log('Demo platform connections: none. Connect real accounts from /accounts after configuring credentials.');
+  console.log('Demo platform connections: seed does not create or delete real connections.');
   console.log('Demo users:');
   DEMO_USERS.forEach(user => {
     console.log(`- ${user.email} / ${user.password} / ${user.role}`);

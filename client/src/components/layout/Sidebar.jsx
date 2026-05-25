@@ -2,17 +2,22 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { BarChart3, Edit3, GitBranch, LayoutDashboard, LogOut, RadioTower, Send, ShieldCheck } from 'lucide-react';
+import { BarChart3, Bot, BriefcaseBusiness, ClipboardList, Edit3, GitBranch, LayoutDashboard, LogOut, RadioTower, Send, ShieldCheck, TrendingUp } from 'lucide-react';
 import RoleBadge from './RoleBadge';
+import NotificationBell from '../notifications/NotificationBell';
 import { clearSession } from '../../lib/auth';
 
 const links = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/campaigns', label: 'Campaigns', icon: GitBranch },
+  { href: '/brand-circulars', label: 'Brand Circulars', icon: BriefcaseBusiness },
+  { href: '/applications', label: 'Applications', icon: ClipboardList },
   { href: '/accounts', label: 'Accounts', icon: RadioTower },
   { href: '/compose', label: 'Compose', icon: Edit3 },
   { href: '/publishing', label: 'Publishing', icon: Send },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/statistics', label: 'Statistics', icon: TrendingUp },
+  { href: '/scripting', label: 'Script AI', icon: Bot },
   { href: '/approvals', label: 'Approvals', icon: ShieldCheck },
   { href: '/architecture', label: 'Architecture', icon: BarChart3 }
 ];
@@ -59,6 +64,9 @@ export default function Sidebar({ user }) {
         <div className="mt-1 break-all text-xs text-slate-400">{user?.email}</div>
         <div className="mt-3">
           <RoleBadge role={user?.role} />
+        </div>
+        <div className="mt-4">
+          <NotificationBell />
         </div>
         <button
           onClick={logout}

@@ -5,6 +5,7 @@ import {
   optimizeVariantHandler,
   repurposeContentHandler
 } from '../controllers/ai.controller.js';
+import { aiScript } from '../controllers/script.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 
 const router = Router();
@@ -14,5 +15,6 @@ router.use(authenticate);
 router.post('/repurpose', repurposeContentHandler);
 router.post('/optimize', optimizeVariantHandler);
 router.post('/customize-captions', customizeCaptionsHandler);
+router.post('/script', aiScript);
 
 export default router;

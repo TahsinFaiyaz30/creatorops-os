@@ -11,6 +11,11 @@ import { sanitizeConnection } from './platformConnection.service.js';
 import { createVariantVersion } from './versioning.service.js';
 
 const createPostGroupId = () => `post_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+const VISIBILITIES = ['public', 'private', 'friends_only'];
+const VISIBILITY_OPTIONS_BY_PLATFORM = {
+  youtube: ['public', 'private'],
+  youtube_shorts: ['public', 'private']
+};
 
 const createHttpError = (message, statusCode, code = '') => {
   const error = new Error(message);
@@ -88,15 +93,50 @@ const normalizePublishInput = input => ({
   contentItemId: input.contentItemId || null,
   mediaAssetIds: Array.isArray(input.mediaAssetIds) ? input.mediaAssetIds : [],
   caption: String(input.caption || '').trim(),
+  visibility: VISIBILITIES.includes(input.visibility) ? input.visibility : 'public',
   scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : new Date()
 });
+
+const getVisibilityOptions = platform => VISIBILITY_OPTIONS_BY_PLATFORM[platform] || ['public'];
+
+const validateVisibility = ({ connection, mediaAssets, visibility }) => {
+  const options = getVisibilityOptions(connection.platform);
+  const hasVideo = mediaAssets.some(asset => asset.mediaType === 'video');
+
+  if (!VISIBILITIES.includes(visibility)) {
+    return { ok: false, code: 'VALIDATION_FAILED', message: 'Invalid visibility value.' };
+  }
+
+  if (visibility === 'public') {
+    return { ok: true };
+  }
+
+  if (!hasVideo) {
+    return {
+      ok: false,
+      code: 'CAPABILITY_UNAVAILABLE',
+      message: 'Non-public visibility is currently validated only for video posts.'
+    };
+  }
+
+  if (!options.includes(visibility)) {
+    return {
+      ok: false,
+      code: 'CAPABILITY_UNAVAILABLE',
+      message: `${connection.platform} does not support ${visibility} visibility in the current connector. Choose: ${options.join(', ')}.`
+    };
+  }
+
+  return { ok: true };
+};
 
 const buildPayload = ({ input, connection, variant, mediaAssets }) => ({
   caption: input.caption || variant?.caption || '',
   mediaAssets,
   variant,
   platform: connection.platform,
-  account: sanitizeConnection(connection)
+  account: sanitizeConnection(connection),
+  ...(getVisibilityOptions(connection.platform).length > 1 ? { visibility: input.visibility } : {})
 });
 
 export const validatePublishPayload = async ({ user, input }) => {
@@ -126,6 +166,23 @@ export const validatePublishPayload = async ({ user, input }) => {
     contentItemId: normalized.contentItemId || variant?.contentItemId
   });
   const mediaAssets = await getMediaAssets({ user, mediaAssetIds: normalized.mediaAssetIds, includeLocalPath: true });
+  const visibilityCheck = validateVisibility({
+    connection,
+    mediaAssets,
+    visibility: normalized.visibility
+  });
+  if (!visibilityCheck.ok) {
+    return {
+      ok: false,
+      code: visibilityCheck.code,
+      message: visibilityCheck.message,
+      data: { visibility: normalized.visibility, supportedVisibility: getVisibilityOptions(connection.platform) },
+      connection: sanitizeConnection(connection),
+      variant,
+      contentItem,
+      mediaAssets
+    };
+  }
   const payload = buildPayload({ input: normalized, connection, variant, mediaAssets });
   const result = connector.validatePublishPayload(payload, connection);
 
@@ -186,10 +243,11 @@ export const createPublishJob = async ({ user, input, publishNow = false }) => {
     mediaAssetIds: validation.mediaAssets.map(asset => asset._id),
     platformConnectionId: connection._id,
     platform: connection.platform,
-    accountSnapshot: buildAccountSnapshot(connection),
-    caption: normalized.caption || variant?.caption || '',
-    scheduledAt,
-    status: 'queued',
+      accountSnapshot: buildAccountSnapshot(connection),
+      caption: normalized.caption || variant?.caption || '',
+      visibility: normalized.visibility,
+      scheduledAt,
+      status: 'queued',
     createdBy: user._id
   });
 
@@ -210,6 +268,7 @@ export const createPublishJob = async ({ user, input, publishNow = false }) => {
         publishJobId: job._id,
         platformConnectionId: connection._id,
         accountSnapshot: buildAccountSnapshot(connection),
+        visibility: job.visibility,
         scheduledAt: job.scheduledAt,
         previousStatus,
         newStatus: variant.status
@@ -362,6 +421,7 @@ export const processPublishJob = async ({ jobId }) => {
       caption: lockedJob.caption,
       mediaAssets,
       platform: lockedJob.platform,
+      ...(getVisibilityOptions(lockedJob.platform).length > 1 ? { visibility: lockedJob.visibility } : {}),
       account: sanitizeConnection(connection)
     };
     const result = await connector.publish(payload, connection);
@@ -406,6 +466,7 @@ export const processPublishJob = async ({ jobId }) => {
       platform: lockedJob.platform,
       accountSnapshot: lockedJob.accountSnapshot,
       caption: lockedJob.caption,
+      visibility: lockedJob.visibility,
       status: 'published',
       providerPostId: lockedJob.providerPostId,
       providerPostUrl: lockedJob.providerPostUrl,
@@ -438,7 +499,8 @@ export const processPublishJob = async ({ jobId }) => {
             publishedPostId: publishedPost._id,
             providerPostId: lockedJob.providerPostId,
             providerPostUrl: lockedJob.providerPostUrl,
-            accountSnapshot: lockedJob.accountSnapshot
+            accountSnapshot: lockedJob.accountSnapshot,
+            visibility: lockedJob.visibility
           }
         });
       }

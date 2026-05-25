@@ -29,6 +29,10 @@ Creator teams often lose context between ideation, platform adaptation, brand re
 - Real publish job validation/processing
 - Social metrics/comments/replies from official APIs
 - Realtime workflow and publishing/social updates
+- Brand representative circulars and creator applications
+- Creator statistics dashboard from real synced metrics
+- Script AI conversation with provider fallback
+- Floating calendar drawer for scheduled posts, deadlines, applications, and workflow milestones
 
 ## Tech Stack
 
@@ -37,6 +41,7 @@ Next.js, React, Tailwind CSS, Express, MongoDB, Mongoose, Socket.IO, JWT, bcrypt
 ## Challenges
 
 - Maintaining a demo-friendly workflow while removing simulated publishing.
+- Extending brand/creator collaboration without introducing fake influencer stats or fake social outcomes.
 - Designing honest connector failures for missing credentials, scopes, or app review.
 - Preventing secret exposure across API responses and frontend state.
 - Preserving original media without adding heavy processing dependencies.

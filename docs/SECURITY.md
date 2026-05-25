@@ -34,3 +34,9 @@ CreatorOps OS never asks for real social platform passwords and never stores the
 ## Frontend Safety
 
 The frontend receives only safe connection metadata: platform, account name/handle, status, scopes, expiry, health check fields, and capabilities. It never receives raw or encrypted credentials.
+
+## Brand Circulars And Statistics
+
+Brand representative routes are backend-enforced with the `brand_rep` role. Brand representatives can manage only circulars in their workspace and only review applications for circulars they own.
+
+Creator statistics are computed from stored real social metric snapshots. Missing followers, reach, impressions, growth, comments, or platform profile data remain unavailable instead of being fabricated. Application snapshots preserve their source so reviewers can tell whether data came from real sync or is unavailable.
