@@ -19,8 +19,9 @@ const normalizeError = async response => {
 
 export const apiFetch = async (path, options = {}) => {
   const token = getToken();
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers || {})
   };
 
@@ -31,7 +32,10 @@ export const apiFetch = async (path, options = {}) => {
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     headers,
-    body: options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body
+    body:
+      options.body && !isFormData && typeof options.body !== 'string'
+        ? JSON.stringify(options.body)
+        : options.body
   });
 
   if (!response.ok) {
@@ -52,5 +56,6 @@ export const api = {
   get: path => apiFetch(path),
   post: (path, body) => apiFetch(path, { method: 'POST', body }),
   patch: (path, body) => apiFetch(path, { method: 'PATCH', body }),
+  upload: (path, formData) => apiFetch(path, { method: 'POST', body: formData }),
   delete: path => apiFetch(path, { method: 'DELETE' })
 };

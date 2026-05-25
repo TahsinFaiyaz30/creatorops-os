@@ -16,6 +16,7 @@ export default function AppShell({ children }) {
     const cachedUser = getUser();
 
     if (!token) {
+      setReady(true);
       router.replace('/login');
       return;
     }

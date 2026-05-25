@@ -1,0 +1,101 @@
+import env from '../../config/env.js';
+import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
+
+export default class TikTokConnector extends BasePlatformConnector {
+  constructor() {
+    super('tiktok', 'TikTok');
+  }
+
+  getRequiredEnv() {
+    return ['TIKTOK_CLIENT_KEY', 'TIKTOK_CLIENT_SECRET'];
+  }
+
+  getRequiredScopes() {
+    return ['user.info.basic', 'video.publish', 'video.upload'];
+  }
+
+  getCapabilities() {
+    return { publish: true, schedule: true, analytics: false, comments: false, replies: false, mediaUpload: true };
+  }
+
+  getHelperText() {
+    return 'Connect TikTok creator account';
+  }
+
+  isConfigured() {
+    return Boolean(env.oauth.tiktok.clientKey && env.oauth.tiktok.clientSecret);
+  }
+
+  getAuthorizationUrl({ state, redirectUri }) {
+    if (!this.isConfigured()) return super.getAuthorizationUrl();
+    const url = new URL('https://www.tiktok.com/v2/auth/authorize/');
+    url.searchParams.set('client_key', env.oauth.tiktok.clientKey);
+    url.searchParams.set('redirect_uri', redirectUri);
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('scope', this.getRequiredScopes().join(','));
+    url.searchParams.set('state', state);
+    return okResult({ authorizationUrl: url.toString() }, 'Redirect to TikTok OAuth.');
+  }
+
+  async exchangeCodeForToken({ code, redirectUri }) {
+    const body = new URLSearchParams({
+      client_key: env.oauth.tiktok.clientKey,
+      client_secret: env.oauth.tiktok.clientSecret,
+      code,
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri
+    });
+    const result = await this.requestJson('https://open.tiktokapis.com/v2/oauth/token/', { method: 'POST', body });
+    if (!result.ok) return result;
+    return okResult({
+      accessToken: result.data.access_token,
+      refreshToken: result.data.refresh_token,
+      expiresIn: result.data.expires_in,
+      scopes: String(result.data.scope || '').split(',').filter(Boolean)
+    });
+  }
+
+  async fetchAccountProfileFromToken(tokenData) {
+    const result = await this.requestJson('https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,username', {
+      headers: { Authorization: `Bearer ${tokenData.accessToken}` }
+    });
+    if (!result.ok) return result;
+    const user = result.data?.data?.user;
+    return okResult({
+      accountName: user?.display_name || user?.username || 'TikTok Account',
+      accountHandle: user?.username ? `@${user.username}` : user?.open_id || '',
+      externalAccountId: user?.open_id || '',
+      accountType: 'creator',
+      scopes: tokenData.scopes,
+      platformMetadata: { unionId: user?.union_id, avatarUrl: user?.avatar_url }
+    });
+  }
+
+  validatePublishPayload(payload, connection) {
+    const base = super.validatePublishPayload(payload, connection);
+    if (!base.ok) return base;
+    const video = payload.mediaAssets?.find(asset => asset.mediaType === 'video' && asset.publicUrl);
+    if (!video) {
+      return connectorResult({
+        code: 'VALIDATION_FAILED',
+        message: 'TikTok Content Posting API requires a video media asset with a public URL.'
+      });
+    }
+    if (!connection.scopes?.some(scope => ['video.publish', 'video.upload'].includes(scope))) {
+      return connectorResult({
+        code: 'PLATFORM_REVIEW_REQUIRED',
+        message: 'TikTok video publishing requires Content Posting API access and approved scopes.'
+      });
+    }
+    return okResult({}, 'TikTok payload is publishable when Content Posting API access is approved.');
+  }
+
+  async publish(payload, connection) {
+    const validation = this.validatePublishPayload(payload, connection);
+    if (!validation.ok) return validation;
+    return connectorResult({
+      code: 'PLATFORM_REVIEW_REQUIRED',
+      message: 'TikTok publishing requires approved Content Posting API product access. The connector will not fake a publish.'
+    });
+  }
+}

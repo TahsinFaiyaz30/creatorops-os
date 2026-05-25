@@ -8,7 +8,7 @@ export const platformOptions = [
   'linkedin',
   'x',
   'pinterest',
-  'blog',
+  'wordpress',
   'shopify'
 ];
 
@@ -22,8 +22,24 @@ export const platformLabels = {
   linkedin: 'LinkedIn',
   x: 'X',
   pinterest: 'Pinterest',
-  blog: 'Blog',
+  wordpress: 'WordPress / Blog',
   shopify: 'Shopify'
 };
 
+export const platformCaptionLimits = {
+  facebook: 1200,
+  instagram: 500,
+  tiktok: 300,
+  youtube: 1800,
+  youtube_shorts: 420,
+  threads: 500,
+  linkedin: 1800,
+  x: 280,
+  pinterest: 500,
+  wordpress: 2500,
+  shopify: 900
+};
+
 export const formatPlatform = platform => platformLabels[platform] || platform;
+
+export const getPlatformCaptionLimit = platform => platformCaptionLimits[platform] || 1000;

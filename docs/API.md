@@ -1,279 +1,161 @@
-# API Reference
+# API
 
-Base URL:
-
-```text
-http://localhost:5000
-```
-
-Protected routes require:
-
-```http
-Authorization: Bearer <jwt>
-```
-
-Most responses use:
-
-```json
-{
-  "data": {}
-}
-```
+All application routes except OAuth callbacks require CreatorOps JWT auth. Role rules are enforced by the backend.
 
 ## Auth
 
-| Method | Path | Auth | Role | Purpose |
-| --- | --- | --- | --- | --- |
-| POST | `/api/auth/register` | No | None | Create a user. Mainly useful for development. |
-| POST | `/api/auth/login` | No | None | Login and receive a JWT. |
-| GET | `/api/auth/me` | Yes | Any | Return the current authenticated user. |
-
-Example login:
-
-```json
-{
-  "email": "editor@creatorops.dev",
-  "password": "password123"
-}
-```
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/auth/register` | Public | Register a CreatorOps user |
+| POST | `/api/auth/login` | Public | Login and receive JWT |
+| GET | `/api/auth/me` | Auth | Return current user |
 
 ## Brand Profile
 
-| Method | Path | Auth | Role | Purpose |
-| --- | --- | --- | --- | --- |
-| GET | `/api/brand-profile` | Yes | Any | Get the workspace brand profile. |
-| POST | `/api/brand-profile` | Yes | Any | Create the workspace brand profile. |
-| PATCH | `/api/brand-profile` | Yes | Any | Update brand profile fields. |
-
-Example body:
-
-```json
-{
-  "brandName": "CodeSprint Academy",
-  "tone": "friendly, confident, educational",
-  "targetAudience": "beginner programmers and university students",
-  "bannedWords": ["guaranteed income", "easy money"],
-  "ctaStyle": "clear, motivational, action-focused",
-  "preferredPlatforms": ["facebook", "instagram", "tiktok", "youtube", "youtube_shorts", "threads", "linkedin", "x", "pinterest", "blog", "shopify"]
-}
-```
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/brand-profile` | Auth | Get workspace brand profile |
+| POST | `/api/brand-profile` | Auth | Create profile |
+| PATCH | `/api/brand-profile` | Auth | Update profile |
 
 ## Campaigns
 
-| Method | Path | Auth | Role | Purpose |
-| --- | --- | --- | --- | --- |
-| POST | `/api/campaigns` | Yes | Any | Create a campaign. |
-| GET | `/api/campaigns` | Yes | Any | List workspace campaigns. |
-| GET | `/api/campaigns/:id/tracking` | Yes | Any | Return campaign content, variant, schedule, account, platform, event, and publish summary counts. |
-| GET | `/api/campaigns/:id/publish-summary` | Yes | Any | Alias for the campaign tracking summary. |
-| GET | `/api/campaigns/:id` | Yes | Any | Get one workspace campaign. |
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/campaigns` | Auth | Create campaign |
+| GET | `/api/campaigns` | Auth | List campaigns |
+| GET | `/api/campaigns/:id` | Auth | Get campaign |
+| GET | `/api/campaigns/:id/tracking` | Auth | Real campaign tracking summary |
+| GET | `/api/campaigns/:id/publish-summary` | Auth | Publish summary alias |
 
-Example body:
-
-```json
-{
-  "name": "Launch Week",
-  "goal": "Show the complete creator operations workflow",
-  "targetAudience": "hackathon judges and creator team leads",
-  "platforms": ["facebook", "instagram", "tiktok", "youtube", "youtube_shorts", "threads", "linkedin", "x", "pinterest", "blog", "shopify"]
-}
-```
-
-Supported platform values:
-
-- `facebook`
-- `instagram`
-- `tiktok`
-- `youtube`
-- `youtube_shorts`
-- `threads`
-- `linkedin`
-- `x`
-- `pinterest`
-- `blog`
-- `shopify`
+Supported platform values: `facebook`, `instagram`, `tiktok`, `youtube`, `youtube_shorts`, `threads`, `linkedin`, `x`, `pinterest`, `wordpress`, `shopify`.
 
 ## Content
 
-| Method | Path | Auth | Role | Purpose |
-| --- | --- | --- | --- | --- |
-| POST | `/api/content` | Yes | Any | Create a raw content idea. |
-| GET | `/api/content/campaign/:campaignId` | Yes | Any | List content items for a campaign. |
-| PATCH | `/api/content/:id` | Yes | Any | Update content title/raw idea and create version history. |
-| PATCH | `/api/content/:id/status` | Yes | Role rules | Change content status with backend transition validation. |
-| GET | `/api/content/:id/versions` | Yes | Any | List content and variant version snapshots. |
-| GET | `/api/content/:id/variants` | Yes | Any | List generated platform variants for a content item. |
-
-Example create body:
-
-```json
-{
-  "campaignId": "campaign_id_here",
-  "title": "One idea to multi-platform variants",
-  "rawIdea": "Show how CreatorOps OS turns one raw idea into platform-specific content, approval, and scheduling."
-}
-```
-
-Example status body:
-
-```json
-{
-  "status": "in_review",
-  "changeNote": "Ready for review"
-}
-```
-
-Status transition rules:
-
-- Editor: `idea -> draft`, `draft -> in_review`, `changes_requested -> draft`
-- Creator/Admin: `in_review -> approved`, `in_review -> rejected`, `in_review -> changes_requested`, `approved -> scheduled`, `scheduled -> published`
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/content` | Auth | Create content idea |
+| GET | `/api/content/campaign/:campaignId` | Auth | List content for campaign |
+| GET | `/api/content/:id/variants` | Auth | List variants for content |
+| PATCH | `/api/content/:id` | Auth | Update content |
+| PATCH | `/api/content/:id/status` | Auth | Change status with workflow validation |
+| GET | `/api/content/:id/versions` | Auth | Version history |
 
 ## AI
 
-| Method | Path | Auth | Role | Purpose |
-| --- | --- | --- | --- | --- |
-| POST | `/api/ai/repurpose` | Yes | Any | Generate or update platform variants for a content item. |
-| POST | `/api/ai/optimize` | Yes | Any | Improve one existing platform variant. |
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/ai/repurpose` | Auth | Generate platform variants |
+| POST | `/api/ai/optimize` | Auth | Optimize one variant |
+| POST | `/api/ai/customize-captions` | Auth | Customize compose captions per selected real connection |
 
-Example repurpose body:
-
-```json
-{
-  "contentItemId": "content_item_id_here"
-}
-```
-
-Example optimize body:
+Caption customization body:
 
 ```json
 {
-  "variantId": "variant_id_here",
-  "changeNote": "Make the hook stronger"
+  "baseCaption": "Launch idea",
+  "connectionIds": ["..."],
+  "mediaAssetIds": ["..."]
 }
 ```
-
-Generated variant fields include:
-
-- `platform`
-- `caption`
-- `hook`
-- `cta`
-- `hashtags`
-- `brandScore`
-- `readinessScore`
-- `warnings`
-- `suggestions`
-- `aiProvider`
-- `status`
-
-The API always returns valid structured output by falling back to template generation when optional providers fail or keys are missing.
-
-## Platform Accounts
-
-| Method | Path | Auth | Role | Purpose |
-| --- | --- | --- | --- | --- |
-| POST | `/api/platform-accounts` | Yes | `creator_admin` | Create a simulated connected platform account. |
-| GET | `/api/platform-accounts` | Yes | Any | List workspace platform accounts. |
-| GET | `/api/platform-accounts/:id` | Yes | Any | Get one workspace platform account. |
-| PATCH | `/api/platform-accounts/:id` | Yes | `creator_admin` | Update a simulated platform account. |
-| DELETE | `/api/platform-accounts/:id` | Yes | `creator_admin` | Soft-delete by setting `isActive=false`. |
-
-Example create body:
-
-```json
-{
-  "platform": "instagram",
-  "accountName": "CodeSprint Instagram",
-  "accountHandle": "@codesprint_main",
-  "accountType": "brand",
-  "status": "connected"
-}
-```
-
-Optional list filters:
-
-```text
-/api/platform-accounts?platform=instagram&status=connected&active=true
-```
-
-No OAuth tokens or secrets are stored. These records are local simulator targets.
-
-## Platform Formats
-
-| Method | Path | Auth | Role | Purpose |
-| --- | --- | --- | --- | --- |
-| GET | `/api/platform-formats` | Yes | Any | List platform formatting rules. |
-| GET | `/api/platform-formats/:platform` | Yes | Any | Get one platform formatting rule. |
-
-Format rules include caption limits, hashtag limits, supported media flags, content style, CTA style, and requirements.
 
 ## Approvals
 
-| Method | Path | Auth | Role | Purpose |
-| --- | --- | --- | --- | --- |
-| POST | `/api/approvals/request` | Yes | Any | Submit a draft variant for review. |
-| GET | `/api/approvals/pending` | Yes | `creator_admin` | List pending approval requests. |
-| POST | `/api/approvals/:id/approve` | Yes | `creator_admin` | Approve a pending request. |
-| POST | `/api/approvals/:id/reject` | Yes | `creator_admin` | Reject a pending request. |
-| POST | `/api/approvals/:id/request-changes` | Yes | `creator_admin` | Request changes on a pending request. |
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/approvals/request` | Auth | Request review for a variant |
+| GET | `/api/approvals/pending` | `creator_admin` | Pending queue |
+| POST | `/api/approvals/:id/approve` | `creator_admin` | Approve |
+| POST | `/api/approvals/:id/reject` | `creator_admin` | Reject |
+| POST | `/api/approvals/:id/request-changes` | `creator_admin` | Request changes |
 
-Example request body:
+## Platform Connections
+
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/platform-connections` | Auth | Safe connection list; no tokens |
+| GET | `/api/platform-connections/:id` | Auth | Safe connection metadata |
+| GET | `/api/platform-connections/status` | Auth | Platform cards, configuration, capabilities, connections |
+| GET | `/api/platform-connections/capabilities` | Auth | Connector requirements/capabilities |
+| POST | `/api/platform-connections/:id/disconnect` | `creator_admin` | Mark disconnected |
+| POST | `/api/platform-connections/:id/refresh` | `creator_admin` | Refresh token if connector supports it |
+| POST | `/api/platform-connections/:id/health-check` | `creator_admin` | Connector health check |
+| DELETE | `/api/platform-connections/:id` | `creator_admin` | Delete connection |
+
+## OAuth
+
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/oauth/:platform/start` | `creator_admin` | Create secure state and return official auth URL |
+| GET | `/api/oauth/:platform/callback` | OAuth state | Exchange callback code and store encrypted tokens |
+
+Callbacks do not require JWT because secure state restores user/workspace/platform context.
+
+## Media
+
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/media/upload` | Auth | Upload original image/video with multipart field `media` |
+| GET | `/api/media` | Auth | List media |
+| GET | `/api/media/:id` | Auth | Get media metadata |
+| PATCH | `/api/media/:id` | Auth | Update crop preview metadata |
+| DELETE | `/api/media/:id` | Auth | Delete media and local file |
+
+Original files are stored without recompression. Crop settings are preview metadata.
+
+## Publish
+
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/publish/validate` | `creator_admin` | Validate connection, media, caption, scope, and connector capability |
+| POST | `/api/publish/now` | `creator_admin` | Queue and immediately process a real publish job |
+| POST | `/api/publish/schedule` | `creator_admin` | Queue a scheduled real publish job |
+| GET | `/api/publish/jobs` | Auth | List publish jobs |
+| GET | `/api/publish/jobs/:id` | Auth | Get one publish job |
+| POST | `/api/publish/jobs/:id/cancel` | `creator_admin` | Cancel allowed job |
+| POST | `/api/publish/jobs/:id/retry` | `creator_admin` | Retry failed/blocked job |
+
+Publish body:
 
 ```json
 {
-  "variantId": "variant_id_here",
-  "comment": "Ready for review"
+  "platformConnectionId": "...",
+  "variantId": "...",
+  "mediaAssetIds": ["..."],
+  "caption": "Final caption",
+  "scheduledAt": "2026-05-26T12:00:00.000Z"
 }
 ```
 
-Example decision body:
+## Social
 
-```json
-{
-  "comment": "Approved"
-}
-```
-
-Editors receive `403` if they try to approve, reject, or request changes as reviewer.
-
-## Schedule
-
-| Method | Path | Auth | Role | Purpose |
-| --- | --- | --- | --- | --- |
-| POST | `/api/schedule` | Yes | `creator_admin` | Schedule an approved platform variant. |
-| GET | `/api/schedule` | Yes | Any | List workspace schedule jobs. |
-| POST | `/api/schedule/:id/run-now` | Yes | `creator_admin` | Run the publishing simulator immediately. |
-
-Example schedule body:
-
-```json
-{
-  "variantId": "variant_id_here",
-  "platformAccountId": "platform_account_id_here",
-  "scheduledAt": "2026-05-25T06:30:00.000Z"
-}
-```
-
-Only approved variants can be scheduled. Editors receive `403` if they try to schedule or run the simulator.
-
-`platformAccountId` is optional only when exactly one active connected matching account exists. If there are multiple matching accounts, the backend returns `400` and requires a target account. If the selected account platform does not match the variant platform, the backend returns `400`.
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/social/post-groups` | Auth | Unified same-post groups across platform publish jobs/posts |
+| GET | `/api/social/post-groups/:id` | Auth | Unified post details with combined totals, per-platform breakdown, comments, and optional `?platform=x` filter |
+| POST | `/api/social/post-groups/:id/sync` | `creator_admin` | Sync real analytics/comments for every real published platform post in the group |
+| GET | `/api/social/posts` | Auth | Real published posts |
+| GET | `/api/social/posts/:id` | Auth | One published post |
+| POST | `/api/social/posts/:id/sync` | `creator_admin` | Fetch analytics/comments via official connector |
+| GET | `/api/social/posts/:id/metrics` | Auth | Stored real metric snapshots |
+| GET | `/api/social/posts/:id/comments` | Auth | Stored real comments |
+| POST | `/api/social/comments/:id/reply` | `creator_admin` | Reply using the same connected account |
+| GET | `/api/social/analytics/summary` | Auth | Aggregate stored real data |
 
 ## Events
 
-| Method | Path | Auth | Role | Purpose |
-| --- | --- | --- | --- | --- |
-| GET | `/api/events` | Yes | Any | List persisted workflow events for the current workspace. |
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/events` | Auth | Persisted workflow events |
 
-Optional query:
+Realtime events:
 
-```text
-/api/events?limit=30
-```
+- `workflow:event`
+- `publishing:job_updated`
+- `social:metrics_updated`
+- `social:comments_synced`
+- `social:reply_created`
 
-Realtime event name:
+## Legacy Schedule Route
 
-```text
-workflow:event
-```
-
-Events are persisted before Socket.IO broadcast.
+`/api/schedule` remains only as a disabled legacy surface. It does not simulate success. Use `/api/publish/*`.

@@ -157,7 +157,7 @@ function CampaignTrackingPanel({ tracking }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-white">Campaign Tracking</h2>
-          <p className="mt-1 text-sm text-slate-400">Counts come from stored content, variants, schedule jobs, and workflow events.</p>
+          <p className="mt-1 text-sm text-slate-400">Counts come from stored content, variants, real publish jobs, workflow events, and synced platform data.</p>
         </div>
         <div className="text-right text-xs text-slate-400">
           <div>{tracking.totalContentItems} content items</div>
@@ -171,6 +171,15 @@ function CampaignTrackingPanel({ tracking }) {
         <TrackStat label="Rejected" value={variants.rejected || 0} />
         <TrackStat label="Changes" value={variants.changes_requested || 0} />
       </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        <TrackStat label="Publish jobs" value={tracking.totalPublishJobs || 0} />
+        <TrackStat label="Published posts" value={tracking.publishedPostCount || 0} />
+        <TrackStat label="Metric snapshots" value={tracking.syncedMetrics?.snapshots || 0} />
+        <TrackStat label="Provider URLs" value={(tracking.providerPostUrls || []).length} />
+      </div>
+      {tracking.analyticsUnavailableMessage && (
+        <p className="mt-3 rounded-md border border-gold/30 bg-gold/10 p-3 text-sm text-gold">{tracking.analyticsUnavailableMessage}</p>
+      )}
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Breakdown title="Platform breakdown" items={Object.entries(platforms).map(([key, value]) => [formatPlatform(key), value])} />
         <Breakdown title="Account breakdown" items={accounts.map(item => [`${item.accountName || item.accountHandle} (${formatPlatform(item.platform)})`, item.count])} />

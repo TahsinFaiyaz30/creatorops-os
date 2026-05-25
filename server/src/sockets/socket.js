@@ -7,7 +7,7 @@ let io = null;
 export const initSocket = server => {
   io = new Server(server, {
     cors: {
-      origin: env.clientUrl,
+      origin: env.clientUrls,
       credentials: true
     }
   });
@@ -41,4 +41,12 @@ export const emitWorkflowEvent = event => {
     metadata: event.metadata,
     createdAt: event.createdAt
   });
+};
+
+export const emitRealtimeEvent = (eventName, payload) => {
+  if (!io) {
+    return;
+  }
+
+  io.emit(eventName, payload);
 };

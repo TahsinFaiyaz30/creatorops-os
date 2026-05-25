@@ -1,0 +1,106 @@
+import env from '../../config/env.js';
+import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
+
+export default class ThreadsConnector extends BasePlatformConnector {
+  constructor() {
+    super('threads', 'Threads');
+  }
+
+  getRequiredEnv() {
+    return ['THREADS_APP_ID', 'THREADS_APP_SECRET'];
+  }
+
+  getRequiredScopes() {
+    return ['threads_basic', 'threads_content_publish', 'threads_manage_replies', 'threads_read_replies'];
+  }
+
+  getCapabilities() {
+    return { publish: true, schedule: true, analytics: true, comments: true, replies: true, mediaUpload: true };
+  }
+
+  getHelperText() {
+    return 'Connect Threads account';
+  }
+
+  isConfigured() {
+    return Boolean(env.oauth.threads.appId && env.oauth.threads.appSecret);
+  }
+
+  getAuthorizationUrl({ state, redirectUri }) {
+    if (!this.isConfigured()) return super.getAuthorizationUrl();
+    const url = new URL('https://threads.net/oauth/authorize');
+    url.searchParams.set('client_id', env.oauth.threads.appId);
+    url.searchParams.set('redirect_uri', redirectUri);
+    url.searchParams.set('scope', this.getRequiredScopes().join(','));
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('state', state);
+    return okResult({ authorizationUrl: url.toString() }, 'Redirect to Threads OAuth.');
+  }
+
+  async exchangeCodeForToken({ code, redirectUri }) {
+    const body = new URLSearchParams({
+      client_id: env.oauth.threads.appId,
+      client_secret: env.oauth.threads.appSecret,
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri,
+      code
+    });
+    const result = await this.requestJson('https://graph.threads.net/oauth/access_token', { method: 'POST', body });
+    if (!result.ok) return result;
+    return okResult({
+      accessToken: result.data.access_token,
+      expiresIn: result.data.expires_in,
+      scopes: this.getRequiredScopes()
+    });
+  }
+
+  async fetchAccountProfileFromToken(tokenData) {
+    const result = await this.requestJson(
+      `https://graph.threads.net/v1.0/me?fields=id,username,name&access_token=${encodeURIComponent(tokenData.accessToken)}`
+    );
+    if (!result.ok) return result;
+    return okResult({
+      accountName: result.data.name || result.data.username || 'Threads Account',
+      accountHandle: result.data.username ? `@${result.data.username}` : result.data.id,
+      externalAccountId: result.data.id,
+      accountType: 'profile',
+      scopes: tokenData.scopes
+    });
+  }
+
+  validatePublishPayload(payload, connection) {
+    const base = super.validatePublishPayload(payload, connection);
+    if (!base.ok) return base;
+    if (!payload.caption) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'Threads publishing requires text.' });
+    }
+    return okResult({}, 'Threads payload is publishable.');
+  }
+
+  async publish(payload, connection) {
+    const validation = this.validatePublishPayload(payload, connection);
+    if (!validation.ok) return validation;
+    const token = this.getAccessToken(connection);
+    const createBody = new URLSearchParams({
+      access_token: token,
+      media_type: 'TEXT',
+      text: payload.caption
+    });
+    const container = await this.requestJson(`https://graph.threads.net/v1.0/${connection.externalAccountId}/threads`, {
+      method: 'POST',
+      body: createBody
+    });
+    if (!container.ok) return container;
+    const publishBody = new URLSearchParams({ access_token: token, creation_id: container.data.id });
+    const published = await this.requestJson(`https://graph.threads.net/v1.0/${connection.externalAccountId}/threads_publish`, {
+      method: 'POST',
+      body: publishBody
+    });
+    if (!published.ok) return published;
+    return okResult({
+      providerPostId: published.data.id,
+      providerPostUrl: '',
+      rawResponse: { container: container.data, published: published.data }
+    }, 'Threads post published through the official API.');
+  }
+}

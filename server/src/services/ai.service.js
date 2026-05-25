@@ -2,6 +2,8 @@ import env from '../config/env.js';
 import BrandProfile from '../models/BrandProfile.js';
 import Campaign from '../models/Campaign.js';
 import ContentItem from '../models/ContentItem.js';
+import MediaAsset from '../models/MediaAsset.js';
+import PlatformConnection from '../models/PlatformConnection.js';
 import PlatformVariant, { SUPPORTED_PLATFORMS } from '../models/PlatformVariant.js';
 import { createWorkflowEvent } from './event.service.js';
 import { createVariantVersion } from './versioning.service.js';
@@ -59,7 +61,7 @@ const platformRules = {
     style: 'searchable title and description',
     hook: idea => `How to use ${idea.toLowerCase()} in a creator workflow`,
     caption: ({ idea, brandName, targetAudience }) =>
-      `Title idea: How Creator Teams Turn One Idea Into Multi-Platform Content\n\nDescription: In this video, ${brandName || 'the workflow'} shows how "${idea}" becomes platform-ready content with approvals, scheduling, and a publishing simulator. Built for ${targetAudience || 'creator teams'} who need a repeatable content system.`,
+      `Title idea: How Creator Teams Turn One Idea Into Multi-Platform Content\n\nDescription: In this video, ${brandName || 'the workflow'} shows how "${idea}" becomes platform-ready content with approvals, scheduling, and real account-targeted publishing checks. Built for ${targetAudience || 'creator teams'} who need a repeatable content system.`,
     cta: 'Subscribe for more creator workflow breakdowns and watch the next video.',
     hashtags: ['#CreatorWorkflow', '#ContentSystem', '#MarketingOps'],
     fitWords: ['how', 'video', 'subscribe', 'description']
@@ -89,8 +91,8 @@ const platformRules = {
     style: 'concise, punchy, max-short format',
     hook: idea => `One idea. Many platforms.`,
     caption: ({ idea }) =>
-      `Creator teams do not need another disconnected draft. They need one workflow: idea -> variants -> approval -> schedule -> simulator publish. Example: ${idea}`,
-    cta: 'Reply with the step your team struggles with most.',
+      `One idea should not become scattered drafts. ${String(idea || '').slice(0, 95)} Turn it into variants, approvals, and real account checks before posting.`,
+    cta: 'Reply with your biggest content bottleneck.',
     hashtags: ['#CreatorOps'],
     fitWords: ['workflow', 'reply', 'idea', 'approval']
   },
@@ -104,12 +106,12 @@ const platformRules = {
     hashtags: ['#ContentPlanning', '#CreatorTools', '#Workflow'],
     fitWords: ['pin', 'save', 'planning', 'template']
   },
-  blog: {
-    name: 'Blog',
+  wordpress: {
+    name: 'WordPress / Blog',
     style: 'article title, intro, and outline',
     hook: idea => `How Creator Teams Can Operationalize ${idea}`,
     caption: ({ idea, brandName, targetAudience }) =>
-      `Article intro: ${brandName || 'CreatorOps OS'} shows how "${idea}" can become a repeatable content workflow for ${targetAudience || 'creator teams'}.\n\nOutline:\n1. Start with one raw idea.\n2. Adapt it for each platform.\n3. Review with clear roles.\n4. Schedule through a simulator.\n5. Track events and versions.`,
+      `Article intro: ${brandName || 'CreatorOps OS'} shows how "${idea}" can become a repeatable content workflow for ${targetAudience || 'creator teams'}.\n\nOutline:\n1. Start with one raw idea.\n2. Adapt it for each platform.\n3. Review with clear roles.\n4. Schedule through connected accounts.\n5. Track events and versions.`,
     cta: 'Read the full workflow and adapt it for your team.',
     hashtags: [],
     fitWords: ['article', 'outline', 'read', 'workflow']
@@ -119,11 +121,25 @@ const platformRules = {
     style: 'product/content marketing with shop-oriented CTA',
     hook: idea => `Turn content operations into a product-ready workflow`,
     caption: ({ idea, brandName }) =>
-      `${brandName || 'This creator workflow'} helps teams turn "${idea}" into content that supports campaigns, product education, and shop updates. Keep the message practical, brand-safe, and easy to publish through the simulator.`,
+      `${brandName || 'This creator workflow'} helps teams turn "${idea}" into content that supports campaigns, product education, and shop updates. Keep the message practical, brand-safe, and ready for a real connected publishing channel.`,
     cta: 'View the campaign workflow and connect it to your next shop update.',
     hashtags: ['#ShopUpdate', '#CreatorStore', '#ContentMarketing'],
     fitWords: ['shop', 'product', 'campaign', 'view']
   }
+};
+
+const platformFormatLimits = {
+  facebook: { maxCaptionLength: 1200, maxHashtags: 5 },
+  instagram: { maxCaptionLength: 500, maxHashtags: 8 },
+  tiktok: { maxCaptionLength: 300, maxHashtags: 6 },
+  youtube: { maxCaptionLength: 1800, maxHashtags: 8 },
+  youtube_shorts: { maxCaptionLength: 420, maxHashtags: 5 },
+  threads: { maxCaptionLength: 500, maxHashtags: 2 },
+  linkedin: { maxCaptionLength: 1800, maxHashtags: 5 },
+  x: { maxCaptionLength: 280, maxHashtags: 2 },
+  pinterest: { maxCaptionLength: 500, maxHashtags: 6 },
+  wordpress: { maxCaptionLength: 2500, maxHashtags: 0 },
+  shopify: { maxCaptionLength: 900, maxHashtags: 4 }
 };
 
 const createHttpError = (message, statusCode) => {
@@ -137,6 +153,24 @@ const clampScore = value => Math.max(0, Math.min(100, Math.round(value)));
 const normalizeText = value => String(value || '').trim();
 
 const compactText = value => normalizeText(value).replace(/\s+/g, ' ');
+
+const getPlatformLimit = platform => platformFormatLimits[platform] || { maxCaptionLength: 1000, maxHashtags: 5 };
+
+const shortenText = (value, maxLength) => {
+  const text = compactText(value);
+  if (!maxLength || text.length <= maxLength) return text;
+  if (maxLength <= 3) return text.slice(0, maxLength);
+
+  const slice = text.slice(0, maxLength - 3);
+  const lastSpace = slice.lastIndexOf(' ');
+  const trimmed = slice.slice(0, lastSpace > maxLength * 0.6 ? lastSpace : slice.length).trim();
+  return `${trimmed}...`;
+};
+
+const fitCaptionToPlatform = (platform, caption) => {
+  const { maxCaptionLength } = getPlatformLimit(platform);
+  return shortenText(caption, maxCaptionLength);
+};
 
 const unique = values => [...new Set(values.filter(Boolean))];
 
@@ -192,7 +226,7 @@ const captionLengthPenalty = (platform, caption) => {
   if (platform === 'threads') return length < 30 || length > 500 ? 8 : 0;
   if (platform === 'x') return length < 25 || length > 280 ? 8 : 0;
   if (platform === 'pinterest') return length < 70 || length > 500 ? 8 : 0;
-  if (platform === 'blog') return length < 180 || length > 2500 ? 8 : 0;
+  if (platform === 'wordpress') return length < 180 || length > 2500 ? 8 : 0;
   if (platform === 'shopify') return length < 80 || length > 900 ? 8 : 0;
 
   return 0;
@@ -224,6 +258,14 @@ const detectWarnings = ({ platform, caption, hook, cta, hashtags, brandProfile }
     warnings.push('Caption length may not fit the platform well.');
   }
 
+  const { maxCaptionLength, maxHashtags } = getPlatformLimit(platform);
+  if (normalizeText(caption).length > maxCaptionLength) {
+    warnings.push(`Caption exceeds ${maxCaptionLength} characters for ${rules?.name || platform}.`);
+  }
+  if (toArray(hashtags).length > maxHashtags) {
+    warnings.push(`Too many hashtags for ${rules?.name || platform}.`);
+  }
+
   return warnings;
 };
 
@@ -243,6 +285,11 @@ const buildSuggestions = ({ platform, hook, cta, caption, brandProfile }) => {
     suggestions.push(`Adjust wording to better fit ${rules.name}.`);
   } else {
     suggestions.push(`Keep the ${rules?.name || platform} format tight and platform-specific.`);
+  }
+
+  const { maxCaptionLength } = getPlatformLimit(platform);
+  if (normalizeText(caption).length > maxCaptionLength * 0.9) {
+    suggestions.push(`Keep this under ${maxCaptionLength} characters for ${rules?.name || platform}.`);
   }
 
   if (brandProfile?.tone && !containsAny(`${caption} ${hook}`, brandProfile.tone.split(/[,\s]+/))) {
@@ -302,21 +349,24 @@ export const calculateReadinessScore = ({ platform, caption, hook, cta, hashtags
 
 const normalizeGeneratedVariant = ({ platform, generated, brandProfile, provider }) => {
   const rules = platformRules[platform];
-  const caption = compactText(generated.caption);
+  const { maxHashtags } = getPlatformLimit(platform);
+  const rawCaption = compactText(generated.caption);
+  const caption = fitCaptionToPlatform(platform, rawCaption);
   const hook = compactText(generated.hook);
   const cta = compactText(generated.cta);
-  const hashtags = unique(toArray(generated.hashtags).map(tag => (tag.startsWith('#') ? tag : `#${tag}`)));
+  const hashtags = unique(toArray(generated.hashtags).map(tag => (tag.startsWith('#') ? tag : `#${tag}`))).slice(0, maxHashtags);
   const brandScore = calculateBrandScore({ caption, hook, cta, brandProfile });
   const readinessScore = calculateReadinessScore({ platform, caption, hook, cta, hashtags });
   const warnings = detectWarnings({ platform, caption, hook, cta, hashtags, brandProfile });
   const suggestions = buildSuggestions({ platform, hook, cta, caption, brandProfile });
+  const fallbackHashtags = (rules.hashtags || []).slice(0, maxHashtags);
 
   return {
     platform,
     caption,
     hook,
     cta,
-    hashtags: hashtags.length > 0 ? hashtags : rules.hashtags,
+    hashtags: hashtags.length > 0 ? hashtags : fallbackHashtags,
     brandScore,
     readinessScore,
     warnings,
@@ -401,7 +451,7 @@ const withTimeout = async (promiseFactory, timeoutMs) => {
 
 const buildProviderPrompt = ({ contentItem, campaign, brandProfile, platforms }) => ({
   instruction:
-    `Return strict JSON with a variants array. Each item must include platform, caption, hook, cta, hashtags. Use only these exact platform values: ${platforms.join(', ')}. No markdown.`,
+    `Return strict JSON with a variants array. Each item must include platform, caption, hook, cta, hashtags. Use only these exact platform values: ${platforms.join(', ')}. No markdown. Captions must obey platformLimits exactly, especially X at 280 characters.`,
   contentIdea: getContentIdea(contentItem),
   campaign: {
     name: campaign?.name,
@@ -410,6 +460,7 @@ const buildProviderPrompt = ({ contentItem, campaign, brandProfile, platforms })
   },
   brandProfile: getBrandContext(brandProfile),
   platforms,
+  platformLimits: Object.fromEntries(platforms.map(platform => [platform, getPlatformLimit(platform)])),
   platformRules
 });
 
@@ -752,5 +803,99 @@ export const optimizeVariant = async ({ user, variantId, changeNote = '' }) => {
   return {
     variant,
     version
+  };
+};
+
+const getComposeMediaWarnings = ({ connection, mediaAssets }) => {
+  const warnings = [];
+  const suggestions = [];
+  const hasImage = mediaAssets.some(asset => asset.mediaType === 'image');
+  const hasVideo = mediaAssets.some(asset => asset.mediaType === 'video');
+
+  if (['youtube', 'youtube_shorts'].includes(connection.platform) && !hasVideo) {
+    warnings.push(`${platformRules[connection.platform]?.name || 'YouTube'} publishing requires a video media asset.`);
+    suggestions.push('Upload a video before publishing to YouTube, or deselect YouTube for image-only posts.');
+  }
+
+  if (connection.platform === 'tiktok' && !hasVideo) {
+    warnings.push('TikTok publishing usually requires a video media asset.');
+    suggestions.push('Upload a short video before publishing to TikTok.');
+  }
+
+  if (connection.platform === 'x' && hasImage && !connection.scopes?.includes('media.write')) {
+    warnings.push('X image publishing requires the media.write OAuth scope on this connection.');
+    suggestions.push('Enable media.write in the X app and reconnect the X account before posting images.');
+  }
+
+  return { warnings, suggestions };
+};
+
+export const customizeCaptions = async ({ user, baseCaption, connectionIds = [], mediaAssetIds = [] }) => {
+  if (!baseCaption || !String(baseCaption).trim()) {
+    throw createHttpError('baseCaption is required.', 400);
+  }
+
+  if (!Array.isArray(connectionIds) || connectionIds.length === 0) {
+    throw createHttpError('connectionIds is required.', 400);
+  }
+
+  const connections = await PlatformConnection.find({
+    _id: { $in: connectionIds },
+    workspaceId: user.workspaceId,
+    status: 'connected'
+  });
+
+  if (connections.length !== connectionIds.length) {
+    throw createHttpError('One or more connected platform accounts were not found.', 404);
+  }
+
+  const brandProfile = await BrandProfile.findOne({ workspaceId: user.workspaceId });
+  const mediaAssets = Array.isArray(mediaAssetIds) && mediaAssetIds.length > 0
+    ? await MediaAsset.find({
+        _id: { $in: mediaAssetIds },
+        workspaceId: user.workspaceId
+      })
+    : [];
+  if (Array.isArray(mediaAssetIds) && mediaAssetIds.length > 0 && mediaAssets.length !== mediaAssetIds.length) {
+    throw createHttpError('One or more media assets were not found in this workspace.', 404);
+  }
+  const platforms = unique(connections.map(connection => connection.platform));
+  const pseudoContentItem = {
+    title: 'Compose caption',
+    rawIdea: baseCaption
+  };
+  const generated = await repurposeContent({
+    contentItem: pseudoContentItem,
+    campaign: null,
+    brandProfile,
+    platforms
+  });
+  const byPlatform = Object.fromEntries(generated.map(variant => [variant.platform, variant]));
+
+  return {
+    results: connections.map(connection => {
+      const variant = byPlatform[connection.platform];
+      const limits = getPlatformLimit(connection.platform);
+      const mediaGuidance = getComposeMediaWarnings({ connection, mediaAssets });
+      const warnings = unique([...(variant.warnings || []), ...mediaGuidance.warnings]);
+      const suggestions = unique([...(variant.suggestions || []), ...mediaGuidance.suggestions]);
+      return {
+        connectionId: connection._id,
+        platform: connection.platform,
+        accountHandle: connection.accountHandle,
+        caption: variant.caption,
+        hashtags: variant.hashtags,
+        hook: variant.hook,
+        cta: variant.cta,
+        brandScore: variant.brandScore,
+        readinessScore: variant.readinessScore,
+        warnings,
+        suggestions,
+        characterCount: variant.caption.length,
+        maxCaptionLength: limits.maxCaptionLength,
+        maxHashtags: limits.maxHashtags,
+        aiProvider: variant.aiProvider
+      };
+    })
   };
 };

@@ -51,7 +51,7 @@ const scheduleJobSchema = new Schema(
     },
     adapterName: {
       type: String,
-      default: 'simulated-publisher'
+      default: 'legacy-disabled'
     },
     resultMessage: {
       type: String,

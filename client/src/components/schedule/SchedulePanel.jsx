@@ -11,8 +11,8 @@ export default function SchedulePanel({ variant, user, onDone }) {
     return date.toISOString().slice(0, 16);
   }, []);
   const [scheduledAt, setScheduledAt] = useState(defaultTime);
-  const [accounts, setAccounts] = useState([]);
-  const [platformAccountId, setPlatformAccountId] = useState('');
+  const [connections, setConnections] = useState([]);
+  const [platformConnectionId, setPlatformConnectionId] = useState('');
   const [job, setJob] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -21,11 +21,11 @@ export default function SchedulePanel({ variant, user, onDone }) {
     if (!variant?.platform || !['approved', 'scheduled', 'published'].includes(variant.status)) return;
 
     api
-      .get(`/api/platform-accounts?platform=${variant.platform}&active=true`)
+      .get(`/api/platform-connections?platform=${variant.platform}`)
       .then(payload => {
-        const matching = (payload.data.accounts || []).filter(account => account.status === 'connected');
-        setAccounts(matching);
-        setPlatformAccountId(current => current || matching[0]?._id || '');
+        const matching = (payload.data.connections || []).filter(connection => connection.status === 'connected');
+        setConnections(matching);
+        setPlatformConnectionId(current => current || matching[0]?._id || '');
       })
       .catch(err => setMessage(err.message));
   }, [variant?.platform, variant?.status]);
@@ -39,9 +39,14 @@ export default function SchedulePanel({ variant, user, onDone }) {
     setMessage('');
     try {
       const iso = new Date(scheduledAt).toISOString();
-      const payload = await api.post('/api/schedule', { variantId: variant._id, platformAccountId, scheduledAt: iso });
-      setJob(payload.data.scheduleJob);
-      setMessage('Schedule job created.');
+      const payload = await api.post('/api/publish/schedule', {
+        variantId: variant._id,
+        platformConnectionId,
+        caption: variant.caption,
+        scheduledAt: iso
+      });
+      setJob(payload.data.publishJob);
+      setMessage('Real publish job scheduled.');
       onDone?.();
     } catch (err) {
       if (err.status === 403) {
@@ -56,17 +61,20 @@ export default function SchedulePanel({ variant, user, onDone }) {
     }
   };
 
-  const runNow = async () => {
-    if (!job?._id) return;
+  const publishNow = async () => {
     setBusy(true);
     setMessage('');
     try {
-      const payload = await api.post(`/api/schedule/${job._id}/run-now`, {});
-      setJob(payload.data.scheduleJob);
-      setMessage(payload.data.scheduleJob.resultMessage || 'Publishing simulator finished.');
+      const payload = await api.post('/api/publish/now', {
+        variantId: variant._id,
+        platformConnectionId,
+        caption: variant.caption
+      });
+      setJob(payload.data.publishJob);
+      setMessage(payload.data.publishJob.errorMessage || `Job status: ${payload.data.publishJob.status}`);
       onDone?.();
     } catch (err) {
-      setMessage(err.status === 403 ? 'Backend blocked publishing: only Creator/Admin can run the simulator.' : err.message);
+      setMessage(err.status === 403 ? 'Backend blocked publishing: only Creator/Admin can publish.' : err.message);
     } finally {
       setBusy(false);
     }
@@ -76,21 +84,21 @@ export default function SchedulePanel({ variant, user, onDone }) {
     <div className="mt-3 rounded-md border border-line bg-ink/70 p-3">
       <div className="flex items-center gap-2 text-sm font-semibold text-white">
         <CalendarClock size={16} />
-        Publishing Simulator
+        Real Publishing
       </div>
-      <p className="mt-1 text-xs text-slate-400">Target a simulated connected {formatPlatform(variant.platform)} account.</p>
+      <p className="mt-1 text-xs text-slate-400">Target a connected {formatPlatform(variant.platform)} account. The backend blocks missing credentials, scopes, or unsupported connector methods.</p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <select
-          value={platformAccountId}
-          onChange={event => setPlatformAccountId(event.target.value)}
+          value={platformConnectionId}
+          onChange={event => setPlatformConnectionId(event.target.value)}
           className="focus-ring rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
         >
-          {accounts.length === 0 ? (
-            <option value="">No matching account</option>
+          {connections.length === 0 ? (
+            <option value="">No connected account</option>
           ) : (
-            accounts.map(account => (
-              <option key={account._id} value={account._id}>
-                {account.accountName} ({account.accountHandle})
+            connections.map(connection => (
+              <option key={connection._id} value={connection._id}>
+                {connection.accountName} ({connection.accountHandle})
               </option>
             ))
           )}
@@ -104,29 +112,27 @@ export default function SchedulePanel({ variant, user, onDone }) {
         <button
           type="button"
           onClick={schedule}
-          disabled={busy || variant.status !== 'approved' || !platformAccountId}
-          className="focus-ring inline-flex items-center gap-2 rounded-md bg-gold px-3 py-2 text-sm font-semibold text-ink"
+          disabled={busy || user?.role !== 'creator_admin' || variant.status !== 'approved' || !platformConnectionId}
+          className="focus-ring inline-flex items-center gap-2 rounded-md bg-gold px-3 py-2 text-sm font-semibold text-ink disabled:opacity-50"
         >
           <CalendarClock size={15} />
           Schedule
         </button>
-        {job && (
-          <button
-            type="button"
-            onClick={runNow}
-            disabled={busy || job.status === 'published'}
-            className="focus-ring inline-flex items-center gap-2 rounded-md bg-mint px-3 py-2 text-sm font-semibold text-ink"
-          >
-            <Send size={15} />
-            Run now
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={publishNow}
+          disabled={busy || user?.role !== 'creator_admin' || variant.status !== 'approved' || !platformConnectionId}
+          className="focus-ring inline-flex items-center gap-2 rounded-md bg-mint px-3 py-2 text-sm font-semibold text-ink disabled:opacity-50"
+        >
+          <Send size={15} />
+          Publish now
+        </button>
       </div>
-      {accounts.length === 0 && <p className="mt-2 text-xs text-gold">Create a connected {formatPlatform(variant.platform)} account before scheduling.</p>}
+      {connections.length === 0 && <p className="mt-2 text-xs text-gold">Connect a real {formatPlatform(variant.platform)} account before scheduling or publishing.</p>}
       {job && (
         <p className="mt-2 text-xs text-slate-400">
           Job status: {job.status}
-          {job.platformAccountSnapshot?.accountHandle ? ` for ${job.platformAccountSnapshot.accountHandle}` : ''}
+          {job.accountSnapshot?.accountHandle ? ` for ${job.accountSnapshot.accountHandle}` : ''}
         </p>
       )}
       {message && <p className="mt-2 text-sm text-slate-300">{message}</p>}

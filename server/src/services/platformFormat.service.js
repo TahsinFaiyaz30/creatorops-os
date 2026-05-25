@@ -129,8 +129,8 @@ export const DEFAULT_PLATFORM_FORMAT_RULES = [
     requirements: ['Keyword phrase', 'Descriptive title', 'Save CTA']
   },
   {
-    platform: 'blog',
-    displayName: 'Blog',
+    platform: 'wordpress',
+    displayName: 'WordPress / Blog',
     maxCaptionLength: 2500,
     maxHashtags: 0,
     recommendedHashtags: [],

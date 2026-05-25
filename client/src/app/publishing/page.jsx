@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Send } from 'lucide-react';
+import Link from 'next/link';
+import { RotateCcw, Send, XCircle } from 'lucide-react';
 import AppShell from '../../components/layout/AppShell';
 import { api } from '../../lib/api';
+import { getSocket } from '../../lib/socket';
 import { getUser } from '../../lib/auth';
 import { formatPlatform } from '../../lib/platforms';
 
-const statusOrder = ['queued', 'processing', 'published', 'failed'];
+const statusOrder = ['queued', 'publishing', 'published', 'failed', 'blocked', 'cancelled'];
 
 export default function PublishingPage() {
   const [user, setUser] = useState(null);
@@ -16,13 +18,17 @@ export default function PublishingPage() {
   const [busyId, setBusyId] = useState('');
 
   const load = async () => {
-    const payload = await api.get('/api/schedule');
-    setJobs(payload.data.scheduleJobs || []);
+    const payload = await api.get('/api/publish/jobs');
+    setJobs(payload.data.publishJobs || []);
   };
 
   useEffect(() => {
     setUser(getUser());
     load().catch(err => setMessage(err.message));
+    const socket = getSocket();
+    const handler = () => load().catch(() => {});
+    socket.on('publishing:job_updated', handler);
+    return () => socket.off('publishing:job_updated', handler);
   }, []);
 
   const grouped = useMemo(
@@ -34,15 +40,29 @@ export default function PublishingPage() {
     [jobs]
   );
 
-  const runNow = async job => {
+  const retry = async job => {
     setBusyId(job._id);
     setMessage('');
     try {
-      await api.post(`/api/schedule/${job._id}/run-now`, {});
-      setMessage('Publishing simulator completed.');
+      await api.post(`/api/publish/jobs/${job._id}/retry`, {});
+      setMessage('Publish job re-queued.');
       await load();
     } catch (err) {
-      setMessage(err.status === 403 ? 'Backend blocked publishing: only Creator/Admin can run the simulator.' : err.message);
+      setMessage(err.message);
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const cancel = async job => {
+    setBusyId(job._id);
+    setMessage('');
+    try {
+      await api.post(`/api/publish/jobs/${job._id}/cancel`, {});
+      setMessage('Publish job cancelled.');
+      await load();
+    } catch (err) {
+      setMessage(err.message);
     } finally {
       setBusyId('');
     }
@@ -53,12 +73,19 @@ export default function PublishingPage() {
       <div className="space-y-6">
         <header className="rounded-lg border border-line bg-panel p-6">
           <p className="text-sm uppercase tracking-[0.18em] text-cyan">Unified publishing center</p>
-          <h1 className="mt-2 text-3xl font-bold text-white">Publishing Simulator</h1>
-          <p className="mt-2 text-sm text-slate-400">Cross-platform schedule jobs grouped by status. Run Now publishes inside the local simulator only.</p>
+          <h1 className="mt-2 text-3xl font-bold text-white">Real Publish Jobs</h1>
+          <p className="mt-2 max-w-4xl text-sm text-slate-400">
+            Jobs only become published after an official connector returns a real provider post id or URL. Missing credentials, scopes, review, or unsupported API methods appear as blocked/failed states.
+          </p>
+          <Link href="/compose" className="focus-ring mt-4 inline-flex items-center gap-2 rounded-md bg-cyan px-3 py-2 text-sm font-semibold text-ink">
+            <Send size={15} />
+            Open Compose
+          </Link>
         </header>
+
         {message && <div className="rounded-md border border-line bg-panel p-3 text-sm text-slate-300">{message}</div>}
 
-        <div className="grid gap-4 xl:grid-cols-4">
+        <div className="grid gap-4 2xl:grid-cols-3">
           {statusOrder.map(status => (
             <section key={status} className="rounded-lg border border-line bg-panel p-4">
               <div className="mb-4 flex items-center justify-between">
@@ -67,7 +94,14 @@ export default function PublishingPage() {
               </div>
               <div className="space-y-3">
                 {(grouped[status] || []).map(job => (
-                  <JobCard key={job._id} job={job} user={user} busy={busyId === job._id} onRunNow={() => runNow(job)} />
+                  <JobCard
+                    key={job._id}
+                    job={job}
+                    user={user}
+                    busy={busyId === job._id}
+                    onRetry={() => retry(job)}
+                    onCancel={() => cancel(job)}
+                  />
                 ))}
                 {(grouped[status] || []).length === 0 && <p className="text-sm text-slate-500">No {status} jobs.</p>}
               </div>
@@ -79,10 +113,9 @@ export default function PublishingPage() {
   );
 }
 
-function JobCard({ job, user, busy, onRunNow }) {
-  const variant = job.variantId || {};
-  const content = job.contentItemId || {};
-  const account = job.platformAccountSnapshot || job.platformAccountId || {};
+function JobCard({ job, user, busy, onRetry, onCancel }) {
+  const account = job.accountSnapshot || job.platformConnectionId || {};
+  const media = job.mediaAssetIds?.[0];
 
   return (
     <article className="rounded-md border border-line bg-ink p-3">
@@ -90,17 +123,35 @@ function JobCard({ job, user, busy, onRunNow }) {
         <span className="rounded-full bg-cyan/10 px-2 py-1 text-xs font-semibold text-cyan">{formatPlatform(job.platform)}</span>
         <span className="text-xs text-slate-500">{new Date(job.scheduledAt).toLocaleString()}</span>
       </div>
-      <h3 className="mt-3 text-sm font-semibold text-white">{content.title || 'Untitled content'}</h3>
-      <p className="mt-2 line-clamp-4 text-xs text-slate-400">{variant.caption}</p>
-      <div className="mt-3 grid gap-1 text-xs text-slate-300">
+      {media?.publicUrl && (
+        <div className="mt-3 aspect-[9/16] max-h-56 overflow-hidden rounded-md border border-line bg-panel">
+          {media.mediaType === 'video' ? (
+            <video src={media.publicUrl} className="h-full w-full object-cover" controls />
+          ) : (
+            <img src={media.publicUrl} alt={media.originalName || 'media'} className="h-full w-full object-cover" />
+          )}
+        </div>
+      )}
+      <p className="mt-3 line-clamp-4 text-xs text-slate-300">{job.caption || job.variantId?.caption || 'No caption'}</p>
+      <div className="mt-3 grid gap-1 text-xs text-slate-400">
         <span>Account: {account.accountName || 'n/a'} {account.accountHandle ? `(${account.accountHandle})` : ''}</span>
-        <span>Adapter: {job.adapterName}</span>
-        {job.resultMessage && <span>Result: {job.resultMessage}</span>}
+        {job.providerPostUrl ? (
+          <a href={job.providerPostUrl} target="_blank" rel="noreferrer" className="text-cyan underline">View on platform</a>
+        ) : (
+          <span>Provider URL: not returned</span>
+        )}
+        {job.errorMessage && <span className="text-rose">Reason: {job.errorMessage}</span>}
       </div>
-      {user?.role === 'creator_admin' && job.status === 'queued' && (
-        <button type="button" onClick={onRunNow} disabled={busy} className="focus-ring mt-3 inline-flex items-center gap-2 rounded-md bg-mint px-3 py-2 text-xs font-semibold text-ink">
-          <Send size={14} />
-          {busy ? 'Running...' : 'Run Now'}
+      {user?.role === 'creator_admin' && ['failed', 'blocked'].includes(job.status) && (
+        <button type="button" onClick={onRetry} disabled={busy} className="focus-ring mt-3 inline-flex items-center gap-2 rounded-md bg-gold px-3 py-2 text-xs font-semibold text-ink">
+          <RotateCcw size={14} />
+          Retry
+        </button>
+      )}
+      {user?.role === 'creator_admin' && ['queued', 'failed', 'blocked'].includes(job.status) && (
+        <button type="button" onClick={onCancel} disabled={busy} className="focus-ring ml-2 mt-3 inline-flex items-center gap-2 rounded-md border border-rose/40 px-3 py-2 text-xs text-rose hover:bg-rose/10">
+          <XCircle size={14} />
+          Cancel
         </button>
       )}
     </article>

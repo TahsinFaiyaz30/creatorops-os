@@ -1,421 +1,94 @@
-# Database Design
+# Database
 
-CreatorOps OS uses MongoDB with Mongoose models. All operational records are scoped by `workspaceId` so teams cannot access another workspace's data.
+All operational records are workspace-scoped unless noted.
 
-## User
+## Core Models
 
-Purpose:
+### User
 
-Stores authenticated users and their role.
+CreatorOps login identity. Stores name, email, password hash, role, and workspace.
 
-Important fields:
+### Workspace
 
-- `name`
-- `email`
-- `passwordHash`
-- `role`
-- `workspaceId`
+Tenant boundary for all campaign, content, connection, publishing, and social records.
 
-Relationships:
+### BrandProfile
 
-- Belongs to one `Workspace`
-- Can create `Campaign`, `ContentItem`, `ApprovalRequest`, `ScheduleJob`, `ContentVersion`, and `WorkflowEvent` records
+Brand rules used by AI scoring and caption generation: brand name, tone, audience, banned words, CTA style, preferred platforms.
 
-Notes:
+### Campaign
 
-- `email` is unique
-- Passwords are hashed before save
-- Roles are `editor` and `creator_admin`
+Campaign container with name, goal, audience, selected platforms, status, and creator.
 
-## Workspace
+### ContentItem
 
-Purpose:
+Raw idea and workflow status. Related to campaign and variants.
 
-Represents the tenant boundary for a creator team.
+### PlatformVariant
 
-Important fields:
+Platform-specific caption, hook, CTA, hashtags, AI provider, brand/readiness scores, warnings, suggestions, and approval/publish status.
 
-- `name`
-- `ownerId`
+### ContentVersion
 
-Relationships:
+Audit snapshot for content/variant changes, approval decisions, publish state changes, and related metadata.
 
-- Owns brand profiles, campaigns, content, variants, approvals, schedules, versions, and events
-- Owner references `User`
+### ApprovalRequest
 
-## BrandProfile
+Review request for a platform variant with requestedBy, reviewedBy, status, and comments.
 
-Purpose:
+### WorkflowEvent
 
-Stores brand guidance used by the AI service and scoring logic.
+Persisted event log used by dashboard and Socket.IO realtime feed.
 
-Important fields:
+## Real Integration Models
 
-- `workspaceId`
-- `brandName`
-- `tone`
-- `targetAudience`
-- `bannedWords`
-- `ctaStyle`
-- `preferredPlatforms`
+### OAuthState
 
-Relationships:
+Random OAuth state tied to user, workspace, platform, redirect URI, PKCE verifier if needed, expiry, and consumed timestamp.
 
-- Belongs to one `Workspace`
-- Used when generating or optimizing `PlatformVariant` records
+### PlatformConnection
 
-## Campaign
+Real connected account metadata:
 
-Purpose:
+- platform
+- connection mode
+- account name/handle/external ID
+- status
+- scopes and missing scopes
+- capabilities
+- encrypted tokens/secrets
+- health check metadata
 
-Groups content work around a goal, audience, and selected platforms.
+Encrypted fields are never returned to the frontend.
 
-Important fields:
+### PlatformFormatRule
 
-- `workspaceId`
-- `name`
-- `goal`
-- `targetAudience`
-- `platforms`
-- `status`
-- `createdBy`
+Platform-specific limits and content requirements: caption length, hashtag count, media support, link support, style, CTA style, requirements.
 
-Relationships:
+### MediaAsset
 
-- Belongs to one `Workspace`
-- Created by a `User`
-- Has many `ContentItem` and `PlatformVariant` records
+Original uploaded image/video metadata. Stores local path privately, public URL, MIME type, size, media type, and crop preview metadata. Original files are not recompressed.
 
-Indexes:
+### PublishJob
 
-- `workspaceId`
-- `status`
-- `createdBy`
+Queued/scheduled publishing work. Tracks connection, media, caption, status, scheduledAt, provider post id/url, errors, retry count, and attempts.
 
-## ContentItem
+### PublishedPost
 
-Purpose:
+Stored only when an official connector returns real publish success. Keeps provider IDs/URLs, account snapshot, media, caption, and publishedAt.
 
-Stores the raw idea and workflow status for content.
+### SocialMetricSnapshot
 
-Important fields:
-
-- `workspaceId`
-- `campaignId`
-- `title`
-- `rawIdea`
-- `status`
-- `createdBy`
-- `assignedTo`
-- `currentVersion`
-
-Relationships:
-
-- Belongs to one `Workspace`
-- Belongs to one `Campaign`
-- Created by a `User`
-- Has many `PlatformVariant` records
-- Has many `ContentVersion` snapshots
-
-Statuses:
-
-- `idea`
-- `draft`
-- `in_review`
-- `approved`
-- `scheduled`
-- `published`
-- `rejected`
-- `changes_requested`
-
-Indexes:
-
-- `workspaceId`
-- `campaignId`
-- `status`
-- `createdAt`
-
-## PlatformVariant
-
-Purpose:
-
-Stores platform-specific generated content.
-
-Important fields:
-
-- `workspaceId`
-- `campaignId`
-- `contentItemId`
-- `platform`
-- `caption`
-- `hook`
-- `cta`
-- `hashtags`
-- `brandScore`
-- `readinessScore`
-- `warnings`
-- `suggestions`
-- `status`
-- `aiProvider`
-
-Relationships:
-
-- Belongs to one `Workspace`
-- Belongs to one `Campaign`
-- Belongs to one `ContentItem`
-- Can have approval requests
-- Can have schedule jobs
-- Can have version snapshots
-
-Supported platforms:
-
-- `facebook`
-- `instagram`
-- `tiktok`
-- `youtube`
-- `youtube_shorts`
-- `threads`
-- `linkedin`
-- `x`
-- `pinterest`
-- `blog`
-- `shopify`
-
-Indexes:
-
-- `workspaceId`
-- `campaignId`
-- `contentItemId`
-- `status`
-- `platform`
-
-## ContentVersion
-
-Purpose:
-
-Stores immutable snapshots for content and variant history.
-
-Important fields:
-
-- `workspaceId`
-- `contentItemId`
-- `variantId`
-- `versionNumber`
-- `snapshot`
-- `changedBy`
-- `changeNote`
-- `createdAt`
-
-Relationships:
-
-- Belongs to one `Workspace`
-- Belongs to one `ContentItem`
-- Optionally belongs to one `PlatformVariant`
-- Created by a `User`
-
-Used for:
+Metrics fetched from official APIs only. Source is always `real`.
 
-- initial content creation
-- content updates
-- AI generated variants
-- optimized variants
-- approval decisions
-- scheduling
-- publishing simulation
-
-## ApprovalRequest
-
-Purpose:
-
-Tracks review requests and creator/admin decisions.
-
-Important fields:
+### SocialComment
 
-- `workspaceId`
-- `contentItemId`
-- `variantId`
-- `requestedBy`
-- `reviewedBy`
-- `status`
-- `comment`
-
-Relationships:
-
-- Belongs to one `Workspace`
-- References one `ContentItem`
-- References one `PlatformVariant`
-- Requested by a `User`
-- Reviewed by a `User`
-
-Statuses:
-
-- `pending`
-- `approved`
-- `rejected`
-- `changes_requested`
-
-Indexes:
-
-- `workspaceId`
-- `status`
-- `requestedBy`
-- `reviewedBy`
-- `workspaceId`, `variantId`, `status`
+Comments fetched from official APIs only. Stores provider comment id, author, text, counts, and raw provider data.
 
-## ScheduleJob
+### SocialReply
 
-Purpose:
+Replies created through the same connected platform account. Stores provider reply id and account snapshot.
 
-Represents a queued or completed publishing simulator job.
-
-Important fields:
-
-- `workspaceId`
-- `contentItemId`
-- `variantId`
-- `platformAccountId`
-- `platformAccountSnapshot`
-- `platform`
-- `scheduledAt`
-- `status`
-- `adapterName`
-- `resultMessage`
-- `createdBy`
+## Legacy Models
 
-Relationships:
-
-- Belongs to one `Workspace`
-- References one `ContentItem`
-- References one `PlatformVariant`
-- References one simulated `PlatformAccount`
-- Created by a `User`
-
-Statuses:
-
-- `queued`
-- `processing`
-- `published`
-- `failed`
-- `cancelled`
-
-Indexes:
-
-- `workspaceId`
-- `status`
-- `scheduledAt`
-- `platformAccountId`
-
-## PlatformAccount
-
-Purpose:
-
-Stores simulated connected platform account profiles for local MVP publishing targets. No OAuth tokens or external API secrets are stored.
-
-Important fields:
-
-- `workspaceId`
-- `platform`
-- `accountName`
-- `accountHandle`
-- `accountType`
-- `status`
-- `isActive`
-- `createdBy`
-
-Relationships:
-
-- Belongs to one `Workspace`
-- Created by a `User`
-- Can be referenced by `ScheduleJob`
-
-Supported account types:
-
-- `brand`
-- `creator`
-- `client`
-- `page`
-- `shop`
-- `blog`
-
-Statuses:
-
-- `connected`
-- `disconnected`
-- `expired`
-- `missing_permissions`
-- `blocked`
-
-Indexes:
-
-- `workspaceId`
-- `platform`
-- `status`
-- `isActive`
-- unique `workspaceId`, `platform`, `accountHandle`
-
-## PlatformFormatRule
-
-Purpose:
-
-Stores platform-specific content rules used by frontend readiness checklists and future optimization workflows.
-
-Important fields:
-
-- `platform`
-- `displayName`
-- `maxCaptionLength`
-- `maxHashtags`
-- `recommendedHashtags`
-- `supportsLongText`
-- `supportsShortVideo`
-- `supportsImage`
-- `supportsLinks`
-- `contentStyle`
-- `ctaStyle`
-- `requirements`
-
-Relationships:
-
-- Referenced by platform value
-- Used by generated `PlatformVariant` UI checks
-
-## WorkflowEvent
-
-Purpose:
-
-Stores the persistent event stream used by the dashboard and realtime feed.
-
-Important fields:
-
-- `workspaceId`
-- `actorId`
-- `eventType`
-- `message`
-- `entityType`
-- `entityId`
-- `metadata`
-- `createdAt`
-
-Relationships:
-
-- Belongs to one `Workspace`
-- Actor references `User`
-- Entity can reference workflow records by type/id
-
-Indexes:
-
-- `workspaceId`
-- `createdAt`
-- `eventType`
-
-Example event types:
-
-- `brand_profile.created`
-- `campaign.created`
-- `content.created`
-- `ai.variants_generated`
-- `approval.requested`
-- `approval.approved`
-- `schedule.created`
-- `schedule.processing`
-- `schedule.published`
+`PlatformAccount` and `ScheduleJob` remain only for backward compatibility with older code paths. The active production-shaped flow uses `PlatformConnection`, `PublishJob`, and `PublishedPost`.

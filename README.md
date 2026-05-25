@@ -1,242 +1,155 @@
 # CreatorOps OS
 
-Content workflow infrastructure for creator teams.
+CreatorOps OS is a production-shaped creator operations workspace for moving content from idea to platform-ready execution with AI adaptation, approval, real account connections, real publish jobs, synced social data, and realtime audit events.
 
-CreatorOps OS turns one raw content idea into platform-specific variants, checks brand fit, routes work through approval, schedules approved content to simulated platform accounts, runs a publishing simulator, and records the whole workflow as realtime events.
+## Pitch
 
-## Short Pitch
+Creator teams do not only need captions. They need an operating system for content: one place to plan campaigns, repurpose ideas, enforce brand rules, approve work, target the right connected account, publish only when official platform APIs allow it, and track what happened.
 
-Creator teams do not only need more content. They need an operating system for moving content from idea to execution without losing brand consistency, accountability, or review control. CreatorOps OS is a local-first MVP that demonstrates that workflow end to end.
-
-## Problem Statement
-
-Creators and small content teams often manage ideas, AI drafts, reviews, platform-specific copy, scheduling, and status tracking across disconnected tools. This creates repeated work, unclear ownership, weak brand consistency, and approval mistakes.
-
-## Solution Overview
-
-CreatorOps OS provides a single workflow:
-
-1. An editor creates a campaign and content idea.
-2. AI repurposes the idea into selected platform variants across the supported Area 1 platforms.
-3. Each variant receives a brand score, readiness score, warnings, suggestions, and provider label.
-4. The editor submits a variant for review.
-5. The backend blocks editors from approving content.
-6. A creator/admin approves, rejects, or requests changes.
-7. Approved content can be scheduled.
-8. A publishing simulator marks scheduled jobs as published.
-9. Version history and realtime events preserve accountability.
-
-## Hackathon Core Areas
+## Core Problem Areas
 
 - Multi-Platform Content Management
 - AI-Powered Content Workflow
 - Creator Team Collaboration Infrastructure
 
-## Why This Is Not Just A Basic Dashboard
+## What Makes It More Than A Dashboard
 
-This project is not a static CRUD dashboard. The backend enforces real workflow rules with JWT authentication, role-based access control, workspace scoping, approval state transitions, version snapshots, event persistence, Socket.IO broadcasts, and an in-process publishing worker. The frontend is a demo console for that infrastructure.
+CreatorOps OS has backend-enforced RBAC, version snapshots, workflow events, encrypted platform credentials, OAuth state validation, connector capability checks, media upload preservation, publish job processing, and social sync routes. It does not fake external platform data. If credentials, scopes, app review, or API access are missing, the system blocks the action and explains why.
 
 ## Key Features
 
-- JWT authentication with seeded demo users
-- Editor and creator/admin roles
-- Workspace-scoped data access
-- Brand profile rules for tone, audience, banned words, CTA style, and preferred platforms
-- Campaign and content idea management
-- AI repurposing into selected platform variants
-- Support for Facebook, Instagram, TikTok, YouTube, YouTube Shorts, Threads, LinkedIn, X, Pinterest, Blog, and Shopify
-- Simulated multi-account management
-- Platform format rules and readiness checklist
-- Optional Gemini and Groq providers
-- Guaranteed JavaScript template fallback when AI keys are missing or providers fail
-- Brand and readiness scoring
-- Warnings and suggestions for generated content
-- Backend-enforced approval workflow
-- Version history for content and variant changes
-- Account-targeted scheduling API for approved variants
-- Unified Publishing page grouped by queued, processing, published, and failed jobs
-- Publishing simulator with platform adapter names and account handles
-- Socket.IO realtime workflow event feed
-- Judge-friendly architecture page in the frontend
-
-## Full Demo Workflow
-
-1. Start MongoDB locally.
-2. Seed demo users.
-3. Start the backend and frontend.
-4. Open `http://localhost:3000`.
-5. Login as Editor.
-6. Create a campaign with selected platforms.
-7. Create or update the brand profile.
-8. Create a raw content idea.
-9. Click AI Repurpose.
-10. Confirm platform variants appear for the selected platforms.
-11. Submit one variant for review.
-12. Try approval as Editor and confirm the backend returns 403.
-13. Logout.
-14. Login as Creator/Admin.
-15. Open Approvals.
-16. Approve one variant.
-17. Reject or request changes on other variants.
-18. Schedule the approved variant.
-19. Run the publishing simulator.
-20. Confirm workflow events and version history.
-21. Open Publishing to see queued/published simulator jobs.
-22. Open Accounts to see simulated connected accounts.
-23. Open Architecture for the judge explanation.
+- Campaigns, brand profiles, content ideas, and platform variants
+- AI repurposing for Facebook, Instagram, TikTok, YouTube, YouTube Shorts, Threads, LinkedIn, X, Pinterest, WordPress/Blog, and Shopify
+- Template AI fallback when Gemini/Groq keys are unavailable
+- Editor and Creator/Admin roles with JWT auth
+- Approval queue with approve, reject, and request changes
+- Draft/version history for content, variants, approvals, and publishing state
+- Real platform connection architecture with encrypted tokens/secrets
+- Official OAuth/API connector layer with honest unavailable states
+- Media upload with original file preservation and 9:16 preview metadata
+- Compose page for account-targeted caption customization and publish scheduling
+- Real publish jobs that only succeed after official API responses
+- Social metrics/comments/replies synced only from official APIs where supported
+- Socket.IO updates for workflow, publishing, and social sync events
+- Public docs for setup, API, architecture, database, security, OAuth, and demo
 
 ## Tech Stack
 
-Frontend:
-
-- Next.js App Router
-- React
-- Tailwind CSS
-- lucide-react
-- socket.io-client
-
-Backend:
-
-- Node.js
-- Express
-- MongoDB
-- Mongoose
-- JWT
-- bcryptjs
-- Socket.IO
-- Optional Gemini and Groq HTTP adapters
+- Frontend: Next.js App Router, React, Tailwind CSS, lucide-react, socket.io-client
+- Backend: Express, MongoDB, Mongoose, JWT, bcrypt, multer, Socket.IO
+- AI: Gemini optional, Groq optional, JavaScript template fallback required
+- Integrations: official platform connector architecture, OAuth/API credential support, encrypted secrets with AES-256-GCM
 
 ## Architecture Overview
 
-CreatorOps OS is a modular monolith. The backend is one Express application with clear service boundaries:
+CreatorOps OS is a modular monolith. The backend is a single Express app with service boundaries for auth, AI, approval, platform connections, media, publishing, social sync, versioning, workflow events, and format rules. It is not pretending to be microservices; it is structured so connectors/workers can be split later when operational load justifies it.
 
-- Auth service
-- Brand profile service
-- Campaign service
-- Content service
-- AI service
-- Approval service
-- Schedule service
-- Versioning service
-- Event service
-- Publishing worker
-- Socket.IO broadcaster
-- Platform account management
-- Platform format rules
-- Campaign tracking summaries
+```text
+Next.js UI
+  -> Express API
+    -> MongoDB/Mongoose
+    -> JWT/RBAC middleware
+    -> AI service with fallback
+    -> Platform connector registry
+    -> Media service
+    -> Publish worker
+    -> Social sync service
+    -> Workflow events
+    -> Socket.IO realtime events
+```
 
-This keeps the MVP simple enough to run locally while still showing production-shaped boundaries that could later move into queues, workers, or separate services.
+## Database Summary
 
-## Database Design Summary
+Core operational models:
 
-MongoDB stores:
+- `User`, `Workspace`
+- `BrandProfile`, `Campaign`, `ContentItem`, `PlatformVariant`
+- `ContentVersion`, `ApprovalRequest`, `WorkflowEvent`
+- `PlatformConnection`, `OAuthState`
+- `PlatformFormatRule`, `MediaAsset`
+- `PublishJob`, `PublishedPost`
+- `SocialMetricSnapshot`, `SocialComment`, `SocialReply`
 
-- `User`: demo users, role, workspace membership
-- `Workspace`: tenant boundary for all workflow records
-- `BrandProfile`: brand voice and platform rules
-- `Campaign`: campaign goal, audience, platforms
-- `ContentItem`: raw ideas and workflow status
-- `PlatformVariant`: platform-specific captions, hooks, CTAs, scores, status
-- `ContentVersion`: immutable snapshots for audit/history
-- `ApprovalRequest`: pending and completed review decisions
-- `ScheduleJob`: queued, processing, published, or failed publishing simulations
-- `WorkflowEvent`: persisted event stream for dashboard and realtime UI
-- `PlatformAccount`: simulated connected platform account profiles
-- `PlatformFormatRule`: platform-specific formatting limits and style rules
+## Auth And RBAC
 
-## Authentication And RBAC
-
-Passwords are hashed with bcrypt before saving. Login returns a JWT signed with `JWT_SECRET`. Protected routes require `Authorization: Bearer <token>`.
-
-Roles:
-
-- `editor`: creates campaigns/content, runs AI repurpose, submits draft variants for review
-- `creator_admin`: reviews approvals, schedules approved content, runs publishing simulator
-
-Important backend rules:
-
-- Editors cannot approve, reject, request changes as reviewer, schedule, or publish.
-- Frontend buttons may hide actions, but backend middleware and services still enforce the rules.
-- All workflow queries are scoped to `req.user.workspaceId`.
+Users authenticate with CreatorOps credentials. Social platforms are never connected with platform passwords. Editors can create content and request approval. Creator/Admin users can approve, connect platform accounts, publish/schedule, sync social data, and reply to comments. Backend middleware enforces these rules even if UI buttons are hidden.
 
 ## AI Provider And Fallback
 
-The AI service tries providers according to environment configuration:
+AI generation tries Gemini/Groq when configured. If keys are missing, providers fail, time out, rate limit, or return malformed data, the backend returns a valid structured template result. This fallback is allowed for local caption generation; it is not used to fake external publishing, analytics, comments, replies, or social outcomes.
 
-- `AI_PROVIDER=auto`: Gemini, then Groq, then template fallback
-- `AI_PROVIDER=gemini`: Gemini, then template fallback
-- `AI_PROVIDER=groq`: Groq, then template fallback
+## Real Platform Integrations
 
-The demo does not require paid APIs, credit cards, local LLMs, Ollama, or GPU setup. If keys are missing, a provider times out, returns invalid data, rate limits, or fails, the backend returns a valid structured template fallback response.
+Supported platform surfaces:
 
-Each generated variant includes:
+- Facebook Page
+- Instagram professional account
+- TikTok creator account
+- YouTube channel
+- YouTube Shorts through YouTube channel
+- Threads account
+- LinkedIn profile/page
+- X account
+- Pinterest account/board
+- WordPress/Blog site
+- Shopify content
 
-- platform
-- caption
-- hook
-- CTA
-- hashtags
-- brandScore
-- readinessScore
-- warnings
-- suggestions
-- aiProvider
-- status
+Connections require official OAuth credentials or server-side API credentials. Tokens and application passwords are encrypted at rest with `ENCRYPTION_KEY`. Secrets are never returned to the frontend.
 
-## Approval Workflow
+## Publishing Rules
 
-Editors submit draft platform variants for review. Creator/admin users can:
+Publishing uses `/api/publish/*` and `PublishJob` records. A job can be:
 
-- approve
-- reject
-- request changes
+- `queued`
+- `publishing`
+- `published`
+- `failed`
+- `blocked`
+- `cancelled`
 
-Duplicate pending approval requests are blocked. Every approval action creates a workflow event and a version snapshot.
+`published` means an official connector returned a real provider response. If a connector is not configured, lacks permission, requires platform review, or does not support a feature, the job is blocked or failed with a readable reason.
 
-## Scheduling And Publishing Simulator
+## Realtime Events
 
-Only creator/admin users can schedule approved variants. Scheduling targets a matching simulated platform account, creates a `ScheduleJob`, sets content/variant status to `scheduled`, and records a version snapshot.
+Persisted workflow events are emitted as `workflow:event`. Publishing and social sync also emit:
 
-The publishing worker checks queued jobs and simulates platform publishing. The demo also includes a Run Now button so judges do not have to wait. Publishing updates the job, variant, content item, versions, and workflow events. No real social platform APIs are called.
+- `publishing:job_updated`
+- `social:metrics_updated`
+- `social:comments_synced`
+- `social:reply_created`
 
-Example simulator result:
+The UI still works through API fetches if Socket.IO is disconnected.
 
-```text
-Published successfully to @codesprint_main via InstagramAdapterSimulator
-```
-
-## Realtime Event System
-
-Workflow events are always saved to MongoDB first. After persistence, the backend emits a `workflow:event` Socket.IO event if the socket server is available. The frontend also fetches persisted events, so the demo still works if realtime connection is unavailable.
-
-## Setup Instructions
-
-Prerequisites:
-
-- Node.js
-- npm
-- MongoDB running locally
+## Setup
 
 Install dependencies:
 
 ```powershell
 cd server
 npm install
-
 cd ../client
 npm install
 ```
 
-Create environment files:
+Create `server/.env` from `server/.env.example` and set at minimum:
 
-```powershell
-Copy-Item server/.env.example server/.env
-Copy-Item client/.env.example client/.env
+```env
+PORT=5000
+MONGO_URI=mongodb://127.0.0.1:27017/creatorops_os
+JWT_SECRET=replace_with_long_random_secret
+CLIENT_URL=http://localhost:3000
+PUBLIC_BASE_URL=http://localhost:5000
+ENCRYPTION_KEY=replace_with_long_random_secret_or_64_hex_chars
 ```
 
-Edit `server/.env` and set a local `JWT_SECRET`. AI keys are optional.
+Create `client/.env` from `client/.env.example`:
 
-Seed demo users:
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5000
+NEXT_PUBLIC_SOCKET_URL=http://localhost:5000
+```
+
+Seed demo CreatorOps users:
 
 ```powershell
 cd server
@@ -250,178 +163,98 @@ cd server
 npm run dev
 ```
 
-Run frontend in a second terminal:
+Run frontend:
 
 ```powershell
 cd client
 npm run dev
 ```
 
-Open:
-
-```text
-http://localhost:3000
-```
-
-## Environment Variables
-
-Server:
-
-```env
-PORT=5000
-MONGO_URI=mongodb://127.0.0.1:27017/creatorops_os
-JWT_SECRET=replace_with_long_random_secret
-JWT_EXPIRES_IN=7d
-CLIENT_URL=http://localhost:3000
-NODE_ENV=development
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-3.5-flash
-GROQ_API_KEY=
-AI_PROVIDER=auto
-AI_FALLBACK=template
-AI_TIMEOUT_MS=8000
-```
-
-Client:
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:5000
-NEXT_PUBLIC_SOCKET_URL=http://localhost:5000
-```
+Open `http://localhost:3000`.
 
 ## Demo Credentials
 
 Editor:
 
-```text
-editor@creatorops.dev / password123
-```
+- `editor@creatorops.dev`
+- `password123`
 
 Creator/Admin:
 
-```text
-admin@creatorops.dev / password123
-```
+- `admin@creatorops.dev`
+- `password123`
 
-## API Route Summary
+## API Summary
 
-Auth:
+- Auth: `/api/auth/*`
+- Brand Profile: `/api/brand-profile`
+- Campaigns: `/api/campaigns`
+- Content: `/api/content`
+- AI: `/api/ai/*`
+- Approvals: `/api/approvals/*`
+- Platform connections: `/api/platform-connections/*`
+- OAuth: `/api/oauth/:platform/start`, `/api/oauth/:platform/callback`
+- Media: `/api/media/*`
+- Publish: `/api/publish/*`
+- Social: `/api/social/*`
+- Events: `/api/events`
+- Platform formats: `/api/platform-formats`
 
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `GET /api/auth/me`
+## Demo Workflow
 
-Brand Profile:
-
-- `GET /api/brand-profile`
-- `POST /api/brand-profile`
-- `PATCH /api/brand-profile`
-
-Campaigns:
-
-- `POST /api/campaigns`
-- `GET /api/campaigns`
-- `GET /api/campaigns/:id/tracking`
-- `GET /api/campaigns/:id/publish-summary`
-- `GET /api/campaigns/:id`
-
-Content:
-
-- `POST /api/content`
-- `GET /api/content/campaign/:campaignId`
-- `PATCH /api/content/:id`
-- `PATCH /api/content/:id/status`
-- `GET /api/content/:id/versions`
-- `GET /api/content/:id/variants`
-
-Platform Accounts:
-
-- `POST /api/platform-accounts`
-- `GET /api/platform-accounts`
-- `GET /api/platform-accounts/:id`
-- `PATCH /api/platform-accounts/:id`
-- `DELETE /api/platform-accounts/:id`
-
-Platform Formats:
-
-- `GET /api/platform-formats`
-- `GET /api/platform-formats/:platform`
-
-AI:
-
-- `POST /api/ai/repurpose`
-- `POST /api/ai/optimize`
-
-Approvals:
-
-- `POST /api/approvals/request`
-- `GET /api/approvals/pending`
-- `POST /api/approvals/:id/approve`
-- `POST /api/approvals/:id/reject`
-- `POST /api/approvals/:id/request-changes`
-
-Schedule:
-
-- `POST /api/schedule`
-- `GET /api/schedule`
-- `POST /api/schedule/:id/run-now`
-
-Events:
-
-- `GET /api/events`
-
-Full route details are in [docs/API.md](docs/API.md).
-
-Area 1 completion details are in [docs/AREA1_COMPLETION.md](docs/AREA1_COMPLETION.md).
+1. Login as Editor.
+2. Create a campaign.
+3. Create or update a brand profile.
+4. Create a content idea.
+5. Generate platform variants with AI.
+6. Submit a variant for review.
+7. Show editor approval attempt blocked with backend `403`.
+8. Login as Creator/Admin.
+9. Approve a variant.
+10. Open Accounts and connect a real platform if credentials are configured.
+11. Open Compose or the approved campaign variant.
+12. Upload media or write a text caption.
+13. Customize captions with AI per connected account.
+14. Validate, publish now, or schedule.
+15. Show blocked state when credentials/scopes/app review are missing.
+16. If a real connector succeeds, sync analytics/comments and reply through the same account.
+17. Show live events and version history.
+18. Open Architecture for judge explanation.
 
 ## Testing Checklist
 
-- `npm run seed` succeeds in `server/`
-- Backend starts with `npm run dev`
-- Frontend builds with `npm run build`
-- Frontend starts with `npm run dev`
-- Editor login works
-- Creator/Admin login works
-- Campaign creation works
-- Brand profile save works
-- Content idea creation works
-- AI repurpose returns variants for every selected supported platform
-- Platform accounts page lists seeded simulated accounts
-- Platform format checklist appears on generated variants
-- Editor approval attempt returns 403
-- Admin approval queue loads
-- Admin approve/reject/request changes work
-- Scheduling creates a queued job
-- Schedule job targets a matching platform account
-- Run Now marks job published
-- Publishing page shows queued/published simulator jobs
-- Campaign tracking panel shows real stored counts
-- Workflow events appear
-- Version history appears
-- Architecture page loads
+- Backend syntax check passes with `node --check`
+- `npm run seed` passes
+- Server starts with empty platform credentials
+- OAuth start for missing credentials returns not configured
+- Tokens/secrets are never returned in connection responses
+- Media upload stores original file and returns public URL
+- AI repurpose and caption customization work without AI keys
+- Publish validation blocks unconnected or unsupported platforms
+- Existing login/campaign/AI/approval/versioning flow still works
+- Frontend build passes
+- Accounts page has no password field and no simulated add-account form
+- Compose page previews media at 9:16 by default
+- Publishing page shows real job states only
+- Analytics page shows real synced data or honest unavailable states
 
 ## Known Limitations
 
-- No deployment is included.
-- No real external social or commerce platform publishing is performed.
-- Platform accounts are simulated local profiles and do not store OAuth tokens.
-- The worker is in-process and meant for local demo reliability.
-- Analytics are intentionally minimal.
-- Media asset upload/storage is not included.
-- Frontend state management is simple and demo-focused.
-- AI provider keys are optional; template fallback is the guaranteed path.
+- Real publishing requires developer credentials, scopes, and sometimes platform app review.
+- Local uploads must be reachable through `PUBLIC_BASE_URL` for APIs that require public media URLs.
+- Some connectors are partial because platform APIs restrict publishing, metrics, comments, or replies by product access.
+- The worker is in-process for the hackathon MVP; production should use a durable queue.
+- The app is not deployed by default.
 
-## Future Roadmap
+## Roadmap
 
-- Real platform publishing adapters
-- Redis and BullMQ for distributed scheduling jobs
+- Redis/BullMQ publishing and sync queues
+- Object storage/CDN for media
 - Workspace socket rooms
-- Media asset storage
-- Analytics ingestion and campaign performance reports
-- Approval notifications
-- CI/CD and deployment pipeline
-- More roles and granular permissions
+- Per-platform account selection during OAuth callback
+- Advanced analytics pipeline
+- CI/CD, monitoring, and deployment hardening
 
-## Why Should We Choose This Project?
+## Why Choose This Project?
 
-CreatorOps OS solves the real operational problem behind creator teams: moving content from idea to platform-ready execution with approval, brand consistency, scheduling, and accountability. It connects AI generation, workflow control, role-based review, version history, realtime events, and scheduling into one end-to-end system. The MVP is simple enough to run locally but deep enough to show backend engineering, product thinking, and a realistic path to production.
+CreatorOps OS is not just another content dashboard. It solves the real operational problem behind creator teams: moving content from idea to platform-ready execution with approval, brand consistency, scheduling, and accountability. Most tools focus on either AI generation or publishing. This system connects the whole workflow while refusing to fake external outcomes. It demonstrates backend depth through authentication, RBAC, encrypted platform connections, OAuth state handling, modular connector services, media upload, versioning, workflow events, Socket.IO realtime updates, and a real publish job worker.

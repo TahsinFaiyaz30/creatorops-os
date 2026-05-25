@@ -2,19 +2,103 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const parseClientUrls = () => {
+  const primary = process.env.CLIENT_URL || 'http://localhost:3000';
+  const rawUrls = process.env.CLIENT_URLS || primary;
+  const extractedUrls = rawUrls.match(/https?:\/\/[^\s,\])]+/g);
+  const urls = (extractedUrls || rawUrls.split(','))
+    .map(url => url.trim().replace(/^[\[(]+|[\])]+$/g, ''))
+    .filter(Boolean)
+    .map(url => {
+      try {
+        return new URL(url).origin;
+      } catch (_error) {
+        return '';
+      }
+    })
+    .filter(Boolean);
+
+  return [...new Set([primary, ...(urls.length ? urls : [])])];
+};
+
+const clientUrls = parseClientUrls();
+
 const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT || 5000),
   mongoUri: process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/creatorops_os',
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
+  clientUrl: process.env.CLIENT_URL || clientUrls[0],
+  clientUrls,
+  publicBaseUrl: process.env.PUBLIC_BASE_URL || 'http://localhost:5000',
+  encryptionKey: process.env.ENCRYPTION_KEY || '',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
   geminiModel: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
   groqApiKey: process.env.GROQ_API_KEY || '',
   aiProvider: (process.env.AI_PROVIDER || 'auto').toLowerCase(),
   aiFallback: process.env.AI_FALLBACK || 'template',
-  aiTimeoutMs: Number(process.env.AI_TIMEOUT_MS || 8000)
+  aiTimeoutMs: Number(process.env.AI_TIMEOUT_MS || 8000),
+  oauth: {
+    meta: {
+      appId: process.env.META_APP_ID || '',
+      appSecret: process.env.META_APP_SECRET || '',
+      redirectUri: process.env.META_REDIRECT_URI || 'http://localhost:5000/api/oauth/meta/callback'
+    },
+    facebook: {
+      appId: process.env.FACEBOOK_APP_ID || process.env.META_APP_ID || '',
+      appSecret: process.env.FACEBOOK_APP_SECRET || process.env.META_APP_SECRET || '',
+      redirectUri: process.env.FACEBOOK_REDIRECT_URI || 'http://localhost:5000/api/oauth/facebook/callback'
+    },
+    instagram: {
+      appId: process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID || '',
+      appSecret: process.env.INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET || '',
+      redirectUri: process.env.INSTAGRAM_REDIRECT_URI || 'http://localhost:5000/api/oauth/instagram/callback'
+    },
+    threads: {
+      appId: process.env.THREADS_APP_ID || '',
+      appSecret: process.env.THREADS_APP_SECRET || '',
+      redirectUri: process.env.THREADS_REDIRECT_URI || 'http://localhost:5000/api/oauth/threads/callback'
+    },
+    tiktok: {
+      clientKey: process.env.TIKTOK_CLIENT_KEY || '',
+      clientSecret: process.env.TIKTOK_CLIENT_SECRET || '',
+      redirectUri: process.env.TIKTOK_REDIRECT_URI || 'http://localhost:5000/api/oauth/tiktok/callback'
+    },
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+      redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/oauth/google/callback'
+    },
+    linkedin: {
+      clientId: process.env.LINKEDIN_CLIENT_ID || '',
+      clientSecret: process.env.LINKEDIN_CLIENT_SECRET || '',
+      redirectUri: process.env.LINKEDIN_REDIRECT_URI || 'http://localhost:5000/api/oauth/linkedin/callback',
+      apiVersion: process.env.LINKEDIN_API_VERSION || '202405'
+    },
+    x: {
+      clientId: process.env.X_CLIENT_ID || '',
+      clientSecret: process.env.X_CLIENT_SECRET || '',
+      redirectUri: process.env.X_REDIRECT_URI || 'http://127.0.0.1:5000/api/oauth/x/callback'
+    },
+    pinterest: {
+      clientId: process.env.PINTEREST_CLIENT_ID || '',
+      clientSecret: process.env.PINTEREST_CLIENT_SECRET || '',
+      redirectUri: process.env.PINTEREST_REDIRECT_URI || 'http://localhost:5000/api/oauth/pinterest/callback'
+    },
+    wordpress: {
+      baseUrl: process.env.WORDPRESS_BASE_URL || '',
+      username: process.env.WORDPRESS_USERNAME || '',
+      appPassword: process.env.WORDPRESS_APP_PASSWORD || ''
+    },
+    shopify: {
+      shopDomain: process.env.SHOPIFY_SHOP_DOMAIN || '',
+      adminAccessToken: process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || '',
+      apiKey: process.env.SHOPIFY_API_KEY || '',
+      apiSecret: process.env.SHOPIFY_API_SECRET || '',
+      redirectUri: process.env.SHOPIFY_REDIRECT_URI || 'http://localhost:5000/api/oauth/shopify/callback'
+    }
+  }
 };
 
 export const validateEnv = () => {

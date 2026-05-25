@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { BarChart3, GitBranch, LayoutDashboard, LogOut, RadioTower, Send, ShieldCheck } from 'lucide-react';
+import { BarChart3, Edit3, GitBranch, LayoutDashboard, LogOut, RadioTower, Send, ShieldCheck } from 'lucide-react';
 import RoleBadge from './RoleBadge';
 import { clearSession } from '../../lib/auth';
 
@@ -10,7 +10,9 @@ const links = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/campaigns', label: 'Campaigns', icon: GitBranch },
   { href: '/accounts', label: 'Accounts', icon: RadioTower },
+  { href: '/compose', label: 'Compose', icon: Edit3 },
   { href: '/publishing', label: 'Publishing', icon: Send },
+  { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/approvals', label: 'Approvals', icon: ShieldCheck },
   { href: '/architecture', label: 'Architecture', icon: BarChart3 }
 ];

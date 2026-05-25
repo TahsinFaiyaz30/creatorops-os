@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express from 'express';
+import path from 'path';
 
 import env from './config/env.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
@@ -10,20 +11,39 @@ import brandRoutes from './routes/brand.routes.js';
 import campaignRoutes from './routes/campaign.routes.js';
 import contentRoutes from './routes/content.routes.js';
 import eventRoutes from './routes/event.routes.js';
-import platformAccountRoutes from './routes/platformAccount.routes.js';
+import mediaRoutes from './routes/media.routes.js';
+import oauthRoutes from './routes/oauth.routes.js';
+import platformConnectionRoutes from './routes/platformConnection.routes.js';
 import platformFormatRoutes from './routes/platformFormat.routes.js';
+import publishRoutes from './routes/publish.routes.js';
 import scheduleRoutes from './routes/schedule.routes.js';
+import socialRoutes from './routes/social.routes.js';
 
 const app = express();
 
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    if (env.clientUrls.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error('CORS origin is not allowed.'));
+  },
+  credentials: true
+};
+
 app.use(
-  cors({
-    origin: env.clientUrl,
-    credentials: true
-  })
+  cors(corsOptions)
 );
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 app.get('/health', (_req, res) => {
   res.json({
@@ -39,9 +59,13 @@ app.use('/api/brand-profile', brandRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/events', eventRoutes);
-app.use('/api/platform-accounts', platformAccountRoutes);
+app.use('/api/media', mediaRoutes);
+app.use('/api/oauth', oauthRoutes);
+app.use('/api/platform-connections', platformConnectionRoutes);
 app.use('/api/platform-formats', platformFormatRoutes);
+app.use('/api/publish', publishRoutes);
 app.use('/api/schedule', scheduleRoutes);
+app.use('/api/social', socialRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

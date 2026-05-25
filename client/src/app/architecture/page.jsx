@@ -12,12 +12,12 @@ const blocks = [
   ['MongoDB', 'Workspace-scoped operational records'],
   ['JWT + RBAC', 'Backend-enforced editor and creator_admin permissions'],
   ['AI service', 'Gemini/Groq optional with template-fallback guarantee'],
-  ['Platform accounts', 'Simulated workspace accounts without OAuth secrets'],
+  ['Platform connections', 'Official OAuth/API connection records with encrypted tokens'],
   ['Format rules', 'Platform limits and readiness checklist'],
   ['Approval service', 'Review queue with comments and audit events'],
-  ['Scheduling worker', 'Account-targeted queued publishing simulator'],
-  ['Campaign tracking', 'Stored counts by status, platform, account, and schedule job'],
-  ['Socket.IO', 'workflow:event stream after persisted events']
+  ['Publishing worker', 'Queued real connector jobs that block when credentials/scopes are missing'],
+  ['Campaign tracking', 'Stored counts by status, platform, connection, publish job, and synced metrics'],
+  ['Socket.IO', 'workflow:event plus publishing/social realtime updates']
 ];
 
 export default function ArchitecturePage() {
@@ -32,8 +32,8 @@ export default function ArchitecturePage() {
             scheduling, and accountability for creator teams.
           </p>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
-            Area 1 is completed as a simulated local MVP across Facebook, Instagram, TikTok, YouTube,
-            YouTube Shorts, Threads, LinkedIn, X, Pinterest, Blog, and Shopify.
+            Area 1 now uses a real platform-integration architecture across Facebook, Instagram, TikTok,
+            YouTube, YouTube Shorts, Threads, LinkedIn, X, Pinterest, WordPress/Blog, and Shopify.
           </p>
         </header>
 
@@ -66,16 +66,17 @@ export default function ArchitecturePage() {
               <li>No local LLM, no Ollama, no GPU dependency.</li>
               <li>AI fallback keeps the workflow alive without API keys.</li>
               <li>Events persist before realtime broadcast.</li>
-              <li>Publishing language is explicit: simulator only, no real external posting.</li>
+              <li>Publishing never fakes success; missing API access is shown as blocked or unavailable.</li>
+              <li>Social tokens are encrypted at rest and never returned to the frontend.</li>
             </ul>
           </div>
           <div className="rounded-lg border border-line bg-panel p-5">
             <h2 className="text-xl font-semibold text-white">Future scaling</h2>
             <ul className="mt-3 space-y-2 text-sm text-slate-400">
               <li>Move worker jobs to Redis/BullMQ.</li>
-              <li>Add real OAuth and publishing adapters per platform.</li>
-              <li>Add analytics ingestion and performance clustering.</li>
-              <li>Add media asset storage and campaign reporting.</li>
+              <li>Complete app review and production scopes per platform.</li>
+              <li>Add deeper analytics ingestion and performance clustering.</li>
+              <li>Move media from local uploads to object storage/CDN.</li>
               <li>Split services only when operational load requires it.</li>
             </ul>
           </div>

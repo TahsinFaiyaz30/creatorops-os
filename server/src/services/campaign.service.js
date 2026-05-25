@@ -1,7 +1,10 @@
 import Campaign from '../models/Campaign.js';
 import ContentItem from '../models/ContentItem.js';
 import PlatformVariant from '../models/PlatformVariant.js';
-import ScheduleJob from '../models/ScheduleJob.js';
+import PublishedPost from '../models/PublishedPost.js';
+import PublishJob from '../models/PublishJob.js';
+import SocialComment from '../models/SocialComment.js';
+import SocialMetricSnapshot from '../models/SocialMetricSnapshot.js';
 import WorkflowEvent from '../models/WorkflowEvent.js';
 import { normalizePlatforms } from '../constants/platforms.js';
 import { createWorkflowEvent } from './event.service.js';
@@ -93,34 +96,38 @@ export const getCampaignTracking = async (user, campaignId) => {
     workspaceId: user.workspaceId,
     campaignId: campaign._id
   };
-  const scheduleMatch = {
+  const publishMatch = {
     workspaceId: user.workspaceId,
-    contentItemId: { $in: contentItemIds }
+    campaignId: campaign._id
   };
 
   const [
     totalVariants,
     variantsByStatus,
     platformBreakdown,
-    totalScheduleJobs,
-    scheduleJobsByStatus,
+    totalPublishJobs,
+    publishJobsByStatus,
+    publishedPostCount,
     accountRows,
     latestWorkflowEvents,
-    publishedJobs
+    publishedPosts,
+    metricRows,
+    latestComments
   ] = await Promise.all([
     PlatformVariant.countDocuments(variantMatch),
     countByField({ Model: PlatformVariant, match: variantMatch, field: 'status' }),
     countByField({ Model: PlatformVariant, match: variantMatch, field: 'platform' }),
-    ScheduleJob.countDocuments(scheduleMatch),
-    countByField({ Model: ScheduleJob, match: scheduleMatch, field: 'status' }),
-    ScheduleJob.aggregate([
-      { $match: scheduleMatch },
+    PublishJob.countDocuments(publishMatch),
+    countByField({ Model: PublishJob, match: publishMatch, field: 'status' }),
+    PublishedPost.countDocuments(publishMatch),
+    PublishJob.aggregate([
+      { $match: publishMatch },
       {
         $group: {
           _id: {
-            platform: '$platformAccountSnapshot.platform',
-            accountName: '$platformAccountSnapshot.accountName',
-            accountHandle: '$platformAccountSnapshot.accountHandle'
+            platform: '$accountSnapshot.platform',
+            accountName: '$accountSnapshot.accountName',
+            accountHandle: '$accountSnapshot.accountHandle'
           },
           count: { $sum: 1 }
         }
@@ -136,10 +143,37 @@ export const getCampaignTracking = async (user, campaignId) => {
     })
       .sort({ createdAt: -1 })
       .limit(10),
-    ScheduleJob.find({
-      ...scheduleMatch,
+    PublishedPost.find({
+      ...publishMatch,
       status: 'published'
-    }).select('platform resultMessage platformAccountSnapshot createdAt')
+    }).select('platform providerPostUrl providerPostId accountSnapshot publishedAt'),
+    SocialMetricSnapshot.aggregate([
+      {
+        $lookup: {
+          from: 'publishedposts',
+          localField: 'publishedPostId',
+          foreignField: '_id',
+          as: 'post'
+        }
+      },
+      { $unwind: '$post' },
+      { $match: { workspaceId: user.workspaceId, 'post.campaignId': campaign._id } },
+      {
+        $group: {
+          _id: null,
+          likes: { $sum: '$likes' },
+          reactions: { $sum: '$reactions' },
+          comments: { $sum: '$comments' },
+          shares: { $sum: '$shares' },
+          views: { $sum: '$views' },
+          saves: { $sum: '$saves' },
+          snapshots: { $sum: 1 }
+        }
+      }
+    ]),
+    SocialComment.find({ workspaceId: user.workspaceId, publishedPostId: { $exists: true } })
+      .sort({ createdAt: -1 })
+      .limit(10)
   ]);
 
   const accountBreakdown = accountRows.reduce((counts, row) => {
@@ -159,17 +193,36 @@ export const getCampaignTracking = async (user, campaignId) => {
     totalContentItems: contentItems.length,
     totalVariants,
     variantsByStatus,
-    scheduleJobsByStatus,
-    totalScheduleJobs,
+    publishJobsByStatus,
+    totalPublishJobs,
+    publishedPostCount,
     platformBreakdown,
     accountBreakdown,
     latestWorkflowEvents,
-    publishedJobResultMessages: publishedJobs.map(job => ({
-      platform: job.platform,
-      resultMessage: job.resultMessage,
-      account: job.platformAccountSnapshot,
-      createdAt: job.createdAt
+    publishedJobResultMessages: publishedPosts.map(post => ({
+      platform: post.platform,
+      resultMessage: post.providerPostUrl
+        ? `Published through official API: ${post.providerPostUrl}`
+        : 'Published through official API; provider URL was not returned.',
+      account: post.accountSnapshot,
+      createdAt: post.publishedAt
     })),
-    providerPostUrls: []
+    providerPostUrls: publishedPosts
+      .filter(post => post.providerPostUrl)
+      .map(post => ({ platform: post.platform, url: post.providerPostUrl, providerPostId: post.providerPostId })),
+    syncedMetrics: metricRows[0] || {
+      likes: 0,
+      reactions: 0,
+      comments: 0,
+      shares: 0,
+      views: 0,
+      saves: 0,
+      snapshots: 0
+    },
+    latestComments,
+    analyticsUnavailableMessage:
+      metricRows.length === 0
+        ? 'Analytics unavailable until synced from connected platforms with official API permissions.'
+        : ''
   };
 };

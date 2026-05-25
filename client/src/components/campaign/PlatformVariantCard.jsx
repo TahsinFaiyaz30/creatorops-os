@@ -33,10 +33,10 @@ export default function PlatformVariantCard({ variant, user, onRefresh }) {
 
     Promise.allSettled([
       api.get(`/api/platform-formats/${localVariant.platform}`),
-      api.get(`/api/platform-accounts?platform=${localVariant.platform}&active=true`)
+      api.get(`/api/platform-connections?platform=${localVariant.platform}`)
     ]).then(results => {
       setFormatRule(results[0].value?.data?.rule || null);
-      setMatchingAccounts((results[1].value?.data?.accounts || []).filter(account => account.status === 'connected'));
+      setMatchingAccounts((results[1].value?.data?.connections || []).filter(account => account.status === 'connected'));
     });
   }, [localVariant?.platform]);
 
@@ -193,7 +193,7 @@ function FormatChecklist({ variant, rule, accountAvailable }) {
     ['CTA exists', Boolean(variant.cta)],
     ['Hashtags within limit', hashtagCount <= rule.maxHashtags],
     ['Caption within limit', captionLength <= rule.maxCaptionLength],
-    ['Platform account available', accountAvailable],
+    ['Real connected account available', accountAvailable],
     ['Approved before publishing', ['approved', 'scheduled', 'published'].includes(variant.status)]
   ];
 

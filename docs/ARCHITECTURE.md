@@ -1,161 +1,89 @@
 # Architecture
 
-CreatorOps OS is a modular monolith. It runs as one Express API and one Next.js frontend, but the backend is organized around clear service boundaries instead of large route handlers.
+CreatorOps OS is a modular monolith. That choice is intentional: the hackathon MVP needs real workflow depth, not fake microservice boundaries. Each major domain has its own model, service, controller, and route layer, so it can be split later if load demands it.
 
-## Why Modular Monolith
+## Components
 
-This MVP does not pretend to be microservices. The app runs locally, uses one MongoDB database, and keeps deployment simple. The architecture still separates responsibilities so future extraction is possible when there is real operational pressure.
+- Next.js App Router frontend
+- Express API
+- MongoDB/Mongoose persistence
+- JWT authentication
+- RBAC middleware
+- AI service with Gemini/Groq/template fallback
+- Approval service
+- Platform connector registry
+- OAuth state service
+- AES-256-GCM encryption service
+- Media upload service
+- Publish job service and worker
+- Social sync service
+- Workflow event service
+- Socket.IO realtime stream
 
-This gives the hackathon demo:
-
-- simple local setup
-- fewer moving parts
-- real backend depth
-- clean boundaries for future scaling
-
-## System Components
-
-### Next.js Frontend
-
-The frontend provides the browser demo for editors and creator/admins:
-
-- login
-- dashboard
-- campaigns
-- campaign detail workflow
-- platform accounts
-- unified publishing center
-- approvals
-- scheduling
-- live workflow events
-- architecture page
-
-### Express Backend
-
-The Express API exposes workflow routes and delegates business logic to services. Controllers stay thin; services own validation, state changes, events, and versioning.
-
-### MongoDB And Mongoose
-
-MongoDB stores workspace-scoped records for users, campaigns, content, variants, platform accounts, platform format rules, approvals, schedules, versions, and workflow events. Mongoose models define relationships, indexes, enums, and timestamps.
-
-### JWT Auth
-
-Login returns a JWT. Protected routes require a bearer token. The auth middleware loads the user and attaches it to `req.user`.
-
-### RBAC Middleware
-
-Role middleware protects admin-only routes. Services also enforce business rules so the backend remains authoritative even if the frontend hides or shows the wrong button.
-
-### AI Service
-
-The AI service supports:
-
-- Gemini when configured
-- Groq when configured
-- JavaScript template fallback
-
-Provider failure never breaks the demo. The service always returns valid structured variants.
-
-### Platform Account Service
-
-The platform account service manages simulated connected accounts for Facebook, Instagram, TikTok, YouTube, YouTube Shorts, Threads, LinkedIn, X, Pinterest, Blog, and Shopify. It stores no OAuth tokens or external API secrets.
-
-### Platform Format Service
-
-The platform format service exposes caption limits, hashtag limits, media capability flags, platform style guidance, CTA guidance, and readiness checklist data.
-
-### Approval Service
-
-The approval service manages pending review requests and creator/admin decisions. It blocks duplicate pending requests, updates variant/content status, writes version snapshots, and creates workflow events.
-
-### Scheduling Service
-
-The scheduling service creates queued jobs for approved variants and marks content/variants as scheduled. It requires a matching active platform account, stores an account snapshot, and assigns simulator adapter names based on platform.
-
-### Publishing Worker
-
-The worker polls queued jobs and simulates publishing. It marks jobs processing, then published or failed, while creating events and versions.
-
-### Socket.IO Realtime Event Stream
-
-Workflow events are persisted first, then emitted as `workflow:event`. If no socket client is connected, persistence still succeeds.
-
-## Main Workflow Diagram
+## Workflow
 
 ```text
 Editor
-  |
-  v
-Create Campaign
-  |
-  v
-Create Content Idea
-  |
-  v
-AI Repurpose Service
-  |
-  +--> Gemini or Groq if configured
-  |
-  +--> Template fallback if missing key, timeout, rate limit, invalid data, or provider error
-  |
-  v
-Platform Variants
-  |
-  +--> Platform format rules and readiness checklist
-  |
-  v
-Submit For Review
-  |
-  v
-ApprovalRequest pending
-  |
-  +--> Editor approval attempt -> 403 from backend
-  |
-  v
-Creator/Admin Decision
-  |
-  +--> Approve -> schedule allowed
-  |
-  +--> Reject -> workflow stops
-  |
-  +--> Request changes -> editor revises later
-  |
-  v
-Schedule Approved Variant To Matching Account
-  |
-  v
-ScheduleJob queued with account snapshot
-  |
-  v
-Publishing Worker or Run Now
-  |
-  v
-ScheduleJob published
-  |
-  v
-WorkflowEvent persisted and broadcast
+  -> campaign + content idea
+  -> AI platform variants
+  -> submit variant for review
+
+Creator/Admin
+  -> approve variant
+  -> connect real platform account
+  -> upload/select media
+  -> validate publish payload
+  -> queue publish job
+
+Publishing worker
+  -> connectorRegistry
+  -> official platform API
+  -> published | failed | blocked
+  -> WorkflowEvent + Socket.IO
+
+Social sync
+  -> official platform API
+  -> metrics/comments/replies if supported
+  -> stored real records + realtime updates
 ```
 
-## Data And Control Flow
+## Real Integration Rule
 
-1. Frontend sends authenticated API requests.
-2. Auth middleware validates the JWT and loads the user.
-3. Services scope every query by `workspaceId`.
-4. Business services update models.
-5. Versioning service saves snapshots for meaningful changes.
-6. Event service persists workflow events.
-7. Socket.IO broadcasts events after persistence.
-8. Frontend listens for `workflow:event` and also fetches persisted events.
-9. Campaign tracking aggregates stored content, variants, schedules, accounts, and events.
+The connector layer never fakes a successful publish, metric, comment, share, view, or reply. Every connector method returns a structured result:
+
+```json
+{
+  "ok": false,
+  "code": "NOT_CONFIGURED",
+  "message": "Platform credentials are not configured.",
+  "data": {}
+}
+```
+
+Common codes:
+
+- `NOT_CONFIGURED`
+- `MISSING_PERMISSIONS`
+- `PLATFORM_REVIEW_REQUIRED`
+- `CAPABILITY_UNAVAILABLE`
+- `NOT_IMPLEMENTED`
+- `VALIDATION_FAILED`
+
+## Security Shape
+
+- CreatorOps login is separate from social login.
+- Users are redirected to official platform OAuth pages.
+- Social platform passwords are never requested or stored.
+- Access tokens, refresh tokens, API secrets, and app passwords are encrypted at rest.
+- Secrets are selected only inside backend services that need them.
+- Sanitizers strip secrets from API responses.
+- OAuth state is random, expiry-bound, workspace-bound, user-bound, and platform-bound.
 
 ## Scalability Strategy
 
-Future production work can scale the same architecture without rewriting the MVP:
-
-- Replace in-process publishing worker with Redis and BullMQ.
-- Add real platform adapters for Facebook, Instagram, TikTok, YouTube, Threads, LinkedIn, X, Pinterest, Blog, and Shopify.
-- Use workspace-specific socket rooms instead of global event broadcast.
-- Add an analytics pipeline for campaign performance and content attribution.
-- Store images/videos in object storage.
-- Add observability, monitoring, CI/CD, and deployment automation.
-- Split services only after traffic or team ownership requires it.
+- Replace in-process worker with Redis/BullMQ.
+- Move local uploads to object storage/CDN.
+- Use workspace-specific Socket.IO rooms.
+- Add provider webhooks where platforms support them.
+- Add a metrics ingestion pipeline.
+- Add monitoring, CI/CD, and audit exports.

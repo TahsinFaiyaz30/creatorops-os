@@ -17,15 +17,15 @@ export default function DashboardPage() {
     Promise.allSettled([
       api.get('/api/campaigns'),
       api.get('/api/events?limit=30'),
-      api.get('/api/schedule'),
-      api.get('/api/platform-accounts')
+      api.get('/api/publish/jobs'),
+      api.get('/api/platform-connections')
     ]).then(results => {
-      const scheduleJobs = results[2].value?.data?.scheduleJobs || [];
+      const publishJobs = results[2].value?.data?.publishJobs || [];
       setStats({
         campaigns: results[0].value?.data?.campaigns?.length || 0,
-        accounts: results[3].value?.data?.accounts?.length || 0,
-        queued: scheduleJobs.filter(job => job.status === 'queued').length,
-        published: scheduleJobs.filter(job => job.status === 'published').length,
+        accounts: results[3].value?.data?.connections?.length || 0,
+        queued: publishJobs.filter(job => job.status === 'queued').length,
+        published: publishJobs.filter(job => job.status === 'published').length,
         events: results[1].value?.data?.events?.length || 0,
       });
     });
@@ -58,8 +58,8 @@ export default function DashboardPage() {
             <div className="mt-4 grid gap-3 text-sm text-slate-300">
               <p>1. Create a campaign and raw idea.</p>
               <p>2. Generate platform variants and submit one for review.</p>
-              <p>3. Switch to Creator/Admin to approve and schedule.</p>
-              <p>4. Run the publishing simulator and watch events appear live.</p>
+              <p>3. Switch to Creator/Admin to approve and connect real accounts.</p>
+              <p>4. Schedule or publish through official connector checks and watch events appear live.</p>
             </div>
           </div>
           <LiveEventFeed compact />
