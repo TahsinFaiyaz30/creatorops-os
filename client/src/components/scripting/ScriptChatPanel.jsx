@@ -95,7 +95,12 @@ export default function ScriptChatPanel() {
             <div>
               <div className="text-cyan">Scenes</div>
               <ul className="mt-2 list-disc space-y-1 pl-4">
-                {(finalScript.sceneBreakdown || []).map((scene, index) => <li key={index}>{scene.label ? `${scene.label}: ` : ''}{scene.description || scene}</li>)}
+                {(finalScript.sceneBreakdown || []).map((scene, index) => {
+                  if (typeof scene === 'string') return <li key={index}>{scene}</li>;
+                  const prefix = scene.label ? `${scene.label}: ` : scene.sceneNumber ? `Scene ${scene.sceneNumber}: ` : '';
+                  const body = scene.description || scene.visualDescription || scene.audioDescription || scene.dialogue || scene.textOnScreen || JSON.stringify(scene);
+                  return <li key={index}>{prefix}{body}</li>;
+                })}
               </ul>
             </div>
             <pre className="whitespace-pre-wrap rounded-md border border-line bg-ink p-3 text-xs text-slate-300">{finalScript.voiceover || finalScript.dialogue}</pre>
