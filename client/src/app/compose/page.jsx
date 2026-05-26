@@ -7,7 +7,7 @@ import AppShell from '../../components/layout/AppShell';
 import VisibilitySelector from '../../components/publish/VisibilitySelector';
 import { api } from '../../lib/api';
 import { getUser } from '../../lib/auth';
-import { formatPlatform, getPlatformCaptionLimit, platformCapabilities } from '../../lib/platforms';
+import { formatPlatform, getPlatformCaptionLimit, getPlatformDetails, platformCapabilities } from '../../lib/platforms';
 import Cropper from 'react-easy-crop';
 
 const aspectOptions = [
@@ -589,6 +589,7 @@ export default function ComposePage() {
                 {connections.map(connection => {
                   const eligibility = getPlatformEligibility(connection.platform);
                   const isSelected = selectedIds.includes(connection._id);
+                  const platformDetail = getPlatformDetails(connection.platform);
                   return (
                     <div 
                       key={connection._id} 
@@ -613,6 +614,7 @@ export default function ComposePage() {
                           {formatPlatform(connection.platform)}
                         </div>
                         <div className="text-xs text-[var(--muted)]">{connection.accountName} · {connection.accountHandle}</div>
+                        <div className="mt-1 text-[10px] text-[var(--muted)]">{platformDetail.contentStyle}</div>
                         {!eligibility.eligible && (
                           <div className="mt-1 flex items-center gap-1 text-[10px] font-medium text-rose">
                             <AlertCircle size={10} /> {eligibility.reason}
@@ -641,10 +643,13 @@ export default function ComposePage() {
                 <div className="grid gap-3">
                   {selectedConnections.map(connection => {
                     const customized = captions.find(item => item.connectionId === connection._id);
+                    const platformDetail = getPlatformDetails(connection.platform);
                     const captionValue = customized?.caption ?? baseCaption;
                     const maxCaptionLength = customized?.maxCaptionLength || getPlatformCaptionLimit(connection.platform);
                     const captionLength = captionValue.length;
                     const captionOverLimit = captionLength > maxCaptionLength;
+                    const hashtags = customized?.hashtags || [];
+                    const platformNotes = customized?.platformNotes?.length ? customized.platformNotes : [platformDetail.contentStyle, `CTA style: ${platformDetail.ctaStyle}`];
                     return (
                       <article key={connection._id} className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3">
                         <div className="flex items-center justify-between mb-2">
@@ -662,9 +667,58 @@ export default function ComposePage() {
                           rows={3}
                           className={`focus-ring w-full rounded-lg border bg-[var(--surface)] px-2 py-1.5 text-xs text-[var(--text)] ${captionOverLimit ? 'border-rose focus:border-rose' : 'border-[var(--border)] focus:border-mint'}`}
                         />
+
+                        {customized ? (
+                          <div className="mt-2 grid gap-2 text-[10px]">
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 text-[var(--muted)]">
+                                Provider
+                                <div className="font-semibold text-[var(--text)]">{customized.aiProvider || 'manual'}</div>
+                              </div>
+                              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 text-[var(--muted)]">
+                                Brand
+                                <div className="font-semibold text-[var(--text)]">{customized.brandScore ?? 0}/100</div>
+                              </div>
+                              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 text-[var(--muted)]">
+                                Ready
+                                <div className="font-semibold text-[var(--text)]">{customized.readinessScore ?? 0}/100</div>
+                              </div>
+                            </div>
+
+                            {(customized.hook || customized.cta) && (
+                              <div className="space-y-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 text-[var(--muted)]">
+                                {customized.hook && <p><span className="font-semibold text-[var(--text)]">Hook:</span> {customized.hook}</p>}
+                                {customized.cta && <p><span className="font-semibold text-[var(--text)]">CTA:</span> {customized.cta}</p>}
+                              </div>
+                            )}
+                          </div>
+                        ) : null}
+
+                        {hashtags.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {hashtags.map(tag => (
+                              <span key={tag} className="rounded-full border border-mint/20 bg-mint/10 px-2 py-0.5 text-[10px] text-mint">{tag}</span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="mt-2 space-y-1 text-[10px] text-[var(--muted)]">
+                          {platformNotes.slice(0, 3).map(note => (
+                            <p key={note}>{note}</p>
+                          ))}
+                          {platformDetail.requirements?.length > 0 && (
+                            <p>Requires: {platformDetail.requirements.join(', ')}</p>
+                          )}
+                        </div>
+
                         {customized?.warnings?.length > 0 && (
-                          <div className="mt-1.5 text-[10px] text-gold">
-                            ⚠ {customized.warnings[0]}
+                          <div className="mt-1.5 space-y-1 text-[10px] text-gold">
+                            {customized.warnings.map(warning => <p key={warning}>Warning: {warning}</p>)}
+                          </div>
+                        )}
+                        {customized?.suggestions?.length > 0 && (
+                          <div className="mt-1.5 space-y-1 text-[10px] text-[var(--muted)]">
+                            {customized.suggestions.map(suggestion => <p key={suggestion}>Suggestion: {suggestion}</p>)}
                           </div>
                         )}
                       </article>
