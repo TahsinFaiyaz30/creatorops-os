@@ -25,6 +25,41 @@ const createPostGroupId = () => {
   return `post_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 };
 
+const createDefaultMediaSettings = asset => ({
+  crop: {
+    x: asset?.cropMetadata?.cropX || 0,
+    y: asset?.cropMetadata?.cropY || 0
+  },
+  zoom: asset?.cropMetadata?.zoom || 1,
+  croppedAreaPixels: asset?.cropMetadata?.croppedAreaPixels || null,
+  croppedAreaPercentages: asset?.cropMetadata?.croppedAreaPercentages || null
+});
+
+const getAspectRatioValue = aspectRatio => {
+  if (aspectRatio === '9:16') return 9 / 16;
+  if (aspectRatio === '1:1') return 1;
+  if (aspectRatio === '4:5') return 4 / 5;
+  if (aspectRatio === '16:9') return 16 / 9;
+  return undefined;
+};
+
+const buildCropMetadata = ({ asset, settings, aspectRatio }) => {
+  const cropSettings = settings || createDefaultMediaSettings(asset);
+  const percentages = cropSettings.croppedAreaPercentages || {};
+
+  return {
+    aspectRatio,
+    objectFit: aspectRatio === 'original' ? 'contain' : 'cover',
+    positionX: typeof percentages.x === 'number' ? percentages.x : 50,
+    positionY: typeof percentages.y === 'number' ? percentages.y : 50,
+    cropX: cropSettings.crop?.x || 0,
+    cropY: cropSettings.crop?.y || 0,
+    zoom: cropSettings.zoom || 1,
+    croppedAreaPixels: cropSettings.croppedAreaPixels || undefined,
+    croppedAreaPercentages: cropSettings.croppedAreaPercentages || undefined
+  };
+};
+
 export default function ComposePage() {
   const [user, setUser] = useState(null);
   const [connections, setConnections] = useState([]);
@@ -56,8 +91,7 @@ export default function ComposePage() {
   }, []);
 
   const activeAsset = mediaAssets[activeMediaIndex];
-  const activeSettings = activeAsset ? mediaSettings[activeAsset._id] || { crop: { x: 0, y: 0 }, zoom: 1 } : null;
-  const aspectClass = aspectOptions.find(option => option.value === globalAspect)?.className || 'aspect-[9/16]';
+  const activeSettings = activeAsset ? mediaSettings[activeAsset._id] || createDefaultMediaSettings(activeAsset) : null;
   const mediaIds = mediaAssets.map(a => a._id);
 
   const selectedConnections = useMemo(
@@ -69,8 +103,33 @@ export default function ComposePage() {
     if (!activeAsset) return;
     setMediaSettings(prev => ({
       ...prev,
-      [activeAsset._id]: { ...(prev[activeAsset._id] || { crop: { x: 0, y: 0 }, zoom: 1 }), ...updates }
+      [activeAsset._id]: { ...(prev[activeAsset._id] || createDefaultMediaSettings(activeAsset)), ...updates }
     }));
+  };
+
+  const saveCropMetadata = async () => {
+    if (mediaAssets.length === 0) return;
+
+    const imageAssets = mediaAssets.filter(asset => asset.mediaType === 'image');
+    if (imageAssets.length === 0) return;
+
+    const updates = await Promise.all(
+      imageAssets.map(asset => {
+        const cropMetadata = buildCropMetadata({
+          asset,
+          settings: mediaSettings[asset._id] || createDefaultMediaSettings(asset),
+          aspectRatio: globalAspect
+        });
+        return api.patch(`/api/media/${asset._id}`, { cropMetadata });
+      })
+    );
+
+    setMediaAssets(current =>
+      current.map(asset => {
+        const updated = updates.find(payload => payload.data.mediaAsset._id === asset._id)?.data.mediaAsset;
+        return updated || asset;
+      })
+    );
   };
 
   // Eligibility Check
@@ -131,6 +190,13 @@ export default function ComposePage() {
         const payload = await api.upload('/api/media/upload', formData);
         newAssets.push(payload.data.mediaAsset);
       }
+      setMediaSettings(prev => {
+        const next = { ...prev };
+        newAssets.forEach(asset => {
+          next[asset._id] = createDefaultMediaSettings(asset);
+        });
+        return next;
+      });
       setMediaAssets(prev => {
         const combined = [...prev, ...newAssets];
         if (prev.length === 0) setActiveMediaIndex(0);
@@ -192,6 +258,10 @@ export default function ComposePage() {
     }
   };
 
+  const handleCropComplete = (croppedAreaPercentages, croppedAreaPixels) => {
+    updateActiveSettings({ croppedAreaPercentages, croppedAreaPixels });
+  };
+
   const updateCaption = (connectionId, value) => {
     const connection = connections.find(item => item._id === connectionId);
     setCaptions(current => {
@@ -241,6 +311,8 @@ export default function ComposePage() {
       const endpoint = mode === 'now' ? '/api/publish/now' : '/api/publish/schedule';
       const results = [];
       const postGroupId = createPostGroupId();
+
+      await saveCropMetadata();
       
       // We pass the mediaIds. The backend logic will associate the media with the job.
       for (const connection of selectedConnections) {
@@ -380,88 +452,104 @@ export default function ComposePage() {
                     <div className="flex flex-col items-center gap-6">
                       {/* Big Preview */}
                       <div className="relative h-[400px] w-full max-w-[360px] overflow-hidden rounded-2xl border-2 border-[var(--border)] bg-black/40 shadow-inner group">
-                        <Cropper
-                          image={activeAsset.mediaType === 'image' ? activeAsset.publicUrl : undefined}
-                          video={activeAsset.mediaType === 'video' ? activeAsset.publicUrl : undefined}
-                          crop={activeSettings.crop}
-                          zoom={activeSettings.zoom}
-                          aspect={globalAspect === 'original' ? undefined : (
-                            globalAspect === '9:16' ? 9/16 :
-                            globalAspect === '1:1' ? 1 :
-                            globalAspect === '4:5' ? 4/5 :
-                            globalAspect === '16:9' ? 16/9 : 1
-                          )}
-                          onCropChange={crop => updateActiveSettings({ crop })}
-                          onZoomChange={zoom => updateActiveSettings({ zoom })}
-                          showGrid={true}
-                          style={{ containerStyle: { background: 'transparent' } }}
-                        />
-                        <div className="absolute top-3 left-3 bg-black/50 backdrop-blur-md rounded-full px-2.5 py-1 flex items-center gap-1.5 text-[10px] font-bold text-mint border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                          <Crop size={12} /> Drag to position
-                        </div>
+                        {activeAsset.mediaType === 'image' ? (
+                          <>
+                            <Cropper
+                              key={`${activeAsset._id}-${activeAsset.mediaType}`}
+                              image={activeAsset.publicUrl}
+                              crop={activeSettings.crop}
+                              zoom={activeSettings.zoom}
+                              aspect={getAspectRatioValue(globalAspect)}
+                              objectFit={globalAspect === 'original' ? 'contain' : 'cover'}
+                              onCropChange={crop => updateActiveSettings({ crop })}
+                              onZoomChange={zoom => updateActiveSettings({ zoom })}
+                              onCropComplete={handleCropComplete}
+                              showGrid={true}
+                              style={{ containerStyle: { background: 'transparent' } }}
+                            />
+                            <div className="absolute top-3 left-3 bg-black/50 backdrop-blur-md rounded-full px-2.5 py-1 flex items-center gap-1.5 text-[10px] font-bold text-mint border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                              <Crop size={12} /> Drag to position image
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-black">
+                            <video src={activeAsset.publicUrl} className="max-h-full max-w-full object-contain" controls />
+                            <div className="absolute top-3 left-3 rounded-full border border-white/10 bg-black/50 px-2.5 py-1 text-[10px] font-bold text-mint backdrop-blur-md">
+                              Original video preview - crop disabled
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Controls */}
                       <div className="w-full space-y-6">
-                        <div>
-                          <label className="text-xs font-bold uppercase tracking-wider text-[var(--muted)] mb-3 block">Global Aspect Ratio</label>
-                          <div className="flex flex-wrap gap-2">
-                            {aspectOptions.map(option => {
-                              const isActive = globalAspect === option.value;
-                              return (
-                                <button 
-                                  key={option.value} 
-                                  type="button" 
-                                  onClick={() => setGlobalAspect(option.value)} 
-                                  className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-300 ${
-                                    isActive 
-                                      ? 'bg-mint text-[#05130d] shadow-[0_0_15px_rgba(var(--color-mint-rgb),0.3)] border-transparent' 
-                                      : 'bg-[var(--surface)] text-[var(--muted)] border border-[var(--border)] hover:bg-[var(--border)] hover:text-[var(--text)]'
-                                  }`}
-                                >
-                                  {option.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
+                        {activeAsset.mediaType === 'image' ? (
+                          <>
+                            <div>
+                              <label className="text-xs font-bold uppercase tracking-wider text-[var(--muted)] mb-3 block">Image Aspect Ratio</label>
+                              <div className="flex flex-wrap gap-2">
+                                {aspectOptions.map(option => {
+                                  const isActive = globalAspect === option.value;
+                                  return (
+                                    <button 
+                                      key={option.value} 
+                                      type="button" 
+                                      onClick={() => setGlobalAspect(option.value)} 
+                                      className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-300 ${
+                                        isActive 
+                                          ? 'bg-mint text-[#05130d] shadow-[0_0_15px_rgba(var(--color-mint-rgb),0.3)] border-transparent' 
+                                          : 'bg-[var(--surface)] text-[var(--muted)] border border-[var(--border)] hover:bg-[var(--border)] hover:text-[var(--text)]'
+                                      }`}
+                                    >
+                                      {option.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
 
-                        <div className="bg-[var(--surface)] p-4 rounded-2xl border border-[var(--border)] shadow-sm">
-                          <div className="flex items-center justify-between mb-3">
-                            <label className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
-                              Zoom Level
-                            </label>
-                            <span className="text-xs font-medium text-mint bg-mint/10 px-2 py-0.5 rounded-md">
-                              {Math.round(activeSettings.zoom * 100)}%
-                            </span>
+                            <div className="bg-[var(--surface)] p-4 rounded-2xl border border-[var(--border)] shadow-sm">
+                              <div className="flex items-center justify-between mb-3">
+                                <label className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+                                  Zoom Level
+                                </label>
+                                <span className="text-xs font-medium text-mint bg-mint/10 px-2 py-0.5 rounded-md">
+                                  {Math.round(activeSettings.zoom * 100)}%
+                                </span>
+                              </div>
+                              
+                              <div className="flex items-center gap-3">
+                                <button 
+                                  type="button"
+                                  onClick={() => updateActiveSettings({ zoom: Math.max(1, activeSettings.zoom - 0.1) })}
+                                  className="p-1.5 rounded-full hover:bg-[var(--surface2)] text-[var(--muted)] hover:text-mint transition"
+                                >
+                                  <ZoomOut size={16} />
+                                </button>
+                                
+                                <input 
+                                  type="range" 
+                                  min="1" max="3" step="0.1" 
+                                  value={activeSettings.zoom} 
+                                  onChange={e => updateActiveSettings({ zoom: Number(e.target.value) })} 
+                                  className="w-full h-1.5 bg-[var(--surface2)] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-mint [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(var(--color-mint-rgb),0.5)] [&::-webkit-slider-thumb]:transition-transform hover:[&::-webkit-slider-thumb]:scale-125" 
+                                />
+                                
+                                <button 
+                                  type="button"
+                                  onClick={() => updateActiveSettings({ zoom: Math.min(3, activeSettings.zoom + 0.1) })}
+                                  className="p-1.5 rounded-full hover:bg-[var(--surface2)] text-[var(--muted)] hover:text-mint transition"
+                                >
+                                  <ZoomIn size={16} />
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 text-xs text-[var(--muted)]">
+                            Video crop and zoom are disabled. The original uploaded video is preserved for real platform upload.
                           </div>
-                          
-                          <div className="flex items-center gap-3">
-                            <button 
-                              type="button"
-                              onClick={() => updateActiveSettings({ zoom: Math.max(1, activeSettings.zoom - 0.1) })}
-                              className="p-1.5 rounded-full hover:bg-[var(--surface2)] text-[var(--muted)] hover:text-mint transition"
-                            >
-                              <ZoomOut size={16} />
-                            </button>
-                            
-                            <input 
-                              type="range" 
-                              min="1" max="3" step="0.1" 
-                              value={activeSettings.zoom} 
-                              onChange={e => updateActiveSettings({ zoom: Number(e.target.value) })} 
-                              className="w-full h-1.5 bg-[var(--surface2)] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-mint [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(var(--color-mint-rgb),0.5)] [&::-webkit-slider-thumb]:transition-transform hover:[&::-webkit-slider-thumb]:scale-125" 
-                            />
-                            
-                            <button 
-                              type="button"
-                              onClick={() => updateActiveSettings({ zoom: Math.min(3, activeSettings.zoom + 0.1) })}
-                              className="p-1.5 rounded-full hover:bg-[var(--surface2)] text-[var(--muted)] hover:text-mint transition"
-                            >
-                              <ZoomIn size={16} />
-                            </button>
-                          </div>
-                        </div>
+                        )}
                       </div>
                     </div>
                   </div>

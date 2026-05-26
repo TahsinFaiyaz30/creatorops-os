@@ -376,7 +376,7 @@ export const calculateReadinessScore = ({ platform, caption, hook, cta, hashtags
 
 const normalizeGeneratedVariant = ({ platform, generated, brandProfile, provider }) => {
   const rules = platformRules[platform];
-  const { maxHashtags } = getPlatformLimit(platform);
+  const { maxCaptionLength, maxHashtags } = getPlatformLimit(platform);
   const rawCaption = compactText(generated.caption);
   const caption = fitCaptionToPlatform(platform, rawCaption);
   const hook = compactText(generated.hook);

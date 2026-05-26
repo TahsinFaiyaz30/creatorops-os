@@ -64,7 +64,22 @@ const mediaAssetSchema = new Schema(
       aspectRatio: { type: String, default: '9:16' },
       objectFit: { type: String, default: 'cover' },
       positionX: { type: Number, default: 50 },
-      positionY: { type: Number, default: 50 }
+      positionY: { type: Number, default: 50 },
+      cropX: { type: Number, default: 0 },
+      cropY: { type: Number, default: 0 },
+      zoom: { type: Number, default: 1 },
+      croppedAreaPixels: {
+        x: { type: Number, default: null },
+        y: { type: Number, default: null },
+        width: { type: Number, default: null },
+        height: { type: Number, default: null }
+      },
+      croppedAreaPercentages: {
+        x: { type: Number, default: null },
+        y: { type: Number, default: null },
+        width: { type: Number, default: null },
+        height: { type: Number, default: null }
+      }
     },
     status: {
       type: String,
