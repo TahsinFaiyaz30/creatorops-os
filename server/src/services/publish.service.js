@@ -24,9 +24,11 @@ const createHttpError = (message, statusCode, code = '') => {
   return error;
 };
 
-const requireCreatorAdmin = user => {
-  if (user.role !== 'creator_admin') {
-    throw createHttpError('Forbidden: creator_admin role is required for publishing.', 403);
+const PUBLISH_ROLES = ['editor', 'creator_admin', 'brand_rep'];
+
+const requirePublishPermission = user => {
+  if (!PUBLISH_ROLES.includes(user.role)) {
+    throw createHttpError('Forbidden: publishing is not allowed for this role.', 403);
   }
 };
 
@@ -140,7 +142,7 @@ const buildPayload = ({ input, connection, variant, mediaAssets }) => ({
 });
 
 export const validatePublishPayload = async ({ user, input }) => {
-  requireCreatorAdmin(user);
+  requirePublishPermission(user);
 
   const normalized = normalizePublishInput(input);
   if (!normalized.platformConnectionId) {
@@ -215,7 +217,7 @@ const persistValidationFailure = async ({ user, input, result }) => {
 };
 
 export const createPublishJob = async ({ user, input, publishNow = false }) => {
-  requireCreatorAdmin(user);
+  requirePublishPermission(user);
   const normalized = normalizePublishInput(input);
   if (!normalized.postGroupId) normalized.postGroupId = createPostGroupId();
   const validation = await validatePublishPayload({ user, input: normalized });
@@ -329,7 +331,7 @@ export const listPublishJobs = async ({ user }) =>
     .populate('createdBy', 'name email role');
 
 export const cancelPublishJob = async ({ user, jobId }) => {
-  requireCreatorAdmin(user);
+  requirePublishPermission(user);
   const job = await PublishJob.findOne({ _id: jobId, workspaceId: user.workspaceId });
   if (!job) throw createHttpError('Publish job not found.', 404);
   if (!['queued', 'blocked', 'failed'].includes(job.status)) {
@@ -351,7 +353,7 @@ export const cancelPublishJob = async ({ user, jobId }) => {
 };
 
 export const retryPublishJob = async ({ user, jobId }) => {
-  requireCreatorAdmin(user);
+  requirePublishPermission(user);
   const job = await PublishJob.findOne({ _id: jobId, workspaceId: user.workspaceId });
   if (!job) throw createHttpError('Publish job not found.', 404);
   if (!['failed', 'blocked'].includes(job.status)) {

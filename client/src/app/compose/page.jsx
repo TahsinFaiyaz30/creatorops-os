@@ -25,6 +25,8 @@ const createPostGroupId = () => {
   return `post_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 };
 
+const publishRoles = ['editor', 'creator_admin', 'brand_rep'];
+
 const createDefaultMediaSettings = asset => ({
   crop: {
     x: asset?.cropMetadata?.cropX || 0,
@@ -300,8 +302,8 @@ export default function ComposePage() {
   };
 
   const publish = async ({ mode }) => {
-    if (user?.role !== 'creator_admin' && user?.role !== 'editor') {
-      setMessage('Backend requires Editor or Creator/Admin for publishing.');
+    if (!publishRoles.includes(user?.role)) {
+      setMessage('Your current role cannot publish from this workspace.');
       return;
     }
     setBusy(mode);

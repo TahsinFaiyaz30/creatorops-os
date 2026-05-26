@@ -13,15 +13,16 @@ import { authenticate } from '../middleware/auth.middleware.js';
 import { requireRole } from '../middleware/role.middleware.js';
 
 const router = express.Router();
+const publishRoles = ['editor', 'creator_admin', 'brand_rep'];
 
 router.use(authenticate);
 
-router.post('/validate', requireRole(['creator_admin']), validatePublish);
-router.post('/now', requireRole(['creator_admin']), publishNow);
-router.post('/schedule', requireRole(['creator_admin']), schedulePublish);
+router.post('/validate', requireRole(publishRoles), validatePublish);
+router.post('/now', requireRole(publishRoles), publishNow);
+router.post('/schedule', requireRole(publishRoles), schedulePublish);
 router.get('/jobs', getJobs);
 router.get('/jobs/:id', getJob);
-router.post('/jobs/:id/cancel', requireRole(['creator_admin']), cancelJob);
-router.post('/jobs/:id/retry', requireRole(['creator_admin']), retryJob);
+router.post('/jobs/:id/cancel', requireRole(publishRoles), cancelJob);
+router.post('/jobs/:id/retry', requireRole(publishRoles), retryJob);
 
 export default router;
