@@ -201,7 +201,7 @@ export default function AnalyticsPage() {
                       <h2 className="text-xl font-bold text-[var(--text)]">{selectedGroup.title}</h2>
                       <p className="mt-2 max-w-3xl text-sm text-[var(--muted)]">{selectedGroup.caption}</p>
                     </div>
-                    <button type="button" disabled={busy === `sync-${selectedGroup.id}` || user?.role !== 'creator_admin'} onClick={() => syncGroup(selectedGroup)} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50">
+                    <button type="button" disabled={busy === `sync-${selectedGroup.id}`} onClick={() => syncGroup(selectedGroup)} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50">
                       <RefreshCw size={15} />
                       Sync all platforms
                     </button>

@@ -506,13 +506,8 @@ const buildProviderPrompt = ({ contentItem, campaign, brandProfile, platforms })
 });
 
 const getGeminiModelCandidates = () => {
-  const model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
-
-  if (model !== DEFAULT_GEMINI_MODEL) {
-    return [model];
-  }
-
-  return unique([model, ...GEMINI_FALLBACK_MODELS]);
+  const model = env.geminiModel || DEFAULT_GEMINI_MODEL;
+  return unique([model, DEFAULT_GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS]);
 };
 
 const callGeminiModel = async ({ model, prompt, platforms, brandProfile }) =>
@@ -522,7 +517,7 @@ const callGeminiModel = async ({ model, prompt, platforms, brandProfile }) =>
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-goog-api-key': process.env.GEMINI_API_KEY || env.geminiApiKey
+          'x-goog-api-key': env.geminiApiKey
         },
         body: JSON.stringify({
           contents: [

@@ -21,10 +21,10 @@ router.use(authenticate);
 
 router.get('/post-groups', getPostGroups);
 router.get('/post-groups/:id', getPostGroup);
-router.post('/post-groups/:id/sync', requireRole(['creator_admin']), syncPostGroup);
+router.post('/post-groups/:id/sync', syncPostGroup);
 router.get('/posts', getPosts);
 router.get('/posts/:id', getPost);
-router.post('/posts/:id/sync', requireRole(['creator_admin']), syncPost);
+router.post('/posts/:id/sync', syncPost);
 router.get('/posts/:id/metrics', getMetrics);
 router.get('/posts/:id/comments', getComments);
 router.post('/comments/:id/reply', requireRole(['creator_admin']), replyToComment);
