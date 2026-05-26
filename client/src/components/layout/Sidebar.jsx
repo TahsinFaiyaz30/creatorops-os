@@ -24,7 +24,7 @@ const NAV_GROUPS = [
     label: 'Content',
     items: [
       { href: '/campaigns',  label: 'Campaigns',  icon: GitBranch, roles: ['editor', 'creator_admin'] },
-      { href: '/compose',    label: 'Compose',    icon: Edit3,     roles: ['editor', 'creator_admin'] },
+      { href: '/compose',    label: 'Compose',    icon: Edit3,     roles: ['editor', 'creator_admin', 'brand_rep'] },
       { href: '/scripting',  label: 'Script AI',  icon: Bot,       roles: ['editor', 'creator_admin'] },
     ],
   },
@@ -33,7 +33,7 @@ const NAV_GROUPS = [
     items: [
       { href: '/approvals',  label: 'Approvals',  icon: ShieldCheck, roles: ['editor', 'creator_admin'] },
       { href: '/accounts',   label: 'Accounts',   icon: RadioTower,  roles: ['editor', 'creator_admin'] },
-      { href: '/publishing', label: 'Publishing',  icon: Send,        roles: ['editor', 'creator_admin'] },
+      { href: '/publishing', label: 'Publishing',  icon: Send,        roles: ['editor', 'creator_admin', 'brand_rep'] },
       { href: '/analytics',  label: 'Analytics',  icon: BarChart3,   roles: ['editor', 'creator_admin'] },
     ],
   },

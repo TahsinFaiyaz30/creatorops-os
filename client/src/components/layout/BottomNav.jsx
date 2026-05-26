@@ -25,8 +25,8 @@ const BOTTOM_NAV = {
   brand_rep: [
     { href: '/dashboard',       icon: LayoutDashboard,   label: 'Home' },
     { href: '/brand-circulars', icon: BriefcaseBusiness, label: 'Circulars' },
-    { href: '/applications',    icon: ClipboardList,     label: 'Applications' },
-    { href: '/statistics',      icon: TrendingUp,        label: 'Stats' },
+    { href: '/compose',         icon: Edit3,             label: 'Compose' },
+    { href: '/publishing',      icon: Send,              label: 'Publish' },
   ],
 };
 

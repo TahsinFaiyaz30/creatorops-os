@@ -5,6 +5,8 @@ import { CalendarClock, Send } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatPlatform } from '../../lib/platforms';
 
+const publishRoles = ['editor', 'creator_admin', 'brand_rep'];
+
 export default function SchedulePanel({ variant, user, onDone }) {
   const defaultTime = useMemo(() => {
     const date = new Date(Date.now() + 2 * 60 * 60 * 1000);
@@ -50,7 +52,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
       onDone?.();
     } catch (err) {
       if (err.status === 403) {
-        setMessage('Backend blocked scheduling: only Creator/Admin can schedule.');
+        setMessage('Backend blocked scheduling for this role.');
       } else if (err.status === 400 && err.message.includes('approved')) {
         setMessage('Only approved variants can be scheduled.');
       } else {
@@ -74,7 +76,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
       setMessage(payload.data.publishJob.errorMessage || `Job status: ${payload.data.publishJob.status}`);
       onDone?.();
     } catch (err) {
-      setMessage(err.status === 403 ? 'Backend blocked publishing: only Creator/Admin can publish.' : err.message);
+      setMessage(err.status === 403 ? 'Backend blocked publishing for this role.' : err.message);
     } finally {
       setBusy(false);
     }
@@ -112,7 +114,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
         <button
           type="button"
           onClick={schedule}
-          disabled={busy || user?.role !== 'creator_admin' || variant.status !== 'approved' || !platformConnectionId}
+          disabled={busy || !publishRoles.includes(user?.role) || variant.status !== 'approved' || !platformConnectionId}
           className="focus-ring inline-flex items-center gap-2 rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50"
         >
           <CalendarClock size={15} />
@@ -121,7 +123,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
         <button
           type="button"
           onClick={publishNow}
-          disabled={busy || user?.role !== 'creator_admin' || variant.status !== 'approved' || !platformConnectionId}
+          disabled={busy || !publishRoles.includes(user?.role) || variant.status !== 'approved' || !platformConnectionId}
           className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50"
         >
           <Send size={15} />
