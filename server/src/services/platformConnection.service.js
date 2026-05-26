@@ -32,11 +32,14 @@ const resolveRequestedPlatform = rawPlatform => {
 
 export const getStoragePlatform = platform => {
   const normalized = resolveRequestedPlatform(platform);
-  return normalized;
+  return normalized === 'youtube_shorts' ? 'youtube' : normalized;
 };
 
 export const getConnectionPlatformsForQuery = platform => {
   const normalized = resolveRequestedPlatform(platform);
+  if (GOOGLE_POWERED_PLATFORMS.includes(normalized)) {
+    return ['youtube'];
+  }
   return [normalized];
 };
 

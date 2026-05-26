@@ -1,5 +1,7 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import { authenticate } from '../middleware/auth.middleware.js';
+import { isBrandRepRole, normalizeRole } from '../constants/roles.js';
 import User from '../models/User.js';
 import BrandProfile from '../models/BrandProfile.js';
 import Review from '../models/Review.js';
@@ -10,17 +12,21 @@ router.use(authenticate);
 
 router.get('/profile/:id', async (req, res, next) => {
   try {
-    const userId = req.params.id === 'me' ? req.auth.userId : req.params.id;
-    console.log(`[PROFILE] Fetching profile for id: ${req.params.id}, resolved userId: ${userId}`);
+    const userId = req.params.id === 'me' ? req.user._id : req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(404).json({ message: 'User not found' });
+    }
     
     const user = await User.findById(userId).select('-passwordHash');
     if (!user) {
-      console.log(`[PROFILE] User not found for userId: ${userId}`);
       return res.status(404).json({ message: 'User not found' });
     }
 
     let brandProfile = null;
-    if (user.role === 'brand_rep') {
+    user.role = normalizeRole(user.role);
+
+    if (isBrandRepRole(user.role)) {
       brandProfile = await BrandProfile.findOne({ workspaceId: user.workspaceId });
     }
 
@@ -30,9 +36,11 @@ router.get('/profile/:id', async (req, res, next) => {
       .limit(10);
 
     return res.json({
-      user,
-      brandProfile,
-      reviews
+      data: {
+        user,
+        brandProfile,
+        reviews
+      }
     });
   } catch (error) {
     return next(error);
@@ -43,7 +51,7 @@ router.put('/profile', async (req, res, next) => {
   try {
     const { name, bio, location, avatarUrl, socialLinks, brandDetails } = req.body;
     
-    const user = await User.findById(req.auth.userId);
+    const user = await User.findById(req.user._id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -57,7 +65,7 @@ router.put('/profile', async (req, res, next) => {
     await user.save();
 
     let brandProfile = null;
-    if (user.role === 'brand_rep' && brandDetails) {
+    if (isBrandRepRole(user.role) && brandDetails) {
       brandProfile = await BrandProfile.findOne({ workspaceId: user.workspaceId });
       if (brandProfile) {
         brandProfile.brandName = brandDetails.brandName || brandProfile.brandName;
@@ -69,7 +77,13 @@ router.put('/profile', async (req, res, next) => {
       }
     }
 
-    return res.json({ message: 'Profile updated', user, brandProfile });
+    return res.json({
+      message: 'Profile updated',
+      data: {
+        user,
+        brandProfile
+      }
+    });
   } catch (error) {
     return next(error);
   }
@@ -84,7 +98,7 @@ router.post('/:id/reviews', async (req, res, next) => {
       return res.status(400).json({ message: 'Rating must be between 1 and 5' });
     }
 
-    if (targetUserId === req.auth.userId.toString()) {
+    if (targetUserId === req.user._id.toString()) {
       return res.status(400).json({ message: 'Cannot review yourself' });
     }
 
@@ -94,7 +108,7 @@ router.post('/:id/reviews', async (req, res, next) => {
     }
 
     const review = await Review.create({
-      reviewerId: req.auth.userId,
+      reviewerId: req.user._id,
       targetUserId,
       rating,
       comment,
@@ -110,7 +124,10 @@ router.post('/:id/reviews', async (req, res, next) => {
     targetUser.averageRating = Math.round(averageRating * 10) / 10;
     await targetUser.save();
 
-    return res.status(201).json({ message: 'Review submitted', review });
+    return res.status(201).json({
+      message: 'Review submitted',
+      data: { review }
+    });
   } catch (error) {
     return next(error);
   }

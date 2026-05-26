@@ -5,56 +5,51 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3, Bot, BriefcaseBusiness, ChevronLeft, ChevronRight,
   ClipboardList, Edit3, GitBranch, LayoutDashboard,
-  LogOut, RadioTower, Send, Settings, ShieldCheck, TrendingUp, UserCircle, X
+  LogOut, RadioTower, Send, ShieldCheck, UserCircle, X
 } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 import RoleBadge from './RoleBadge';
+import SiteLogo from './SiteLogo';
 import NotificationBell from '../notifications/NotificationBell';
 import { clearSession } from '../../lib/auth';
+import { ROLES, normalizeRole } from '../../lib/roles';
 
 // ── Nav groups by role ────────────────────────────────────────────────────────
 const NAV_GROUPS = [
   {
     label: 'Workspace',
     items: [
-      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['editor', 'creator_admin', 'brand_rep'] },
+      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
     ],
   },
   {
     label: 'Content',
     items: [
-      { href: '/campaigns',  label: 'Campaigns',  icon: GitBranch, roles: ['editor', 'creator_admin'] },
-      { href: '/compose',    label: 'Compose',    icon: Edit3,     roles: ['editor', 'creator_admin', 'brand_rep'] },
-      { href: '/scripting',  label: 'Script AI',  icon: Bot,       roles: ['editor', 'creator_admin'] },
+      { href: '/campaigns',  label: 'Campaigns',  icon: GitBranch, roles: [ROLES.CONTENT_CREATOR] },
+      { href: '/compose',    label: 'Compose',    icon: Edit3,     roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/scripting',  label: 'Script AI',  icon: Bot,       roles: [ROLES.CONTENT_CREATOR] },
     ],
   },
   {
     label: 'Review & Publish',
     items: [
-      { href: '/approvals',  label: 'Approvals',  icon: ShieldCheck, roles: ['editor', 'creator_admin'] },
-      { href: '/accounts',   label: 'Accounts',   icon: RadioTower,  roles: ['editor', 'creator_admin'] },
-      { href: '/publishing', label: 'Publishing',  icon: Send,        roles: ['editor', 'creator_admin', 'brand_rep'] },
-      { href: '/analytics',  label: 'Analytics',  icon: BarChart3,   roles: ['editor', 'creator_admin'] },
+      { href: '/approvals',  label: 'Approvals',  icon: ShieldCheck, roles: [ROLES.CONTENT_CREATOR] },
+      { href: '/accounts',   label: 'Accounts',   icon: RadioTower,  roles: [ROLES.CONTENT_CREATOR] },
+      { href: '/publishing', label: 'Publishing',  icon: Send,        roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/analytics',  label: 'Analytics',  icon: BarChart3,   roles: [ROLES.CONTENT_CREATOR] },
     ],
   },
   {
     label: 'Creator Economy',
     items: [
-      { href: '/brand-circulars', label: 'Brand Circulars', icon: BriefcaseBusiness, roles: ['editor', 'creator_admin', 'brand_rep'] },
-      { href: '/applications',    label: 'Applications',    icon: ClipboardList,     roles: ['editor', 'creator_admin', 'brand_rep'] },
-    ],
-  },
-  {
-    label: 'Insights',
-    items: [
-      { href: '/statistics', label: 'Statistics', icon: TrendingUp, roles: ['editor', 'creator_admin', 'brand_rep'] },
+      { href: '/brand-circulars', label: 'Brand Circulars', icon: BriefcaseBusiness, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/applications',    label: 'Applications',    icon: ClipboardList,     roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
     ],
   },
   {
     label: 'System',
     items: [
-      { href: '/admin',        label: 'Admin Panel',   icon: Settings,  roles: ['creator_admin'] },
-      { href: '/architecture', label: 'Architecture',  icon: BarChart3, roles: ['editor', 'creator_admin', 'brand_rep'] },
+      { href: '/architecture', label: 'Architecture',  icon: BarChart3, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
     ],
   },
 ];
@@ -63,7 +58,7 @@ export default function Sidebar({ user, collapsed, onCollapse, mobileOpen, onMob
   const pathname = usePathname();
   const router   = useRouter();
   const { theme, toggle } = useTheme();
-  const role = user?.role || 'editor';
+  const role = normalizeRole(user?.role);
 
   const logout = () => { clearSession(); router.push('/login'); };
 
@@ -109,16 +104,10 @@ export default function Sidebar({ user, collapsed, onCollapse, mobileOpen, onMob
       {/* Logo + collapse toggle */}
       <div className={`flex h-14 shrink-0 items-center border-b border-[var(--border)] px-3 ${collapsed ? 'justify-center' : 'justify-between'}`}>
         {!collapsed && (
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-mint text-xs font-black text-[#05130d]">C</div>
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-mint">CreatorOps</div>
-              <div className="text-xs font-bold text-[var(--text)]">OS</div>
-            </div>
-          </div>
+          <SiteLogo />
         )}
         {collapsed && (
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-mint text-xs font-black text-[#05130d]">C</div>
+          <SiteLogo compact />
         )}
         <div className="flex items-center gap-1">
           {/* Mobile close */}

@@ -4,6 +4,8 @@ import PlatformConnection from '../models/PlatformConnection.js';
 import PlatformVariant from '../models/PlatformVariant.js';
 import PublishedPost from '../models/PublishedPost.js';
 import PublishJob from '../models/PublishJob.js';
+import { normalizePlatform } from '../constants/platforms.js';
+import { BRAND_REP_ROLE, CONTENT_CREATOR_ROLE } from '../constants/roles.js';
 import { getConnector } from '../platforms/connectorRegistry.js';
 import { emitRealtimeEvent } from '../sockets/socket.js';
 import { createWorkflowEvent } from './event.service.js';
@@ -24,7 +26,7 @@ const createHttpError = (message, statusCode, code = '') => {
   return error;
 };
 
-const PUBLISH_ROLES = ['editor', 'creator_admin', 'brand_rep'];
+const PUBLISH_ROLES = [CONTENT_CREATOR_ROLE, BRAND_REP_ROLE];
 
 const requirePublishPermission = user => {
   if (!PUBLISH_ROLES.includes(user.role)) {
@@ -79,8 +81,9 @@ const getMediaAssets = async ({ user, mediaAssetIds = [], includeLocalPath = fal
   return assets;
 };
 
-const buildAccountSnapshot = connection => ({
-  platform: connection.platform,
+const buildAccountSnapshot = (connection, platform = connection.platform) => ({
+  platform,
+  sourcePlatform: connection.platform,
   accountName: connection.accountName,
   accountHandle: connection.accountHandle,
   externalAccountId: connection.externalAccountId,
@@ -91,6 +94,7 @@ const normalizePublishInput = input => ({
   postGroupId: String(input.postGroupId || '').trim(),
   platformConnectionId: input.platformConnectionId,
   variantId: input.variantId || null,
+  targetPlatform: input.targetPlatform ? normalizePlatform(input.targetPlatform) : '',
   campaignId: input.campaignId || null,
   contentItemId: input.contentItemId || null,
   mediaAssetIds: Array.isArray(input.mediaAssetIds) ? input.mediaAssetIds : [],
@@ -101,8 +105,19 @@ const normalizePublishInput = input => ({
 
 const getVisibilityOptions = platform => VISIBILITY_OPTIONS_BY_PLATFORM[platform] || ['public'];
 
-const validateVisibility = ({ connection, mediaAssets, visibility }) => {
-  const options = getVisibilityOptions(connection.platform);
+const isSharedYouTubeShortsTarget = ({ connection, platform }) =>
+  connection.platform === 'youtube' && platform === 'youtube_shorts';
+
+const getPublishPlatform = ({ input, connection, variant }) => {
+  const platform = input.targetPlatform || variant?.platform || connection.platform;
+  if (platform === connection.platform || isSharedYouTubeShortsTarget({ connection, platform })) {
+    return platform;
+  }
+  throw createHttpError('Selected connection platform does not match the requested publish target.', 400);
+};
+
+const validateVisibility = ({ platform, mediaAssets, visibility }) => {
+  const options = getVisibilityOptions(platform);
   const hasVideo = mediaAssets.some(asset => asset.mediaType === 'video');
 
   if (!VISIBILITIES.includes(visibility)) {
@@ -125,20 +140,20 @@ const validateVisibility = ({ connection, mediaAssets, visibility }) => {
     return {
       ok: false,
       code: 'CAPABILITY_UNAVAILABLE',
-      message: `${connection.platform} does not support ${visibility} visibility in the current connector. Choose: ${options.join(', ')}.`
+      message: `${platform} does not support ${visibility} visibility in the current connector. Choose: ${options.join(', ')}.`
     };
   }
 
   return { ok: true };
 };
 
-const buildPayload = ({ input, connection, variant, mediaAssets }) => ({
+const buildPayload = ({ input, connection, variant, mediaAssets, platform }) => ({
   caption: input.caption || variant?.caption || '',
   mediaAssets,
   variant,
-  platform: connection.platform,
+  platform,
   account: sanitizeConnection(connection),
-  ...(getVisibilityOptions(connection.platform).length > 1 ? { visibility: input.visibility } : {})
+  ...(getVisibilityOptions(platform).length > 1 ? { visibility: input.visibility } : {})
 });
 
 export const validatePublishPayload = async ({ user, input }) => {
@@ -150,12 +165,12 @@ export const validatePublishPayload = async ({ user, input }) => {
   }
 
   const connection = await getConnectionWithSecrets({ user, connectionId: normalized.platformConnectionId });
-  const connector = getConnector(connection.platform);
-  if (!connector) throw createHttpError('No connector is registered for this platform.', 400);
-
   const variant = await getScopedVariant({ user, variantId: normalized.variantId });
+  const finalPublishPlatform = getPublishPlatform({ input: normalized, connection, variant });
+  const connector = getConnector(finalPublishPlatform);
+  if (!connector) throw createHttpError('No connector is registered for this platform.', 400);
   if (variant) {
-    if (variant.platform !== connection.platform && !(connection.platform === 'youtube' && variant.platform === 'youtube_shorts')) {
+    if (variant.platform !== finalPublishPlatform) {
       throw createHttpError('Selected connection platform does not match the variant platform.', 400);
     }
     if (variant.status !== 'approved') {
@@ -169,7 +184,7 @@ export const validatePublishPayload = async ({ user, input }) => {
   });
   const mediaAssets = await getMediaAssets({ user, mediaAssetIds: normalized.mediaAssetIds, includeLocalPath: true });
   const visibilityCheck = validateVisibility({
-    connection,
+    platform: finalPublishPlatform,
     mediaAssets,
     visibility: normalized.visibility
   });
@@ -178,21 +193,25 @@ export const validatePublishPayload = async ({ user, input }) => {
       ok: false,
       code: visibilityCheck.code,
       message: visibilityCheck.message,
-      data: { visibility: normalized.visibility, supportedVisibility: getVisibilityOptions(connection.platform) },
+      data: {
+        platform: finalPublishPlatform,
+        visibility: normalized.visibility,
+        supportedVisibility: getVisibilityOptions(finalPublishPlatform)
+      },
       connection: sanitizeConnection(connection),
       variant,
       contentItem,
       mediaAssets
     };
   }
-  const payload = buildPayload({ input: normalized, connection, variant, mediaAssets });
+  const payload = buildPayload({ input: normalized, connection, variant, mediaAssets, platform: finalPublishPlatform });
   const result = connector.validatePublishPayload(payload, connection);
 
   return {
     ok: result.ok,
     code: result.code,
     message: result.message,
-    data: result.data,
+    data: { ...(result.data || {}), platform: finalPublishPlatform },
     connection: sanitizeConnection(connection),
     variant,
     contentItem,
@@ -228,6 +247,7 @@ export const createPublishJob = async ({ user, input, publishNow = false }) => {
   }
 
   const connection = await getConnectionWithSecrets({ user, connectionId: normalized.platformConnectionId });
+  const publishPlatform = validation.data?.platform || getPublishPlatform({ input: normalized, connection, variant: validation.variant });
   const variant = validation.variant;
   const contentItem = validation.contentItem;
   const scheduledAt = publishNow ? new Date() : normalized.scheduledAt;
@@ -244,8 +264,8 @@ export const createPublishJob = async ({ user, input, publishNow = false }) => {
     variantId: variant?._id || null,
     mediaAssetIds: validation.mediaAssets.map(asset => asset._id),
     platformConnectionId: connection._id,
-    platform: connection.platform,
-      accountSnapshot: buildAccountSnapshot(connection),
+    platform: publishPlatform,
+      accountSnapshot: buildAccountSnapshot(connection, publishPlatform),
       caption: normalized.caption || variant?.caption || '',
       visibility: normalized.visibility,
       scheduledAt,
@@ -491,7 +511,7 @@ export const processPublishJob = async ({ jobId }) => {
           user: {
             _id: lockedJob.createdBy,
             workspaceId: lockedJob.workspaceId,
-            role: 'creator_admin'
+            role: CONTENT_CREATOR_ROLE
           },
           contentItem,
           variant,

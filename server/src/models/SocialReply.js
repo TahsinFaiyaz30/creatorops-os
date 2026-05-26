@@ -8,9 +8,11 @@ const socialReplySchema = new Schema(
   {
     workspaceId: { type: Schema.Types.ObjectId, ref: 'Workspace', required: true, index: true },
     socialCommentId: { type: Schema.Types.ObjectId, ref: 'SocialComment', required: true, index: true },
+    parentSocialReplyId: { type: Schema.Types.ObjectId, ref: 'SocialReply', default: null, index: true },
     platformConnectionId: { type: Schema.Types.ObjectId, ref: 'PlatformConnection', required: true },
     platform: { type: String, enum: SUPPORTED_PLATFORMS, required: true },
     providerReplyId: { type: String, default: '' },
+    parentProviderReplyId: { type: String, default: '' },
     replyText: { type: String, required: true },
     repliedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     accountSnapshot: { type: Schema.Types.Mixed, default: {} },

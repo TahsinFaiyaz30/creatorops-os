@@ -3,12 +3,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Loader2, LogIn, UserPlus, Zap } from 'lucide-react';
+import SiteLogo from '../../components/layout/SiteLogo';
 import { api } from '../../lib/api';
 import { saveSession } from '../../lib/auth';
+import { ROLES } from '../../lib/roles';
 
 const DEMO_ACCOUNTS = [
   { label: 'Content Creator', email: 'editor@creatorops.dev',  password: 'password123' },
-  { label: 'Creator / Admin', email: 'admin@creatorops.dev',   password: 'password123' },
   { label: 'Brand Rep',      email: 'brand@creatorops.dev',   password: 'password123' },
 ];
 
@@ -61,7 +62,7 @@ export default function LoginPage() {
   const [signupEmail,    setSignupEmail]    = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupConfirm,  setSignupConfirm]  = useState('');
-  const [signupRole,     setSignupRole]     = useState('editor');
+  const [signupRole,     setSignupRole]     = useState(ROLES.CONTENT_CREATOR);
 
   const [error,  setError]  = useState('');
   const [busy,   setBusy]   = useState(false);
@@ -99,10 +100,7 @@ export default function LoginPage() {
     <main className="flex min-h-screen bg-[var(--bg)]">
       {/* ── Left branding panel (hidden on small screens) ─────────────────── */}
       <div className="hidden lg:flex lg:w-[46%] flex-col justify-between bg-gradient-to-br from-[#05130d] via-[#0a2318] to-[#061811] p-12 text-white">
-        <div>
-          <div className="text-xs font-bold uppercase tracking-[0.3em] text-mint">CreatorOps</div>
-          <div className="mt-1 text-4xl font-extrabold tracking-tight">OS</div>
-        </div>
+        <SiteLogo size="lg" />
 
         <div>
           <h1 className="text-3xl font-bold leading-snug text-white">
@@ -129,10 +127,7 @@ export default function LoginPage() {
       {/* ── Right auth panel ───────────────────────────────────────────────── */}
       <div className="flex flex-1 flex-col items-center justify-center p-6 sm:p-10">
         {/* Mobile logo */}
-        <div className="mb-8 text-center lg:hidden">
-          <div className="text-xs font-bold uppercase tracking-[0.3em] text-mint">CreatorOps</div>
-          <div className="mt-0.5 text-3xl font-extrabold text-[var(--text)]">OS</div>
-        </div>
+        <SiteLogo size="md" className="mb-8 justify-center lg:hidden" />
 
         <div className="w-full max-w-md animate-fade-in">
           {/* Tab switcher */}
@@ -266,10 +261,10 @@ export default function LoginPage() {
                     onChange={e => setSignupRole(e.target.value)}
                     className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-4 py-3 text-sm text-[var(--text)] transition focus:border-mint"
                   >
-                    <option value="editor">Content Creator</option>
-                    <option value="brand_rep">Brand Representative</option>
+                    <option value={ROLES.CONTENT_CREATOR}>Content Creator</option>
+                    <option value={ROLES.BRAND_REP}>Brand Representative</option>
                   </select>
-                  <p className="mt-1.5 text-xs text-[var(--muted)]">Creator/Admin role is assigned by workspace owners.</p>
+                  <p className="mt-1.5 text-xs text-[var(--muted)]">Content creators publish and manage creator workflows. Brand representatives manage circulars.</p>
                 </div>
                 <button
                   id="signup-submit"
@@ -291,7 +286,7 @@ export default function LoginPage() {
               <span className="text-xs text-[var(--muted)]">Demo accounts</span>
               <div className="h-px flex-1 bg-[var(--border)]" />
             </div>
-            <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="mt-3 grid grid-cols-2 gap-2">
               {DEMO_ACCOUNTS.map(d => (
                 <button
                   key={d.email}

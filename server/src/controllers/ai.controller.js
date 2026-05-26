@@ -34,6 +34,7 @@ export const customizeCaptionsHandler = async (req, res, next) => {
       user: req.user,
       baseCaption: req.body.baseCaption,
       connectionIds: req.body.connectionIds,
+      connectionTargets: req.body.connectionTargets,
       mediaAssetIds: req.body.mediaAssetIds
     });
 

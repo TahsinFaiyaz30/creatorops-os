@@ -131,8 +131,54 @@ export default class FacebookConnector extends BasePlatformConnector {
       `https://graph.facebook.com/${GRAPH_VERSION}/${providerPostId}/comments?fields=id,from,message,like_count,comment_count,created_time&access_token=${encodeURIComponent(token)}`
     );
     if (!result.ok) return result;
-    return okResult((result.data?.data || []).map(comment => ({
+    const comments = [];
+    for (const comment of result.data?.data || []) {
+      comments.push(this.mapFacebookComment(comment));
+      if (Number(comment.comment_count || 0) > 0) {
+        const repliesResult = await this.fetchCommentReplies({ token, parentId: comment.id, threadId: comment.id });
+        if (!repliesResult.ok) return repliesResult;
+        comments.push(...repliesResult.data);
+      }
+    }
+    return okResult(comments);
+  }
+
+  async fetchCommentReplies({ token, parentId, threadId, depth = 1 }) {
+    if (depth > 5) return okResult([]);
+    const result = await this.requestJson(
+      `https://graph.facebook.com/${GRAPH_VERSION}/${parentId}/comments?fields=id,from,message,like_count,comment_count,created_time&access_token=${encodeURIComponent(token)}`
+    );
+    if (!result.ok) return result;
+
+    const replies = [];
+    for (const reply of result.data?.data || []) {
+      replies.push(
+        this.mapFacebookComment(reply, {
+          providerThreadId: threadId,
+          parentProviderCommentId: parentId,
+          isProviderReply: true
+        })
+      );
+      if (Number(reply.comment_count || 0) > 0) {
+        const nested = await this.fetchCommentReplies({
+          token,
+          parentId: reply.id,
+          threadId,
+          depth: depth + 1
+        });
+        if (!nested.ok) return nested;
+        replies.push(...nested.data);
+      }
+    }
+    return okResult(replies);
+  }
+
+  mapFacebookComment(comment, options = {}) {
+    return {
       providerCommentId: comment.id,
+      providerThreadId: options.providerThreadId || comment.id,
+      parentProviderCommentId: options.parentProviderCommentId || '',
+      isProviderReply: Boolean(options.isProviderReply),
       authorName: comment.from?.name || '',
       authorHandle: comment.from?.id || '',
       text: comment.message || '',
@@ -140,7 +186,7 @@ export default class FacebookConnector extends BasePlatformConnector {
       replyCount: comment.comment_count || 0,
       providerCreatedAt: comment.created_time ? new Date(comment.created_time) : null,
       rawProviderData: comment
-    })));
+    };
   }
 
   async replyToComment(connection, providerCommentId, replyText) {

@@ -143,11 +143,31 @@ export default class InstagramConnector extends BasePlatformConnector {
   async fetchComments(connection, providerPostId) {
     const token = this.getAccessToken(connection);
     const result = await this.requestJson(
-      `https://graph.facebook.com/${GRAPH_VERSION}/${providerPostId}/comments?fields=id,username,text,like_count,replies, timestamp&access_token=${encodeURIComponent(token)}`
+      `https://graph.facebook.com/${GRAPH_VERSION}/${providerPostId}/comments?fields=id,username,text,like_count,timestamp,replies{id,username,text,like_count,timestamp}&access_token=${encodeURIComponent(token)}`
     );
     if (!result.ok) return result;
-    return okResult((result.data?.data || []).map(comment => ({
+    const comments = [];
+    for (const comment of result.data?.data || []) {
+      comments.push(this.mapInstagramComment(comment));
+      comments.push(
+        ...(comment.replies?.data || []).map(reply =>
+          this.mapInstagramComment(reply, {
+            providerThreadId: comment.id,
+            parentProviderCommentId: comment.id,
+            isProviderReply: true
+          })
+        )
+      );
+    }
+    return okResult(comments);
+  }
+
+  mapInstagramComment(comment, options = {}) {
+    return {
       providerCommentId: comment.id,
+      providerThreadId: options.providerThreadId || comment.id,
+      parentProviderCommentId: options.parentProviderCommentId || '',
+      isProviderReply: Boolean(options.isProviderReply),
       authorName: comment.username || '',
       authorHandle: comment.username ? `@${comment.username}` : '',
       text: comment.text || '',
@@ -155,7 +175,7 @@ export default class InstagramConnector extends BasePlatformConnector {
       replyCount: comment.replies?.data?.length || 0,
       providerCreatedAt: comment.timestamp ? new Date(comment.timestamp) : null,
       rawProviderData: comment
-    })));
+    };
   }
 
   async replyToComment(connection, providerCommentId, replyText) {

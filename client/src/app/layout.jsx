@@ -4,6 +4,14 @@ import ThemeProvider from '../components/layout/ThemeProvider';
 export const metadata = {
   title: 'CreatorOps OS',
   description: 'Creator workflow infrastructure — campaign planning, AI repurposing, approval, publishing, and analytics.',
+  icons: {
+    icon: [
+      { url: '/favicon.jpeg', type: 'image/jpeg' },
+      { url: '/logo.jpeg', type: 'image/jpeg' }
+    ],
+    shortcut: '/favicon.jpeg',
+    apple: '/logo.jpeg'
+  }
 };
 
 export default function RootLayout({ children }) {

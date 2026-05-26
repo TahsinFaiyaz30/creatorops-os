@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Save, UserCircle, Briefcase, Camera, Link as LinkIcon, MapPin, Globe } from 'lucide-react';
 import AppShell from '../../../components/layout/AppShell';
 import { api } from '../../../lib/api';
-import { getUser } from '../../../lib/auth';
+import { getToken, getUser, saveSession } from '../../../lib/auth';
+import { isBrandRep } from '../../../lib/roles';
 
 export default function EditProfilePage() {
   const router = useRouter();
@@ -39,7 +40,7 @@ export default function EditProfilePage() {
     const loadProfile = async () => {
       try {
         const payload = await api.get('/api/users/profile/me');
-        const data = payload.data;
+        const data = payload.data || payload;
         
         setName(data.user.name || '');
         if (data.user.profile) {
@@ -78,7 +79,7 @@ export default function EditProfilePage() {
         location,
         avatarUrl,
         socialLinks: socialLinks.split(',').map(s => s.trim()).filter(Boolean),
-        brandDetails: user?.role === 'brand_rep' ? {
+        brandDetails: isBrandRep(user?.role) ? {
           brandName,
           description: brandDescription,
           industry,
@@ -87,15 +88,21 @@ export default function EditProfilePage() {
         } : undefined
       };
 
-      await api.put('/api/users/profile', payload);
+      const result = await api.put('/api/users/profile', payload);
       setMessage('Profile updated successfully!');
       
-      // Update local storage user name if it changed
-      const currentAuth = JSON.parse(localStorage.getItem('creatorops_auth') || '{}');
-      if (currentAuth.user) {
-        currentAuth.user.name = name;
-        localStorage.setItem('creatorops_auth', JSON.stringify(currentAuth));
-        window.dispatchEvent(new Event('storage'));
+      const token = getToken();
+      const updatedUser = result.data?.user;
+      if (token && updatedUser) {
+        const currentUser = getUser() || {};
+        saveSession({
+          token,
+          user: {
+            ...currentUser,
+            id: currentUser.id || updatedUser._id,
+            name: updatedUser.name || name
+          }
+        });
       }
     } catch (err) {
       setMessage(err.message);
@@ -170,7 +177,7 @@ export default function EditProfilePage() {
             </div>
           </section>
 
-          {user?.role === 'brand_rep' && (
+          {isBrandRep(user?.role) && (
             <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
               <h2 className="text-xl font-bold flex items-center gap-2 mb-6 text-[var(--text)]">
                 <Briefcase className="text-gold" /> Brand Details

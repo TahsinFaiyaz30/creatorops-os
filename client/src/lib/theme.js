@@ -1,5 +1,8 @@
 // ── Theme helpers ─────────────────────────────────────────────────────────────
 const STORAGE_KEY = 'creatorops.theme';
+const THEMES = new Set(['dark', 'light']);
+
+const normalizeTheme = theme => (THEMES.has(theme) ? theme : 'dark');
 
 export const getSystemTheme = () => {
   if (typeof window === 'undefined') return 'dark';
@@ -13,17 +16,17 @@ export const getSavedTheme = () => {
 
 export const saveTheme = theme => {
   if (typeof window === 'undefined') return;
-  try { localStorage.setItem(STORAGE_KEY, theme); } catch { /* */ }
+  try { localStorage.setItem(STORAGE_KEY, normalizeTheme(theme)); } catch { /* */ }
 };
 
 export const applyTheme = theme => {
   if (typeof document === 'undefined') return;
+  const nextTheme = normalizeTheme(theme);
   const root = document.documentElement;
-  if (theme === 'dark') {
-    root.classList.add('dark');
-  } else {
-    root.classList.remove('dark');
-  }
+  root.classList.toggle('dark', nextTheme === 'dark');
+  root.classList.toggle('light', nextTheme === 'light');
+  root.dataset.theme = nextTheme;
+  root.style.colorScheme = nextTheme;
 };
 
-export const resolveTheme = () => getSavedTheme() || getSystemTheme();
+export const resolveTheme = () => normalizeTheme(getSavedTheme() || getSystemTheme());

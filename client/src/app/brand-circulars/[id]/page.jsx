@@ -8,6 +8,7 @@ import ApplicationReviewPanel from '../../../components/circulars/ApplicationRev
 import { api } from '../../../lib/api';
 import { getUser } from '../../../lib/auth';
 import { formatPlatform } from '../../../lib/platforms';
+import { isBrandRep } from '../../../lib/roles';
 
 export default function BrandCircularDetailPage() {
   const params = useParams();
@@ -26,7 +27,7 @@ export default function BrandCircularDetailPage() {
     setCircular(circularPayload.data.circular);
     setStatistics(statsPayload?.data?.statistics || null);
     const currentUser = getUser();
-    if (currentUser?.role === 'brand_rep') {
+    if (isBrandRep(currentUser?.role)) {
       const appPayload = await api.get(`/api/brand-circulars/${params.id}/applications`);
       setApplications(appPayload.data.applications || []);
     }
@@ -97,7 +98,7 @@ export default function BrandCircularDetailPage() {
           <p className="mt-2">Judging criteria: {circular.judgingCriteria || 'n/a'}</p>
         </section>
 
-        {user?.role === 'brand_rep' ? (
+        {isBrandRep(user?.role) ? (
           <>
             <div className="flex flex-wrap gap-2">
               <button disabled={busy === 'publish'} onClick={() => transition('publish')} className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]">Publish</button>

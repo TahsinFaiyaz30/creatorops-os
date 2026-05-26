@@ -3,6 +3,7 @@ import CircularApplication from '../models/CircularApplication.js';
 import MediaAsset from '../models/MediaAsset.js';
 import PublishedPost from '../models/PublishedPost.js';
 import { normalizePlatforms } from '../constants/platforms.js';
+import { isBrandRepRole } from '../constants/roles.js';
 import { emitRealtimeEvent } from '../sockets/socket.js';
 import { createWorkflowEvent } from './event.service.js';
 import { createNotification } from './notification.service.js';
@@ -16,7 +17,7 @@ const createHttpError = (message, statusCode, code = '') => {
 };
 
 const requireBrandRep = user => {
-  if (user.role !== 'brand_rep') {
+  if (!isBrandRepRole(user.role)) {
     throw createHttpError('Forbidden: brand representative role is required.', 403);
   }
 };
@@ -61,9 +62,16 @@ const validateCircular = payload => {
   if (!payload.deadline) throw createHttpError('deadline is required.', 400);
 };
 
-const scopedCircular = async ({ user, circularId }) => {
-  const circular = await BrandCircular.findOne({ _id: circularId, workspaceId: user.workspaceId })
-    .populate('brandRepId', 'name email role')
+const scopedCircular = async ({ user, circularId, includePublishedMarketplace = false }) => {
+  const filter = { _id: circularId };
+  if (includePublishedMarketplace) {
+    filter.$or = [{ workspaceId: user.workspaceId }, { status: 'published' }];
+  } else {
+    filter.workspaceId = user.workspaceId;
+  }
+
+  const circular = await BrandCircular.findOne(filter)
+    .populate('brandRepId', 'name email role workspaceId')
     .populate('mediaAssetIds');
   if (!circular) throw createHttpError('Brand circular not found.', 404);
   return circular;
@@ -109,14 +117,23 @@ export const createBrandCircular = async ({ user, input }) => {
 };
 
 export const listBrandCirculars = async ({ user, query = {} }) => {
-  const filter = { workspaceId: user.workspaceId };
-  if (user.role !== 'brand_rep') filter.status = 'published';
-  if (query.status) filter.status = query.status;
-  if (user.role === 'brand_rep' && query.mine !== 'false') filter.brandRepId = user._id;
-  return BrandCircular.find(filter).sort({ createdAt: -1 }).populate('brandRepId', 'name email role').populate('mediaAssetIds');
+  const filter = {};
+  const wantsOwnCirculars = isBrandRepRole(user.role) && query.mine !== 'false';
+
+  if (wantsOwnCirculars) {
+    filter.workspaceId = user.workspaceId;
+    filter.brandRepId = user._id;
+    if (query.status) filter.status = query.status;
+  } else {
+    filter.status = 'published';
+    if (query.platform) filter.platforms = query.platform;
+  }
+
+  return BrandCircular.find(filter).sort({ createdAt: -1 }).populate('brandRepId', 'name email role workspaceId').populate('mediaAssetIds');
 };
 
-export const getBrandCircular = async ({ user, circularId }) => scopedCircular({ user, circularId });
+export const getBrandCircular = async ({ user, circularId }) =>
+  scopedCircular({ user, circularId, includePublishedMarketplace: true });
 
 export const updateBrandCircular = async ({ user, circularId, input }) => {
   const circular = await scopedCircular({ user, circularId });
@@ -159,10 +176,10 @@ export const archiveBrandCircular = ({ user, circularId }) =>
   transitionCircular({ user, circularId, status: 'archived' });
 
 export const applyToCircular = async ({ user, circularId, input }) => {
-  if (user.role === 'brand_rep') {
+  if (isBrandRepRole(user.role)) {
     throw createHttpError('Brand representatives cannot apply to circulars.', 403);
   }
-  const circular = await BrandCircular.findOne({ _id: circularId, workspaceId: user.workspaceId, status: 'published' });
+  const circular = await BrandCircular.findOne({ _id: circularId, status: 'published' });
   if (!circular) throw createHttpError('Open brand circular not found.', 404);
   if (circular.deadline && circular.deadline < new Date()) {
     throw createHttpError('This circular deadline has passed.', 400);
@@ -182,7 +199,7 @@ export const applyToCircular = async ({ user, circularId, input }) => {
   const statistics = await getCreatorStatistics({ user });
   try {
     const application = await CircularApplication.create({
-      workspaceId: user.workspaceId,
+      workspaceId: circular.workspaceId,
       circularId: circular._id,
       creatorId: user._id,
       message: String(input.message || '').trim(),
@@ -194,7 +211,7 @@ export const applyToCircular = async ({ user, circularId, input }) => {
       status: 'submitted'
     });
     await createWorkflowEvent({
-      workspaceId: user.workspaceId,
+      workspaceId: circular.workspaceId,
       actorId: user._id,
       eventType: 'application.submitted',
       message: 'Creator submitted a brand circular application.',
@@ -203,7 +220,7 @@ export const applyToCircular = async ({ user, circularId, input }) => {
       metadata: { applicationId: application._id, circularId: circular._id }
     });
     emitRealtimeEvent('circular:application_submitted', application);
-    emitRealtimeEvent('calendar:updated', { workspaceId: user.workspaceId, source: 'application', entityId: application._id });
+    emitRealtimeEvent('calendar:updated', { workspaceId: circular.workspaceId, source: 'application', entityId: application._id });
     return application;
   } catch (error) {
     if (error.code === 11000) {
@@ -224,8 +241,9 @@ export const listCircularApplications = async ({ user, circularId }) => {
 };
 
 export const listApplicationsForUser = async ({ user }) => {
-  const filter = { workspaceId: user.workspaceId };
-  if (user.role === 'brand_rep') {
+  const filter = {};
+  if (isBrandRepRole(user.role)) {
+    filter.workspaceId = user.workspaceId;
     const circulars = await BrandCircular.find({ workspaceId: user.workspaceId, brandRepId: user._id }).select('_id');
     filter.circularId = { $in: circulars.map(circular => circular._id) };
   } else {
@@ -243,7 +261,7 @@ const getApplicationForBrandAction = async ({ user, applicationId }) => {
   requireBrandRep(user);
   const application = await CircularApplication.findOne({ _id: applicationId, workspaceId: user.workspaceId })
     .populate('circularId')
-    .populate('creatorId', 'name email role');
+    .populate('creatorId', 'name email role workspaceId');
   if (!application) throw createHttpError('Circular application not found.', 404);
   if (String(application.circularId.brandRepId) !== String(user._id)) {
     throw createHttpError('Brand representatives can only review their own circular applications.', 403);
@@ -261,7 +279,7 @@ const reviewApplication = async ({ user, applicationId, status, eventType, notif
   await application.save();
 
   await createNotification({
-    workspaceId: user.workspaceId,
+    workspaceId: application.creatorId.workspaceId || user.workspaceId,
     userId: application.creatorId._id,
     type: notificationType,
     title: notificationTitle,

@@ -7,6 +7,7 @@ import {
   listPublishedPosts,
   listUnifiedPostGroups,
   replyToSocialComment,
+  replyToSocialReply,
   syncPublishedPost,
   syncUnifiedPostGroup
 } from '../services/social.service.js';
@@ -92,6 +93,19 @@ export const replyToComment = async (req, res, next) => {
     const reply = await replyToSocialComment({
       user: req.user,
       commentId: req.params.id,
+      replyText: req.body.replyText
+    });
+    res.status(201).json({ data: { reply } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const replyToReply = async (req, res, next) => {
+  try {
+    const reply = await replyToSocialReply({
+      user: req.user,
+      replyId: req.params.id,
       replyText: req.body.replyText
     });
     res.status(201).json({ data: { reply } });

@@ -87,16 +87,22 @@ export default class WordPressConnector extends BasePlatformConnector {
       headers: { Authorization: `Basic ${auth}` }
     });
     if (!result.ok) return result;
-    return okResult((Array.isArray(result.data) ? result.data : []).map(comment => ({
-      providerCommentId: String(comment.id),
-      authorName: comment.author_name || '',
-      authorHandle: comment.author_url || '',
-      text: comment.content?.rendered || '',
-      likeCount: 0,
-      replyCount: 0,
-      providerCreatedAt: comment.date ? new Date(comment.date) : null,
-      rawProviderData: comment
-    })));
+    return okResult((Array.isArray(result.data) ? result.data : []).map(comment => {
+      const parentId = comment.parent ? String(comment.parent) : '';
+      return {
+        providerCommentId: String(comment.id),
+        providerThreadId: parentId || String(comment.id),
+        parentProviderCommentId: parentId,
+        isProviderReply: Boolean(parentId),
+        authorName: comment.author_name || '',
+        authorHandle: comment.author_url || '',
+        text: comment.content?.rendered || '',
+        likeCount: 0,
+        replyCount: 0,
+        providerCreatedAt: comment.date ? new Date(comment.date) : null,
+        rawProviderData: comment
+      };
+    }));
   }
 
   async replyToComment(connection, providerCommentId, replyText) {

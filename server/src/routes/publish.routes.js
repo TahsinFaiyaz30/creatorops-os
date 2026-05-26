@@ -11,9 +11,10 @@ import {
 } from '../controllers/publish.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requireRole } from '../middleware/role.middleware.js';
+import { BRAND_REP_ROLE, CONTENT_CREATOR_ROLE } from '../constants/roles.js';
 
 const router = express.Router();
-const publishRoles = ['editor', 'creator_admin', 'brand_rep'];
+const publishRoles = [CONTENT_CREATOR_ROLE, BRAND_REP_ROLE];
 
 router.use(authenticate);
 

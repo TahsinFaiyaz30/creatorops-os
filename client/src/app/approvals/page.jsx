@@ -20,7 +20,7 @@ export default function ApprovalsPage() {
           <header className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
             <p className="text-sm uppercase tracking-[0.18em] text-mint">Review queue</p>
             <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Approvals</h1>
-            <p className="mt-2 text-sm text-[var(--muted)]">Creator/Admin decisions are enforced by backend RBAC.</p>
+            <p className="mt-2 text-sm text-[var(--muted)]">Content Creator review decisions are enforced by backend RBAC.</p>
           </header>
           <ApprovalQueue user={user} />
         </div>

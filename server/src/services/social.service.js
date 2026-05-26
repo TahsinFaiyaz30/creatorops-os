@@ -5,6 +5,7 @@ import SocialComment from '../models/SocialComment.js';
 import SocialMetricSnapshot from '../models/SocialMetricSnapshot.js';
 import SocialReply from '../models/SocialReply.js';
 import { PLATFORM_LABELS } from '../constants/platforms.js';
+import { isContentCreatorRole } from '../constants/roles.js';
 import { getConnector } from '../platforms/connectorRegistry.js';
 import { emitRealtimeEvent } from '../sockets/socket.js';
 import { createWorkflowEvent } from './event.service.js';
@@ -17,8 +18,8 @@ const createHttpError = (message, statusCode, code = '') => {
 };
 
 const requireCreatorAdmin = user => {
-  if (user.role !== 'creator_admin') {
-    throw createHttpError('Forbidden: creator_admin role is required for replies.', 403);
+  if (!isContentCreatorRole(user.role)) {
+    throw createHttpError('Forbidden: Content Creator role is required for replies.', 403);
   }
 };
 
@@ -42,6 +43,25 @@ const getGroupIdForJob = job => job.postGroupId || getDocumentId(job);
 const getGroupIdForPost = post => post.postGroupId || (post.publishJobId ? String(post.publishJobId) : getDocumentId(post));
 
 const platformRulesName = platform => PLATFORM_LABELS[platform] || platform;
+
+const countAccountReplies = comments =>
+  comments.reduce((total, comment) => total + (comment.accountReplies?.length || 0), 0);
+
+const isYouTubePlatform = platform => ['youtube', 'youtube_shorts'].includes(platform);
+
+const getCommentReplyTargetId = comment => {
+  if (isYouTubePlatform(comment.platform) && comment.parentProviderCommentId) {
+    return comment.parentProviderCommentId;
+  }
+  return comment.providerCommentId;
+};
+
+const getReplyReplyTargetId = ({ comment, parentReply }) => {
+  if (isYouTubePlatform(parentReply.platform)) {
+    return comment.parentProviderCommentId || comment.providerCommentId;
+  }
+  return parentReply.providerReplyId;
+};
 
 const getLatestMetricMap = async ({ workspaceId, postIds }) => {
   if (!postIds.length) return new Map();
@@ -70,6 +90,7 @@ const buildUnifiedPostGroup = ({ groupId, jobs = [], posts = [], metricMap = new
     const platformComments = comments.filter(comment => comment.platform === platform);
     const topLevelComments = platformComments.filter(comment => !comment.isProviderReply);
     const providerReplies = platformComments.filter(comment => comment.isProviderReply);
+    const accountReplyCount = countAccountReplies(platformComments);
     const analyticsStatus = post
       ? post.lastAnalyticsErrorMessage
         ? 'error'
@@ -117,7 +138,7 @@ const buildUnifiedPostGroup = ({ groupId, jobs = [], posts = [], metricMap = new
       commentsUnavailableMessage,
       metrics,
       commentCount: topLevelComments.length,
-      replyRecordCount: providerReplies.length,
+      replyRecordCount: providerReplies.length + accountReplyCount,
       unavailableMessage: post
         ? snapshot
           ? ''
@@ -232,13 +253,41 @@ export const getUnifiedPostGroup = async ({ user, groupId, platform = '' }) => {
         })
       : []
   ]);
+  const replies = comments.length
+    ? await SocialReply.find({
+        workspaceId: user.workspaceId,
+        socialCommentId: { $in: comments.map(comment => comment._id) }
+      })
+        .sort({ createdAt: 1 })
+        .populate('repliedBy', 'name email role')
+    : [];
+  const creatorOpsProviderReplyIds = new Set(
+    replies.map(reply => reply.providerReplyId).filter(Boolean).map(String)
+  );
+  const visibleComments = comments.filter(comment => {
+    if (!comment.isProviderReply) return true;
+    return !creatorOpsProviderReplyIds.has(String(comment.providerCommentId || ''));
+  });
+  const repliesByCommentId = replies.reduce((acc, reply) => {
+    const key = String(reply.socialCommentId);
+    acc[key] = acc[key] || [];
+    acc[key].push(reply);
+    return acc;
+  }, {});
+  const commentsWithAccountReplies = visibleComments.map(comment => {
+    const obj = typeof comment.toObject === 'function' ? comment.toObject() : comment;
+    return {
+      ...obj,
+      accountReplies: repliesByCommentId[String(comment._id)] || []
+    };
+  });
 
   return buildUnifiedPostGroup({
     groupId,
     jobs: filteredJobs,
     posts: filteredPosts,
     metricMap,
-    comments
+    comments: commentsWithAccountReplies
   });
 };
 
@@ -405,14 +454,18 @@ export const listComments = async ({ user, postId }) => {
 
 export const replyToSocialComment = async ({ user, commentId, replyText }) => {
   requireCreatorAdmin(user);
-  if (!replyText) throw createHttpError('replyText is required.', 400);
+  const trimmedReplyText = String(replyText || '').trim();
+  if (!trimmedReplyText) throw createHttpError('replyText is required.', 400);
   const comment = await SocialComment.findOne({ _id: commentId, workspaceId: user.workspaceId });
   if (!comment) throw createHttpError('Social comment not found.', 404);
   const post = await PublishedPost.findOne({ _id: comment.publishedPostId, workspaceId: user.workspaceId });
   if (!post) throw createHttpError('Published post not found.', 404);
   const connection = await getConnectionWithSecrets(post);
   const connector = getConnector(comment.platform);
-  const result = await connector.replyToComment(connection, comment.providerCommentId, replyText);
+  if (!connector) throw createHttpError('Platform connector is unavailable.', 404);
+  const providerTargetId = getCommentReplyTargetId(comment);
+  if (!providerTargetId) throw createHttpError('The selected comment does not have a provider reply target id.', 400, 'CAPABILITY_UNAVAILABLE');
+  const result = await connector.replyToComment(connection, providerTargetId, trimmedReplyText);
   if (!result.ok) throw createHttpError(result.message, 400, result.code);
 
   const reply = await SocialReply.create({
@@ -421,7 +474,8 @@ export const replyToSocialComment = async ({ user, commentId, replyText }) => {
     platformConnectionId: connection._id,
     platform: comment.platform,
     providerReplyId: result.data.providerReplyId || '',
-    replyText,
+    parentProviderReplyId: providerTargetId,
+    replyText: trimmedReplyText,
     repliedBy: user._id,
     accountSnapshot: post.accountSnapshot,
     source: 'real'
@@ -438,7 +492,77 @@ export const replyToSocialComment = async ({ user, commentId, replyText }) => {
     message: 'A real platform comment reply was created.',
     entityType: 'SocialReply',
     entityId: reply._id,
-    metadata: { socialCommentId: comment._id, platform: comment.platform }
+    metadata: {
+      socialCommentId: comment._id,
+      providerCommentId: comment.providerCommentId,
+      providerReplyTargetId: providerTargetId,
+      parentProviderCommentId: comment.parentProviderCommentId || '',
+      isProviderReply: comment.isProviderReply,
+      platform: comment.platform
+    }
+  });
+
+  return reply;
+};
+
+export const replyToSocialReply = async ({ user, replyId, replyText }) => {
+  requireCreatorAdmin(user);
+  const trimmedReplyText = String(replyText || '').trim();
+  if (!trimmedReplyText) throw createHttpError('replyText is required.', 400);
+
+  const parentReply = await SocialReply.findOne({ _id: replyId, workspaceId: user.workspaceId });
+  if (!parentReply) throw createHttpError('Social reply not found.', 404);
+  if (!parentReply.providerReplyId) {
+    throw createHttpError('This reply does not have a provider reply id yet. Sync comments from the platform and try again.', 400, 'CAPABILITY_UNAVAILABLE');
+  }
+
+  const comment = await SocialComment.findOne({
+    _id: parentReply.socialCommentId,
+    workspaceId: user.workspaceId
+  });
+  if (!comment) throw createHttpError('Social comment not found.', 404);
+
+  const post = await PublishedPost.findOne({ _id: comment.publishedPostId, workspaceId: user.workspaceId });
+  if (!post) throw createHttpError('Published post not found.', 404);
+
+  const connection = await getConnectionWithSecrets(post);
+  const connector = getConnector(parentReply.platform);
+  if (!connector) throw createHttpError('Platform connector is unavailable.', 404);
+
+  const providerTargetId = getReplyReplyTargetId({ comment, parentReply });
+  if (!providerTargetId) throw createHttpError('The selected reply does not have a provider reply target id.', 400, 'CAPABILITY_UNAVAILABLE');
+  const result = await connector.replyToComment(connection, providerTargetId, trimmedReplyText);
+  if (!result.ok) throw createHttpError(result.message, 400, result.code);
+
+  const reply = await SocialReply.create({
+    workspaceId: user.workspaceId,
+    socialCommentId: comment._id,
+    parentSocialReplyId: parentReply._id,
+    platformConnectionId: connection._id,
+    platform: parentReply.platform,
+    providerReplyId: result.data.providerReplyId || '',
+    parentProviderReplyId: providerTargetId,
+    replyText: trimmedReplyText,
+    repliedBy: user._id,
+    accountSnapshot: post.accountSnapshot,
+    source: 'real'
+  });
+
+  emitRealtimeEvent('social:reply_created', reply);
+  await createWorkflowEvent({
+    workspaceId: user.workspaceId,
+    actorId: user._id,
+    eventType: 'social.reply_created',
+    message: 'A real platform nested reply was created.',
+    entityType: 'SocialReply',
+    entityId: reply._id,
+    metadata: {
+      socialCommentId: comment._id,
+      parentSocialReplyId: parentReply._id,
+      providerReplyId: reply.providerReplyId,
+      parentProviderReplyId: providerTargetId,
+      platform: parentReply.platform
+    }
   });
 
   return reply;

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bot, CheckCircle2, Send, ShieldAlert, Wand2 } from 'lucide-react';
+import { Bot, CheckCircle2, Send, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatPlatform } from '../../lib/platforms';
 import SchedulePanel from '../schedule/SchedulePanel';
@@ -18,7 +18,6 @@ const statusClass = {
 
 export default function PlatformVariantCard({ variant, user, onRefresh }) {
   const [localVariant, setLocalVariant] = useState(variant);
-  const [approvalId, setApprovalId] = useState(null);
   const [formatRule, setFormatRule] = useState(null);
   const [matchingAccounts, setMatchingAccounts] = useState([]);
   const [message, setMessage] = useState('');
@@ -44,11 +43,10 @@ export default function PlatformVariantCard({ variant, user, onRefresh }) {
     setBusy(true);
     setMessage('');
     try {
-      const payload = await api.post('/api/approvals/request', {
+      await api.post('/api/approvals/request', {
         variantId: localVariant._id,
         comment: 'Ready for review'
       });
-      setApprovalId(payload.data.approval._id);
       setLocalVariant({ ...localVariant, status: 'in_review' });
       setMessage('Submitted for review.');
       onRefresh?.();
@@ -72,20 +70,6 @@ export default function PlatformVariantCard({ variant, user, onRefresh }) {
       onRefresh?.();
     } catch (err) {
       setMessage(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const tryApproveAsEditor = async () => {
-    if (!approvalId) return;
-    setBusy(true);
-    setMessage('');
-    try {
-      await api.post(`/api/approvals/${approvalId}/approve`, { comment: 'Editor approval attempt' });
-      setMessage('Unexpectedly approved.');
-    } catch (err) {
-      setMessage(err.status === 403 ? 'Backend blocked this action: only Creator/Admin can approve.' : err.message);
     } finally {
       setBusy(false);
     }
@@ -156,17 +140,6 @@ export default function PlatformVariantCard({ variant, user, onRefresh }) {
           <Wand2 size={15} />
           Optimize
         </button>
-        {user?.role === 'editor' && approvalId && (
-          <button
-            type="button"
-            onClick={tryApproveAsEditor}
-            disabled={busy}
-            className="focus-ring inline-flex items-center gap-2 rounded-xl border border-rose/40 px-3 py-2 text-sm text-rose hover:bg-rose/10"
-          >
-            <ShieldAlert size={15} />
-            Try approve as Editor
-          </button>
-        )}
       </div>
 
       <SchedulePanel variant={localVariant} user={user} onDone={onRefresh} />

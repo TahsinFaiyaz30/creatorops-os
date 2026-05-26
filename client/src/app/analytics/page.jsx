@@ -7,10 +7,104 @@ import { api } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { getUser } from '../../lib/auth';
 import { formatPlatform } from '../../lib/platforms';
+import { isContentCreator } from '../../lib/roles';
 
 const metricKeys = ['likes', 'reactions', 'comments', 'shares', 'views', 'saves'];
 
 const emptyMetrics = { likes: 0, reactions: 0, comments: 0, shares: 0, views: 0, saves: 0 };
+
+const getCommentDate = comment => new Date(comment.providerCreatedAt || comment.createdAt || 0).getTime();
+
+const sortComments = comments =>
+  [...comments].sort((a, b) => getCommentDate(a) - getCommentDate(b));
+
+const getReplyCount = comment =>
+  (comment.providerReplies || []).length + (comment.accountReplies || []).length;
+
+const getId = item => String(item?._id || item?.id || '');
+
+const isYouTubePlatform = platform => ['youtube', 'youtube_shorts'].includes(platform);
+
+const collectAccountReplyProviderIds = (replies = [], ids = new Set()) => {
+  replies.forEach(reply => {
+    if (reply.providerReplyId) ids.add(String(reply.providerReplyId));
+    collectAccountReplyProviderIds(reply.accountReplies || [], ids);
+  });
+  return ids;
+};
+
+const buildAccountReplyTree = replies => {
+  const nodes = new Map();
+  replies.forEach(reply => {
+    nodes.set(getId(reply), { ...reply, accountReplies: [] });
+  });
+
+  const roots = [];
+  nodes.forEach(reply => {
+    const parentId = String(reply.parentSocialReplyId || '');
+    const parent = parentId ? nodes.get(parentId) : null;
+    if (parent) {
+      parent.accountReplies.push(reply);
+    } else {
+      roots.push(reply);
+    }
+  });
+
+  const sortTree = reply => {
+    reply.accountReplies = [...(reply.accountReplies || [])]
+      .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
+      .map(sortTree);
+    return reply;
+  };
+
+  return roots
+    .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
+    .map(sortTree);
+};
+
+const buildCommentTree = comments => {
+  const creatorOpsProviderReplyIds = comments.reduce(
+    (ids, comment) => collectAccountReplyProviderIds(comment.accountReplies || [], ids),
+    new Set()
+  );
+  const nodesByProviderId = new Map();
+
+  comments.forEach(comment => {
+    if (comment.isProviderReply && creatorOpsProviderReplyIds.has(String(comment.providerCommentId))) {
+      return;
+    }
+
+    nodesByProviderId.set(comment.providerCommentId, {
+      ...comment,
+      providerReplies: [],
+      accountReplies: buildAccountReplyTree(comment.accountReplies || [])
+    });
+  });
+
+  const roots = [];
+
+  nodesByProviderId.forEach(comment => {
+    const parent = comment.parentProviderCommentId
+      ? nodesByProviderId.get(comment.parentProviderCommentId)
+      : null;
+
+    if (comment.isProviderReply && parent) {
+      parent.providerReplies.push(comment);
+    } else {
+      roots.push(comment);
+    }
+  });
+
+  const sortTree = node => {
+    node.providerReplies = sortComments(node.providerReplies).map(sortTree);
+    node.accountReplies = [...(node.accountReplies || [])].sort(
+      (a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
+    );
+    return node;
+  };
+
+  return sortComments(roots).map(sortTree);
+};
 
 export default function AnalyticsPage() {
   const [user, setUser] = useState(null);
@@ -89,12 +183,41 @@ export default function AnalyticsPage() {
   };
 
   const reply = async comment => {
-    setBusy(comment._id);
+    const key = getId(comment);
+    setBusy(key);
     setMessage('');
+    const text = String(replyText[key] || '').trim();
+    if (!text) {
+      setMessage('Write a reply first.');
+      setBusy('');
+      return;
+    }
     try {
-      await api.post(`/api/social/comments/${comment._id}/reply`, { replyText: replyText[comment._id] || '' });
+      await api.post(`/api/social/comments/${key}/reply`, { replyText: text });
       setMessage(`Reply created through the connected ${formatPlatform(comment.platform)} account.`);
-      setReplyText(current => ({ ...current, [comment._id]: '' }));
+      setReplyText(current => ({ ...current, [key]: '' }));
+      if (selectedGroup?.id) await openGroup(selectedGroup.id, selectedPlatform);
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const replyToAccountReply = async accountReply => {
+    const key = `reply:${getId(accountReply)}`;
+    setBusy(key);
+    setMessage('');
+    const text = String(replyText[key] || '').trim();
+    if (!text) {
+      setMessage('Write a reply first.');
+      setBusy('');
+      return;
+    }
+    try {
+      await api.post(`/api/social/replies/${getId(accountReply)}/reply`, { replyText: text });
+      setMessage(`Nested reply created through the connected ${formatPlatform(accountReply.platform)} account.`);
+      setReplyText(current => ({ ...current, [key]: '' }));
       if (selectedGroup?.id) await openGroup(selectedGroup.id, selectedPlatform);
     } catch (err) {
       setMessage(err.message);
@@ -104,26 +227,7 @@ export default function AnalyticsPage() {
   };
 
   const selectedTotals = useMemo(() => selectedGroup?.totals || emptyMetrics, [selectedGroup]);
-  const visibleComments = useMemo(() => {
-    const comments = selectedGroup?.comments || [];
-    const repliesByParent = comments.reduce((acc, comment) => {
-      if (!comment.isProviderReply || !comment.parentProviderCommentId) return acc;
-      acc[comment.parentProviderCommentId] = acc[comment.parentProviderCommentId] || [];
-      acc[comment.parentProviderCommentId].push(comment);
-      return acc;
-    }, {});
-    const topLevel = comments
-      .filter(comment => !comment.isProviderReply)
-      .map(comment => ({
-        ...comment,
-        providerReplies: repliesByParent[comment.providerCommentId] || []
-      }));
-    const knownParentIds = new Set(topLevel.map(comment => comment.providerCommentId));
-    const orphanReplies = comments
-      .filter(comment => comment.isProviderReply && !knownParentIds.has(comment.parentProviderCommentId))
-      .map(comment => ({ ...comment, providerReplies: [] }));
-    return [...topLevel, ...orphanReplies];
-  }, [selectedGroup]);
+  const commentTree = useMemo(() => buildCommentTree(selectedGroup?.comments || []), [selectedGroup]);
 
   return (
     <AppShell>
@@ -259,42 +363,19 @@ export default function AnalyticsPage() {
                 <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
                   <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Comments</h3>
                   <div className="mt-3 space-y-3">
-                    {visibleComments.map(comment => (
-                      <div key={comment._id} className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3">
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
-                          <MessageSquare size={13} />
-                          <span className="rounded-full bg-mint/10 px-2 py-1 text-mint">{formatPlatform(comment.platform)}</span>
-                          <span>{comment.authorName || comment.authorHandle || 'Platform user'}</span>
-                          <span>likes {comment.likeCount || 0}</span>
-                          <span>replies {comment.replyCount || 0}</span>
-                          <span>source: {comment.source}</span>
-                          {comment.isProviderReply && <span className="rounded-full bg-mint/10 px-2 py-1 text-mint">reply</span>}
-                        </div>
-                        <p className="mt-2 text-sm text-[var(--text)]">{comment.text}</p>
-                        {(comment.providerReplies || []).length > 0 && (
-                          <div className="mt-3 space-y-2 border-l border-[var(--border)] pl-4">
-                            {comment.providerReplies.map(reply => (
-                              <div key={reply._id} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
-                                <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
-                                  <span className="rounded-full bg-mint/10 px-2 py-1 text-mint">reply</span>
-                                  <span>{reply.authorName || reply.authorHandle || 'Platform user'}</span>
-                                  <span>likes {reply.likeCount || 0}</span>
-                                  <span>source: {reply.source}</span>
-                                </div>
-                                <p className="mt-2 text-sm text-[var(--text)]">{reply.text}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {user?.role === 'creator_admin' && !comment.isProviderReply && (
-                          <div className="mt-3 flex gap-2">
-                            <input value={replyText[comment._id] || ''} onChange={event => setReplyText({ ...replyText, [comment._id]: event.target.value })} placeholder={`Reply on ${formatPlatform(comment.platform)} using the publishing account`} className="focus-ring flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)]" />
-                            <button type="button" disabled={busy === comment._id} onClick={() => reply(comment)} className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]">Reply</button>
-                          </div>
-                        )}
-                      </div>
+                    {commentTree.map(comment => (
+                      <CommentThreadNode
+                        key={comment._id}
+                        comment={comment}
+                        user={user}
+                        busy={busy}
+                        replyText={replyText}
+                        setReplyText={setReplyText}
+                        onReply={reply}
+                        onReplyToAccountReply={replyToAccountReply}
+                      />
                     ))}
-                    {visibleComments.length === 0 && (
+                    {commentTree.length === 0 && (
                       <div className="space-y-2">
                         {selectedGroup.platformBreakdown.map(item => (
                           <p key={item.platform} className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3 text-sm text-[var(--muted)]">
@@ -322,6 +403,162 @@ function MetricCard({ label, value }) {
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
       <div className="text-xs uppercase tracking-wide text-[var(--muted)]">{label}</div>
       <div className="mt-2 text-2xl font-bold text-[var(--text)]">{value}</div>
+    </div>
+  );
+}
+
+function CommentThreadNode({ comment, user, busy, replyText, setReplyText, onReply, onReplyToAccountReply, depth = 0 }) {
+  const providerReplies = comment.providerReplies || [];
+  const accountReplies = comment.accountReplies || [];
+  const canReply = isContentCreator(user?.role) && comment.source === 'real' && Boolean(comment.providerCommentId);
+  const totalReplies = getReplyCount(comment);
+  const commentKey = getId(comment);
+
+  return (
+    <div className={`rounded-xl border border-[var(--border)] ${depth === 0 ? 'bg-[var(--surface2)]' : 'bg-[var(--surface)]'} p-3`}>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+        <MessageSquare size={13} />
+        <span className="rounded-full bg-mint/10 px-2 py-1 text-mint">{formatPlatform(comment.platform)}</span>
+        <span className="rounded-full bg-[var(--surface2)] px-2 py-1 text-[var(--text)]">
+          {depth === 0 ? 'source comment' : `nested reply L${depth}`}
+        </span>
+        <span>{comment.authorName || comment.authorHandle || 'Platform user'}</span>
+        <span>likes {comment.likeCount || 0}</span>
+        <span>replies {comment.replyCount || totalReplies || 0}</span>
+        <span>source: {comment.source}</span>
+      </div>
+
+      <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--text)]">{comment.text}</p>
+
+      {accountReplies.length > 0 && (
+        <div className="mt-3 space-y-2 border-l border-mint/30 pl-4">
+          {accountReplies.map(reply => (
+            <AccountReplyCard
+              key={reply._id}
+              reply={reply}
+              user={user}
+              busy={busy}
+              replyText={replyText}
+              setReplyText={setReplyText}
+              onReply={onReplyToAccountReply}
+              platform={comment.platform}
+              depth={depth + 1}
+            />
+          ))}
+        </div>
+      )}
+
+      {providerReplies.length > 0 && (
+        <div className="mt-3 space-y-2 border-l border-[var(--border)] pl-4">
+          {providerReplies.map(reply => (
+            <CommentThreadNode
+              key={reply._id}
+              comment={reply}
+              user={user}
+              busy={busy}
+              replyText={replyText}
+              setReplyText={setReplyText}
+              onReply={onReply}
+              onReplyToAccountReply={onReplyToAccountReply}
+              depth={depth + 1}
+            />
+          ))}
+        </div>
+      )}
+
+      {canReply && (
+        <div className="mt-3 space-y-2">
+          {depth > 0 && isYouTubePlatform(comment.platform) && (
+            <p className="text-xs text-[var(--muted)]">
+              YouTube will publish this under the top-level thread; CreatorOps keeps it nested under the reply you selected.
+            </p>
+          )}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              value={replyText[commentKey] || ''}
+              onChange={event => setReplyText({ ...replyText, [commentKey]: event.target.value })}
+              placeholder={`${depth === 0 ? 'Reply to this comment' : 'Reply to this nested reply'} on ${formatPlatform(comment.platform)}`}
+              className="focus-ring flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)]"
+            />
+            <button
+              type="button"
+              disabled={busy === commentKey || !String(replyText[commentKey] || '').trim()}
+              onClick={() => onReply(comment)}
+              className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]"
+            >
+              Reply
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AccountReplyCard({ reply, user, busy, replyText, setReplyText, onReply, platform, depth = 1 }) {
+  const account = reply.accountSnapshot || {};
+  const nestedReplies = reply.accountReplies || [];
+  const replyKey = `reply:${getId(reply)}`;
+  const canReply = isContentCreator(user?.role) && Boolean(reply.providerReplyId);
+
+  return (
+    <div className="rounded-xl border border-mint/20 bg-mint/10 p-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+        <span className="rounded-full bg-mint/15 px-2 py-1 text-mint">CreatorOps reply</span>
+        <span className="rounded-full bg-[var(--surface2)] px-2 py-1 text-[var(--text)]">nested reply L{depth}</span>
+        <span>{account.accountName || account.accountHandle || formatPlatform(platform)}</span>
+        {reply.repliedBy?.name && <span>by {reply.repliedBy.name}</span>}
+        <span>source: {reply.source}</span>
+      </div>
+      <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--text)]">{reply.replyText}</p>
+
+      {nestedReplies.length > 0 && (
+        <div className="mt-3 space-y-2 border-l border-mint/30 pl-4">
+          {nestedReplies.map(nestedReply => (
+            <AccountReplyCard
+              key={nestedReply._id}
+              reply={nestedReply}
+              user={user}
+              busy={busy}
+              replyText={replyText}
+              setReplyText={setReplyText}
+              onReply={onReply}
+              platform={platform}
+              depth={depth + 1}
+            />
+          ))}
+        </div>
+      )}
+
+      {canReply && (
+        <div className="mt-3 space-y-2">
+          {isYouTubePlatform(platform) && (
+            <p className="text-xs text-[var(--muted)]">
+              YouTube will publish this under the top-level thread; CreatorOps keeps it nested under this reply.
+            </p>
+          )}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              value={replyText[replyKey] || ''}
+              onChange={event => setReplyText({ ...replyText, [replyKey]: event.target.value })}
+              placeholder={`Reply to this nested CreatorOps reply on ${formatPlatform(platform)}`}
+              className="focus-ring flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)]"
+            />
+            <button
+              type="button"
+              disabled={busy === replyKey || !String(replyText[replyKey] || '').trim()}
+              onClick={() => onReply(reply)}
+              className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]"
+            >
+              Reply
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!canReply && isContentCreator(user?.role) && (
+        <p className="mt-2 text-xs text-[var(--muted)]">Sync comments after publishing the reply before replying deeper.</p>
+      )}
     </div>
   );
 }

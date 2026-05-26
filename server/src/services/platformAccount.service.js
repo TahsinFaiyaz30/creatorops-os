@@ -1,5 +1,6 @@
 import PlatformAccount from '../models/PlatformAccount.js';
 import { SUPPORTED_PLATFORMS } from '../constants/platforms.js';
+import { isContentCreatorRole } from '../constants/roles.js';
 
 const createHttpError = (message, statusCode) => {
   const error = new Error(message);
@@ -8,8 +9,8 @@ const createHttpError = (message, statusCode) => {
 };
 
 const requireCreatorAdmin = user => {
-  if (user.role !== 'creator_admin') {
-    throw createHttpError('Forbidden: creator_admin role is required for platform account management.', 403);
+  if (!isContentCreatorRole(user.role)) {
+    throw createHttpError('Forbidden: Content Creator role is required for platform account management.', 403);
   }
 };
 

@@ -4,8 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarClock, Send } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatPlatform } from '../../lib/platforms';
-
-const publishRoles = ['editor', 'creator_admin', 'brand_rep'];
+import { canPublish } from '../../lib/roles';
 
 export default function SchedulePanel({ variant, user, onDone }) {
   const defaultTime = useMemo(() => {
@@ -114,7 +113,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
         <button
           type="button"
           onClick={schedule}
-          disabled={busy || !publishRoles.includes(user?.role) || variant.status !== 'approved' || !platformConnectionId}
+          disabled={busy || !canPublish(user?.role) || variant.status !== 'approved' || !platformConnectionId}
           className="focus-ring inline-flex items-center gap-2 rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50"
         >
           <CalendarClock size={15} />
@@ -123,7 +122,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
         <button
           type="button"
           onClick={publishNow}
-          disabled={busy || !publishRoles.includes(user?.role) || variant.status !== 'approved' || !platformConnectionId}
+          disabled={busy || !canPublish(user?.role) || variant.status !== 'approved' || !platformConnectionId}
           className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50"
         >
           <Send size={15} />

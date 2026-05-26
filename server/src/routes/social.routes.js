@@ -9,6 +9,7 @@ import {
   getPost,
   getPosts,
   replyToComment,
+  replyToReply,
   syncPostGroup,
   syncPost
 } from '../controllers/social.controller.js';
@@ -27,7 +28,8 @@ router.get('/posts/:id', getPost);
 router.post('/posts/:id/sync', syncPost);
 router.get('/posts/:id/metrics', getMetrics);
 router.get('/posts/:id/comments', getComments);
-router.post('/comments/:id/reply', requireRole(['creator_admin']), replyToComment);
+router.post('/comments/:id/reply', requireRole(['content_creator']), replyToComment);
+router.post('/replies/:id/reply', requireRole(['content_creator']), replyToReply);
 router.get('/analytics/summary', analyticsSummary);
 
 export default router;

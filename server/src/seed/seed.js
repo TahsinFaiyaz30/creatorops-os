@@ -4,21 +4,22 @@ import { connectDb, disconnectDb } from '../config/db.js';
 import { validateEnv } from '../config/env.js';
 import User from '../models/User.js';
 import Workspace from '../models/Workspace.js';
+import { CONTENT_CREATOR_ROLE } from '../constants/roles.js';
 import { DEFAULT_PLATFORM_FORMAT_RULES, ensureDefaultPlatformRules } from '../services/platformFormat.service.js';
 
 const DEMO_WORKSPACE_NAME = 'CreatorOps Demo Workspace';
 const DEMO_USERS = [
   {
-    name: 'Demo Editor',
+    name: 'Demo Content Creator',
     email: 'editor@creatorops.dev',
     password: 'password123',
-    role: 'editor'
+    role: CONTENT_CREATOR_ROLE
   },
   {
-    name: 'Demo Admin',
+    name: 'Demo Server Manager',
     email: 'admin@creatorops.dev',
     password: 'password123',
-    role: 'creator_admin'
+    role: CONTENT_CREATOR_ROLE
   },
   {
     name: 'Demo Brand Rep',
@@ -55,7 +56,7 @@ const seed = async () => {
     user.role = demoUser.role;
     user.workspaceId = workspace._id;
     await user.save();
-    if (demoUser.role === 'creator_admin') {
+    if (demoUser.email === 'admin@creatorops.dev') {
       workspace.ownerId = user._id;
       await workspace.save();
     }

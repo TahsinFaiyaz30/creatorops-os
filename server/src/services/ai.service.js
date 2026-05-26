@@ -5,6 +5,7 @@ import ContentItem from '../models/ContentItem.js';
 import MediaAsset from '../models/MediaAsset.js';
 import PlatformConnection from '../models/PlatformConnection.js';
 import PlatformVariant, { SUPPORTED_PLATFORMS } from '../models/PlatformVariant.js';
+import { normalizePlatform } from '../constants/platforms.js';
 import { createWorkflowEvent } from './event.service.js';
 import { createVariantVersion } from './versioning.service.js';
 
@@ -866,24 +867,57 @@ const getComposeMediaWarnings = ({ connection, mediaAssets }) => {
   return { warnings, suggestions };
 };
 
-export const customizeCaptions = async ({ user, baseCaption, connectionIds = [], mediaAssetIds = [] }) => {
+const normalizeConnectionTargets = ({ connectionIds = [], connectionTargets = [] }) => {
+  if (Array.isArray(connectionTargets) && connectionTargets.length > 0) {
+    return connectionTargets
+      .map(target => ({
+        connectionId: target.connectionId || target.platformConnectionId || target.id,
+        platform: target.platform ? normalizePlatform(target.platform) : ''
+      }))
+      .filter(target => target.connectionId);
+  }
+
+  return (Array.isArray(connectionIds) ? connectionIds : [])
+    .map(connectionId => ({ connectionId, platform: '' }))
+    .filter(target => target.connectionId);
+};
+
+const resolveComposeTargetPlatform = ({ connection, platform }) => {
+  const requestedPlatform = platform || connection.platform;
+  if (requestedPlatform === connection.platform) return requestedPlatform;
+  if (connection.platform === 'youtube' && requestedPlatform === 'youtube_shorts') return requestedPlatform;
+  throw createHttpError('Selected platform target does not match the connected account.', 400);
+};
+
+export const customizeCaptions = async ({ user, baseCaption, connectionIds = [], connectionTargets = [], mediaAssetIds = [] }) => {
   if (!baseCaption || !String(baseCaption).trim()) {
     throw createHttpError('baseCaption is required.', 400);
   }
 
-  if (!Array.isArray(connectionIds) || connectionIds.length === 0) {
+  const targets = normalizeConnectionTargets({ connectionIds, connectionTargets });
+
+  if (targets.length === 0) {
     throw createHttpError('connectionIds is required.', 400);
   }
 
+  const uniqueConnectionIds = unique(targets.map(target => String(target.connectionId)));
+
   const connections = await PlatformConnection.find({
-    _id: { $in: connectionIds },
+    _id: { $in: uniqueConnectionIds },
     workspaceId: user.workspaceId,
     status: 'connected'
   });
 
-  if (connections.length !== connectionIds.length) {
+  if (connections.length !== uniqueConnectionIds.length) {
     throw createHttpError('One or more connected platform accounts were not found.', 404);
   }
+
+  const connectionById = new Map(connections.map(connection => [String(connection._id), connection]));
+  const resolvedTargets = targets.map(target => {
+    const connection = connectionById.get(String(target.connectionId));
+    const platform = resolveComposeTargetPlatform({ connection, platform: target.platform });
+    return { ...target, connection, platform };
+  });
 
   const brandProfile = await BrandProfile.findOne({ workspaceId: user.workspaceId });
   const mediaAssets = Array.isArray(mediaAssetIds) && mediaAssetIds.length > 0
@@ -895,7 +929,7 @@ export const customizeCaptions = async ({ user, baseCaption, connectionIds = [],
   if (Array.isArray(mediaAssetIds) && mediaAssetIds.length > 0 && mediaAssets.length !== mediaAssetIds.length) {
     throw createHttpError('One or more media assets were not found in this workspace.', 404);
   }
-  const platforms = unique(connections.map(connection => connection.platform));
+  const platforms = unique(resolvedTargets.map(target => target.platform));
   const pseudoContentItem = {
     title: 'Compose caption',
     rawIdea: baseCaption
@@ -909,15 +943,16 @@ export const customizeCaptions = async ({ user, baseCaption, connectionIds = [],
   const byPlatform = Object.fromEntries(generated.map(variant => [variant.platform, variant]));
 
   return {
-    results: connections.map(connection => {
-      const variant = byPlatform[connection.platform];
-      const limits = getPlatformLimit(connection.platform);
-      const mediaGuidance = getComposeMediaWarnings({ connection, mediaAssets });
+    results: resolvedTargets.map(target => {
+      const { connection, platform } = target;
+      const variant = byPlatform[platform];
+      const limits = getPlatformLimit(platform);
+      const mediaGuidance = getComposeMediaWarnings({ connection: { ...connection.toObject(), platform }, mediaAssets });
       const warnings = unique([...(variant.warnings || []), ...mediaGuidance.warnings]);
       const suggestions = unique([...(variant.suggestions || []), ...mediaGuidance.suggestions]);
       return {
         connectionId: connection._id,
-        platform: connection.platform,
+        platform,
         accountHandle: connection.accountHandle,
         caption: variant.caption,
         hashtags: variant.hashtags,

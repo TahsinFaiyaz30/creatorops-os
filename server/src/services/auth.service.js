@@ -2,7 +2,8 @@ import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 
 import env from '../config/env.js';
-import User, { USER_ROLES } from '../models/User.js';
+import { CONTENT_CREATOR_ROLE, USER_ROLES, normalizeRole } from '../constants/roles.js';
+import User from '../models/User.js';
 import Workspace from '../models/Workspace.js';
 
 const createHttpError = (message, statusCode) => {
@@ -19,7 +20,7 @@ const sanitizeUser = user => {
     id: json._id.toString(),
     name: json.name,
     email: json.email,
-    role: json.role,
+    role: normalizeRole(json.role),
     workspaceId: json.workspaceId.toString(),
     createdAt: json.createdAt,
     updatedAt: json.updatedAt
@@ -34,7 +35,7 @@ const signToken = user => {
   return jwt.sign(
     {
       sub: user._id.toString(),
-      role: user.role,
+      role: normalizeRole(user.role),
       workspaceId: user.workspaceId.toString()
     },
     env.jwtSecret,
@@ -46,7 +47,7 @@ export const registerUser = async input => {
   const name = String(input.name || '').trim();
   const email = normalizeEmail(input.email);
   const password = String(input.password || '');
-  const role = input.role || 'editor';
+  const role = normalizeRole(input.role || CONTENT_CREATOR_ROLE);
 
   if (!name || !email || !password) {
     throw createHttpError('Name, email, and password are required.', 400);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const pad = { top: 24, right: 20, bottom: 56, left: 56 };
@@ -15,13 +15,16 @@ const nice = n => {
 
 const ticks = (max, count = 5) => {
   const step = nice(max) / count;
-  return Array.from({ length: count + 1 }, (_, i) => Math.round(step * i));
+  const decimals = step >= 1 ? 0 : Math.min(4, Math.ceil(Math.abs(Math.log10(step))) + 1);
+  return Array.from({ length: count + 1 }, (_, i) => Number((step * i).toFixed(decimals))).filter(
+    (tick, index, values) => index === 0 || tick !== values[index - 1]
+  );
 };
 
 const fmt = n => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : String(n));
 
 // ── Bar chart ─────────────────────────────────────────────────────────────────
-function BarChart({ data, width, height, metric }) {
+function BarChart({ data, width, height, metric, chartId }) {
   const w = width - pad.left - pad.right;
   const h = height - pad.top - pad.bottom;
   const max = Math.max(...data.map(d => d[metric] || 0), 1);
@@ -39,7 +42,7 @@ function BarChart({ data, width, height, metric }) {
     <svg width={width} height={height} aria-label="Bar chart">
       <defs>
         {data.map((d, i) => (
-          <linearGradient key={`grad-${i}`} id={`bar-grad-${i}`} x1="0" y1="0" x2="0" y2="1">
+          <linearGradient key={`grad-${i}`} id={`${chartId}-bar-grad-${i}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={COLORS[i % COLORS.length]} stopOpacity="0.9" />
             <stop offset="100%" stopColor={COLORS[i % COLORS.length]} stopOpacity="0.35" />
           </linearGradient>
@@ -47,10 +50,10 @@ function BarChart({ data, width, height, metric }) {
       </defs>
       <g transform={`translate(${pad.left},${pad.top})`}>
         {/* grid lines */}
-        {yTicks.map(tick => {
+        {yTicks.map((tick, index) => {
           const y = h - (tick / maxTick) * h;
           return (
-            <g key={`tick-${tick}`}>
+            <g key={`tick-${index}-${tick}`}>
               <line x1={0} y1={y} x2={w} y2={y} stroke="#334155" strokeWidth={0.5} strokeDasharray="4,4" />
               <text x={-8} y={y + 4} textAnchor="end" fontSize={10} fill="#64748b">{fmt(tick)}</text>
             </g>
@@ -67,7 +70,7 @@ function BarChart({ data, width, height, metric }) {
             <g key={`bar-${i}`}>
               <rect
                 x={x} y={y} width={barW} height={bh}
-                rx={3} fill={`url(#bar-grad-${i})`}
+                rx={3} fill={`url(#${chartId}-bar-grad-${i})`}
               />
               {val > 0 && (
                 <text x={x + barW / 2} y={y - 4} textAnchor="middle" fontSize={9} fill="#94a3b8">{fmt(val)}</text>
@@ -95,7 +98,7 @@ function BarChart({ data, width, height, metric }) {
 }
 
 // ── Ogive (cumulative line) chart ─────────────────────────────────────────────
-function OgiveChart({ data, width, height, metric }) {
+function OgiveChart({ data, width, height, metric, chartId }) {
   const w = width - pad.left - pad.right;
   const h = height - pad.top - pad.bottom;
 
@@ -125,21 +128,21 @@ function OgiveChart({ data, width, height, metric }) {
   return (
     <svg width={width} height={height} aria-label="Ogive chart">
       <defs>
-        <linearGradient id="ogive-area" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={`${chartId}-ogive-area`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.25" />
           <stop offset="100%" stopColor="#22d3ee" stopOpacity="0.02" />
         </linearGradient>
-        <filter id="glow">
+        <filter id={`${chartId}-glow`}>
           <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
           <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
         </filter>
       </defs>
       <g transform={`translate(${pad.left},${pad.top})`}>
         {/* grid */}
-        {yTicks.map(tick => {
+        {yTicks.map((tick, index) => {
           const y = yOf(tick);
           return (
-            <g key={`tick-${tick}`}>
+            <g key={`tick-${index}-${tick}`}>
               <line x1={0} y1={y} x2={w} y2={y} stroke="#334155" strokeWidth={0.5} strokeDasharray="4,4" />
               <text x={-8} y={y + 4} textAnchor="end" fontSize={10} fill="#64748b">{fmt(tick)}</text>
             </g>
@@ -147,7 +150,7 @@ function OgiveChart({ data, width, height, metric }) {
         })}
 
         {/* area */}
-        {cumulative.length > 1 && <path d={areaPath} fill="url(#ogive-area)" />}
+        {cumulative.length > 1 && <path d={areaPath} fill={`url(#${chartId}-ogive-area)`} />}
 
         {/* line */}
         {cumulative.length > 1 && (
@@ -157,7 +160,7 @@ function OgiveChart({ data, width, height, metric }) {
             stroke="#22d3ee"
             strokeWidth={2.5}
             strokeLinejoin="round"
-            filter="url(#glow)"
+            filter={`url(#${chartId}-glow)`}
           />
         )}
 
@@ -194,6 +197,7 @@ export default function StatsChart({ data = [], metric = 'value', title = '', su
   const [view, setView] = useState('bar');
   const containerRef = useRef(null);
   const [width, setWidth] = useState(640);
+  const chartId = useId().replace(/:/g, '');
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -239,9 +243,9 @@ export default function StatsChart({ data = [], metric = 'value', title = '', su
             No connected platform data to display yet.
           </div>
         ) : view === 'bar' ? (
-          <BarChart data={data} width={Math.max(width, data.length * 60)} height={height} metric={metric} />
+          <BarChart data={data} width={Math.max(width, data.length * 60)} height={height} metric={metric} chartId={chartId} />
         ) : (
-          <OgiveChart data={data} width={Math.max(width, data.length * 60)} height={height} metric={metric} />
+          <OgiveChart data={data} width={Math.max(width, data.length * 60)} height={height} metric={metric} chartId={chartId} />
         )}
       </div>
     </div>

@@ -1,3 +1,5 @@
+import { CONTENT_CREATOR_ROLE, roleMatches } from '../constants/roles.js';
+
 export const requireRole = roles => (req, res, next) => {
   const allowedRoles = Array.isArray(roles) ? roles : [roles];
 
@@ -5,11 +7,11 @@ export const requireRole = roles => (req, res, next) => {
     return res.status(401).json({ message: 'Authentication is required.' });
   }
 
-  if (!allowedRoles.includes(req.user.role)) {
+  if (!roleMatches(req.user.role, allowedRoles)) {
     return res.status(403).json({ message: 'Forbidden: insufficient role.' });
   }
 
   return next();
 };
 
-export const requireCreatorAdmin = requireRole(['creator_admin']);
+export const requireCreatorAdmin = requireRole([CONTENT_CREATOR_ROLE]);

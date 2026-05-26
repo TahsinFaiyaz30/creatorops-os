@@ -7,10 +7,10 @@ const areas = [
 ];
 
 const blocks = [
-  ['Next.js frontend', 'Browser workflow for editor/admin demo'],
+  ['Next.js frontend', 'Browser workflow for content creators and brand representatives'],
   ['Express API', 'Modular monolith with service boundaries'],
   ['MongoDB', 'Workspace-scoped operational records'],
-  ['JWT + RBAC', 'Backend-enforced editor and creator_admin permissions'],
+  ['JWT + RBAC', 'Backend-enforced content creator and brand representative permissions'],
   ['AI service', 'Gemini/Groq optional with template-fallback guarantee'],
   ['Platform connections', 'Official OAuth/API connection records with encrypted tokens'],
   ['Format rules', 'Platform limits and readiness checklist'],

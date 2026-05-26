@@ -1,9 +1,9 @@
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 
-const { Schema } = mongoose;
+import { CONTENT_CREATOR_ROLE, USER_ROLES } from '../constants/roles.js';
 
-export const USER_ROLES = ['editor', 'creator_admin', 'brand_rep'];
+const { Schema } = mongoose;
 
 const userSchema = new Schema(
   {
@@ -27,7 +27,7 @@ const userSchema = new Schema(
     role: {
       type: String,
       enum: USER_ROLES,
-      default: 'editor',
+      default: CONTENT_CREATOR_ROLE,
       required: true
     },
     workspaceId: {

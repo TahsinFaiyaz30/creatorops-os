@@ -8,6 +8,7 @@ import { api } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { getUser } from '../../lib/auth';
 import { formatPlatform } from '../../lib/platforms';
+import { canPublish } from '../../lib/roles';
 
 const statusOrder = ['queued', 'publishing', 'published', 'failed', 'blocked', 'cancelled'];
 
@@ -143,13 +144,13 @@ function JobCard({ job, user, busy, onRetry, onCancel }) {
         )}
         {job.errorMessage && <span className="text-rose">Reason: {job.errorMessage}</span>}
       </div>
-      {user?.role === 'creator_admin' && ['failed', 'blocked'].includes(job.status) && (
+      {canPublish(user?.role) && ['failed', 'blocked'].includes(job.status) && (
         <button type="button" onClick={onRetry} disabled={busy} className="focus-ring mt-3 inline-flex items-center gap-2 rounded-xl bg-gold px-3 py-2 text-xs font-semibold text-[#05130d]">
           <RotateCcw size={14} />
           Retry
         </button>
       )}
-      {user?.role === 'creator_admin' && ['queued', 'failed', 'blocked'].includes(job.status) && (
+      {canPublish(user?.role) && ['queued', 'failed', 'blocked'].includes(job.status) && (
         <button type="button" onClick={onCancel} disabled={busy} className="focus-ring ml-2 mt-3 inline-flex items-center gap-2 rounded-xl border border-rose/40 px-3 py-2 text-xs text-rose hover:bg-rose/10">
           <XCircle size={14} />
           Cancel

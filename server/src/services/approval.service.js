@@ -1,6 +1,7 @@
 import ApprovalRequest from '../models/ApprovalRequest.js';
 import ContentItem from '../models/ContentItem.js';
 import PlatformVariant from '../models/PlatformVariant.js';
+import { isContentCreatorRole } from '../constants/roles.js';
 import { createWorkflowEvent } from './event.service.js';
 import { createVariantVersion } from './versioning.service.js';
 
@@ -11,8 +12,8 @@ const createHttpError = (message, statusCode) => {
 };
 
 const requireCreatorAdmin = user => {
-  if (user.role !== 'creator_admin') {
-    throw createHttpError('Forbidden: creator_admin role is required for this approval action.', 403);
+  if (!isContentCreatorRole(user.role)) {
+    throw createHttpError('Forbidden: Content Creator role is required for this approval action.', 403);
   }
 };
 

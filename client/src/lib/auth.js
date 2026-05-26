@@ -1,3 +1,5 @@
+import { normalizeRole } from './roles';
+
 const TOKEN_KEY = 'creatorops.token';
 const USER_KEY = 'creatorops.user';
 
@@ -47,16 +49,17 @@ export const getUser = () => {
   if (!raw) return null;
 
   try {
-    return JSON.parse(raw);
+    const user = JSON.parse(raw);
+    return user ? { ...user, role: normalizeRole(user.role) } : null;
   } catch (_error) {
-    return memoryUser;
+    return memoryUser ? { ...memoryUser, role: normalizeRole(memoryUser.role) } : null;
   }
 };
 
 export const saveSession = ({ token, user }) => {
   memoryToken = token;
-  memoryUser = user;
-  const serializedUser = JSON.stringify(user);
+  memoryUser = user ? { ...user, role: normalizeRole(user.role) } : user;
+  const serializedUser = JSON.stringify(memoryUser);
   const storage = getStorage();
   storage?.setItem(TOKEN_KEY, token);
   storage?.setItem(USER_KEY, serializedUser);

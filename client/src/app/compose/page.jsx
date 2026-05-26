@@ -8,6 +8,7 @@ import VisibilitySelector from '../../components/publish/VisibilitySelector';
 import { api } from '../../lib/api';
 import { getUser } from '../../lib/auth';
 import { formatPlatform, getPlatformCaptionLimit, getPlatformDetails, platformCapabilities } from '../../lib/platforms';
+import { canPublish } from '../../lib/roles';
 import Cropper from 'react-easy-crop';
 
 const aspectOptions = [
@@ -25,7 +26,23 @@ const createPostGroupId = () => {
   return `post_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 };
 
-const publishRoles = ['editor', 'creator_admin', 'brand_rep'];
+const createConnectionTarget = (connection, platform = connection.platform) => ({
+  ...connection,
+  platform,
+  sourcePlatform: connection.platform,
+  platformConnectionId: connection.platformConnectionId || connection._id,
+  targetKey: `${connection.platformConnectionId || connection._id}:${platform}`,
+  isSharedYouTubeConnection: connection.platform === 'youtube' && platform === 'youtube_shorts'
+});
+
+const expandConnectionTargets = connections =>
+  connections.flatMap(connection => {
+    const targets = [createConnectionTarget(connection)];
+    if (connection.platform === 'youtube') {
+      targets.push(createConnectionTarget(connection, 'youtube_shorts'));
+    }
+    return targets;
+  });
 
 const createDefaultMediaSettings = asset => ({
   crop: {
@@ -84,7 +101,7 @@ export default function ComposePage() {
 
   const load = async () => {
     const payload = await api.get('/api/platform-connections');
-    setConnections((payload.data.connections || []).filter(c => c.status === 'connected'));
+    setConnections(expandConnectionTargets((payload.data.connections || []).filter(c => c.status === 'connected')));
   };
 
   useEffect(() => {
@@ -97,7 +114,7 @@ export default function ComposePage() {
   const mediaIds = mediaAssets.map(a => a._id);
 
   const selectedConnections = useMemo(
-    () => connections.filter(connection => selectedIds.includes(connection._id)),
+    () => connections.filter(connection => selectedIds.includes(connection.targetKey)),
     [connections, selectedIds]
   );
 
@@ -167,7 +184,7 @@ export default function ComposePage() {
     if (mediaAssets.length === 0) return;
     let changed = false;
     const newSelected = selectedIds.filter(id => {
-      const conn = connections.find(c => c._id === id);
+      const conn = connections.find(c => c.targetKey === id);
       if (!conn) return false;
       const valid = getPlatformEligibility(conn.platform).eligible;
       if (!valid) changed = true;
@@ -248,7 +265,10 @@ export default function ComposePage() {
     try {
       const payload = await api.post('/api/ai/customize-captions', {
         baseCaption,
-        connectionIds: selectedIds,
+        connectionTargets: selectedConnections.map(connection => ({
+          connectionId: connection.platformConnectionId,
+          platform: connection.platform
+        })),
         mediaAssetIds: mediaIds
       });
       setCaptions(payload.data.results || []);
@@ -264,16 +284,20 @@ export default function ComposePage() {
     updateActiveSettings({ croppedAreaPercentages, croppedAreaPixels });
   };
 
-  const updateCaption = (connectionId, value) => {
-    const connection = connections.find(item => item._id === connectionId);
+  const updateCaption = (targetKey, value) => {
+    const connection = connections.find(item => item.targetKey === targetKey);
     setCaptions(current => {
-      if (current.some(item => item.connectionId === connectionId)) {
-        return current.map(item => item.connectionId === connectionId ? { ...item, caption: value } : item);
+      if (current.some(item => item.connectionId === connection?.platformConnectionId && item.platform === connection?.platform)) {
+        return current.map(item =>
+          item.connectionId === connection.platformConnectionId && item.platform === connection.platform
+            ? { ...item, caption: value }
+            : item
+        );
       }
       return [
         ...current,
         {
-          connectionId,
+          connectionId: connection?.platformConnectionId || '',
           platform: connection?.platform || '',
           accountHandle: connection?.accountHandle || '',
           caption: value,
@@ -302,7 +326,7 @@ export default function ComposePage() {
   };
 
   const publish = async ({ mode }) => {
-    if (!publishRoles.includes(user?.role)) {
+    if (!canPublish(user?.role)) {
       setMessage('Your current role cannot publish from this workspace.');
       return;
     }
@@ -318,14 +342,18 @@ export default function ComposePage() {
       
       // We pass the mediaIds. The backend logic will associate the media with the job.
       for (const connection of selectedConnections) {
-        const customized = captions.find(item => item.connectionId === connection._id);
+        const platformConnectionId = connection.platformConnectionId || connection._id;
+        const customizedForTarget = captions.find(
+          item => item.connectionId === platformConnectionId && item.platform === connection.platform
+        );
         try {
           const payload = await api.post(endpoint, {
             postGroupId,
-            platformConnectionId: connection._id,
+            platformConnectionId,
+            targetPlatform: connection.platform,
             mediaAssetIds: mediaIds,
             coverIndex: coverIndex,
-            caption: customized?.caption || baseCaption,
+            caption: customizedForTarget?.caption || baseCaption,
             visibility,
             scheduledAt: new Date(scheduledAt).toISOString()
           });
@@ -588,12 +616,12 @@ export default function ComposePage() {
               <div className="grid gap-2 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
                 {connections.map(connection => {
                   const eligibility = getPlatformEligibility(connection.platform);
-                  const isSelected = selectedIds.includes(connection._id);
+                  const isSelected = selectedIds.includes(connection.targetKey);
                   const platformDetail = getPlatformDetails(connection.platform);
                   return (
-                    <div 
-                      key={connection._id} 
-                      onClick={() => toggleConnection(connection._id, connection.platform)}
+                    <div
+                      key={connection.targetKey}
+                      onClick={() => toggleConnection(connection.targetKey, connection.platform)}
                       className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition-all ${
                         !eligibility.eligible 
                           ? 'border-[var(--border)] bg-[var(--surface2)] opacity-50 cursor-not-allowed' 
@@ -613,7 +641,10 @@ export default function ComposePage() {
                         <div className={`font-semibold ${isSelected ? 'text-mint' : 'text-[var(--text)]'}`}>
                           {formatPlatform(connection.platform)}
                         </div>
-                        <div className="text-xs text-[var(--muted)]">{connection.accountName} · {connection.accountHandle}</div>
+                        <div className="text-xs text-[var(--muted)]">
+                          {connection.accountName} · {connection.accountHandle}
+                          {connection.isSharedYouTubeConnection ? ' · shared YouTube channel' : ''}
+                        </div>
                         <div className="mt-1 text-[10px] text-[var(--muted)]">{platformDetail.contentStyle}</div>
                         {!eligibility.eligible && (
                           <div className="mt-1 flex items-center gap-1 text-[10px] font-medium text-rose">
@@ -642,7 +673,9 @@ export default function ComposePage() {
                 <h2 className="text-base font-semibold text-[var(--text)] mb-3">Customized Captions</h2>
                 <div className="grid gap-3">
                   {selectedConnections.map(connection => {
-                    const customized = captions.find(item => item.connectionId === connection._id);
+                    const customized = captions.find(
+                      item => item.connectionId === connection.platformConnectionId && item.platform === connection.platform
+                    );
                     const platformDetail = getPlatformDetails(connection.platform);
                     const captionValue = customized?.caption ?? baseCaption;
                     const maxCaptionLength = customized?.maxCaptionLength || getPlatformCaptionLimit(connection.platform);
@@ -651,7 +684,7 @@ export default function ComposePage() {
                     const hashtags = customized?.hashtags || [];
                     const platformNotes = customized?.platformNotes?.length ? customized.platformNotes : [platformDetail.contentStyle, `CTA style: ${platformDetail.ctaStyle}`];
                     return (
-                      <article key={connection._id} className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3">
+                      <article key={connection.targetKey} className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3">
                         <div className="flex items-center justify-between mb-2">
                           <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text)]">
                             <span className="h-2 w-2 rounded-full bg-mint"></span>
@@ -663,7 +696,7 @@ export default function ComposePage() {
                         </div>
                         <textarea
                           value={captionValue}
-                          onChange={event => updateCaption(connection._id, event.target.value)}
+                          onChange={event => updateCaption(connection.targetKey, event.target.value)}
                           rows={3}
                           className={`focus-ring w-full rounded-lg border bg-[var(--surface)] px-2 py-1.5 text-xs text-[var(--text)] ${captionOverLimit ? 'border-rose focus:border-rose' : 'border-[var(--border)] focus:border-mint'}`}
                         />
