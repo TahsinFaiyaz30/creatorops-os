@@ -31,25 +31,25 @@ export default function VersionHistory({ contentItemId }) {
       <button
         type="button"
         onClick={load}
-        className="focus-ring inline-flex items-center gap-2 rounded-md border border-line px-3 py-2 text-xs text-slate-200 hover:bg-white/5"
+        className="focus-ring inline-flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2 text-xs text-[var(--text)] hover:bg-white/5"
       >
         <History size={14} />
         Version history
       </button>
       {open && (
-        <div className="mt-3 rounded-md border border-line bg-ink/70 p-3">
-          {busy && <p className="text-sm text-slate-400">Loading versions...</p>}
+        <div className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface2)]/70 p-3">
+          {busy && <p className="text-sm text-[var(--muted)]">Loading versions...</p>}
           {error && <p className="text-sm text-rose">{error}</p>}
-          {!busy && versions.length === 0 && !error && <p className="text-sm text-slate-400">No versions yet.</p>}
+          {!busy && versions.length === 0 && !error && <p className="text-sm text-[var(--muted)]">No versions yet.</p>}
           <div className="space-y-2">
             {versions.map(version => (
-              <div key={version._id} className="rounded border border-line bg-panel p-3 text-xs text-slate-300">
+              <div key={version._id} className="rounded border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--text)]">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-white">Version {version.versionNumber}</span>
-                  <span className="text-slate-500">{new Date(version.createdAt).toLocaleString()}</span>
+                  <span className="font-semibold text-[var(--text)]">Version {version.versionNumber}</span>
+                  <span className="text-[var(--muted)]">{new Date(version.createdAt).toLocaleString()}</span>
                 </div>
-                <p className="mt-1 text-slate-400">{version.changeNote || 'Snapshot saved'}</p>
-                <div className="mt-2 grid gap-1 text-slate-400">
+                <p className="mt-1 text-[var(--muted)]">{version.changeNote || 'Snapshot saved'}</p>
+                <div className="mt-2 grid gap-1 text-[var(--muted)]">
                   {version.changedBy?.email && <span>Changed by: {version.changedBy.email}</span>}
                   {version.snapshot?.platform && <span>Platform: {version.snapshot.platform}</span>}
                   <span>Status: {version.snapshot?.status || version.snapshot?.variantStatus || version.snapshot?.contentItemStatus || 'n/a'}</span>

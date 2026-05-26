@@ -1,37 +1,94 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── CSS custom properties (light default, dark override) ──────────────────── */
 :root {
+  --bg:       #000000;
+  --surface:  #0a0a0a;
+  --surface2: #141414;
+  --border:   #262626;
+  --text:     #ffffff;
+  --muted:    #a3a3a3;
+  --accent:   #ffffff;
   color-scheme: dark;
 }
 
-* {
-  box-sizing: border-box;
+.light {
+  --bg:       #ffffff;
+  --surface:  #f8fafc;
+  --surface2: #f1f5f9;
+  --border:   #e2e8f0;
+  --text:     #0f172a;
+  --muted:    #64748b;
+  --accent:   #000000;
+  color-scheme: light;
+}
+
+/* ── Base resets ───────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
   margin: 0;
-  background: #0b0f14;
-  color: #e5edf7;
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-feature-settings: 'cv02','cv03','cv04','cv11';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s, color 0.2s;
 }
 
-button,
-input,
-textarea {
-  font: inherit;
+button, input, textarea, select { font: inherit; }
+
+button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+/* ── Focus ring ────────────────────────────────────────────────────────────── */
+.focus-ring { outline: none; }
+.focus-ring:focus-visible {
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.4);
 }
 
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
+/* ── Custom scrollbar ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ffffff40;
 }
 
-.focus-ring {
-  outline: none;
+/* ── Sidebar nav link active glow ──────────────────────────────────────────── */
+.nav-active {
+  background: rgba(255,255,255,0.10);
+  color: #ffffff;
+  box-shadow: inset 2px 0 0 #ffffff;
 }
 
-.focus-ring:focus {
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.35);
+/* ── Glass card ────────────────────────────────────────────────────────────── */
+.glass {
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+/* ── Light mode card overrides ─────────────────────────────────────────────── */
+:root .card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+/* ── Transition utilities ──────────────────────────────────────────────────── */
+.sidebar-transition {
+  transition: width 0.22s cubic-bezier(0.4,0,0.2,1),
+              transform 0.22s cubic-bezier(0.4,0,0.2,1);
 }

@@ -36,7 +36,7 @@ export default function BrandCircularForm({ initialValue = {}, onSubmit, busy = 
         event.preventDefault();
         onSubmit(form);
       }}
-      className="space-y-4 rounded-lg border border-line bg-panel p-4"
+      className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4"
     >
       <div className="grid gap-3 md:grid-cols-2">
         <Input label="Circular title" value={form.title} onChange={value => update('title', value)} required />
@@ -54,14 +54,14 @@ export default function BrandCircularForm({ initialValue = {}, onSubmit, busy = 
       <Textarea label="Campaign objective" value={form.campaignObjective} onChange={value => update('campaignObjective', value)} />
 
       <div>
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Platforms needed</div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Platforms needed</div>
         <div className="mt-2 flex flex-wrap gap-2">
           {platformOptions.map(platform => (
             <button
               key={platform}
               type="button"
               onClick={() => togglePlatform(platform)}
-              className={`rounded-full border px-3 py-1 text-xs ${form.platforms.includes(platform) ? 'border-cyan bg-cyan/10 text-cyan' : 'border-line text-slate-400'}`}
+              className={`rounded-full border px-3 py-1 text-xs ${form.platforms.includes(platform) ? 'border-mint bg-mint/10 text-mint' : 'border-[var(--border)] text-[var(--muted)]'}`}
             >
               {formatPlatform(platform)}
             </button>
@@ -79,7 +79,7 @@ export default function BrandCircularForm({ initialValue = {}, onSubmit, busy = 
       <Textarea label="Brand demands" value={form.brandDemands} onChange={value => update('brandDemands', value)} />
       <Textarea label="Judging criteria" value={form.judgingCriteria} onChange={value => update('judgingCriteria', value)} />
 
-      <button type="submit" disabled={busy} className="focus-ring rounded-md bg-cyan px-4 py-2 text-sm font-semibold text-ink disabled:opacity-50">
+      <button type="submit" disabled={busy} className="focus-ring rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50">
         {busy ? 'Saving...' : 'Save circular'}
       </button>
     </form>
@@ -89,8 +89,8 @@ export default function BrandCircularForm({ initialValue = {}, onSubmit, busy = 
 function Input({ label, value, onChange, type = 'text', required = false }) {
   return (
     <label className="block">
-      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-      <input required={required} type={type} value={value || ''} onChange={event => onChange(event.target.value)} className="focus-ring mt-1 w-full rounded-md border border-line bg-ink px-3 py-2 text-sm text-white" />
+      <span className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{label}</span>
+      <input required={required} type={type} value={value || ''} onChange={event => onChange(event.target.value)} className="focus-ring mt-1 w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]" />
     </label>
   );
 }
@@ -98,8 +98,8 @@ function Input({ label, value, onChange, type = 'text', required = false }) {
 function Textarea({ label, value, onChange }) {
   return (
     <label className="block">
-      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-      <textarea value={value || ''} onChange={event => onChange(event.target.value)} rows={3} className="focus-ring mt-1 w-full rounded-md border border-line bg-ink px-3 py-2 text-sm text-white" />
+      <span className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{label}</span>
+      <textarea value={value || ''} onChange={event => onChange(event.target.value)} rows={3} className="focus-ring mt-1 w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]" />
     </label>
   );
 }

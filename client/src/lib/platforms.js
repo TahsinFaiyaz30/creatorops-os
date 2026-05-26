@@ -43,3 +43,17 @@ export const platformCaptionLimits = {
 export const formatPlatform = platform => platformLabels[platform] || platform;
 
 export const getPlatformCaptionLimit = platform => platformCaptionLimits[platform] || 1000;
+
+export const platformCapabilities = {
+  facebook: { multiMedia: true, maxMedia: 10, types: ['image', 'video'] },
+  instagram: { multiMedia: true, maxMedia: 10, types: ['image', 'video'] },
+  tiktok: { multiMedia: true, maxMedia: 35, types: ['image', 'video'] },
+  youtube: { multiMedia: false, maxMedia: 1, types: ['video'] },
+  youtube_shorts: { multiMedia: false, maxMedia: 1, types: ['video'] },
+  threads: { multiMedia: true, maxMedia: 10, types: ['image', 'video'] },
+  linkedin: { multiMedia: true, maxMedia: 9, types: ['image', 'video'] },
+  x: { multiMedia: true, maxMedia: 4, types: ['image', 'video'] },
+  pinterest: { multiMedia: false, maxMedia: 1, types: ['image', 'video'] },
+  wordpress: { multiMedia: true, maxMedia: 99, types: ['image', 'video'] },
+  shopify: { multiMedia: true, maxMedia: 99, types: ['image', 'video'] },
+};

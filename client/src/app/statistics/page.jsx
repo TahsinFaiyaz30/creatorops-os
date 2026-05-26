@@ -34,26 +34,26 @@ export default function StatisticsPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <header className="rounded-lg border border-line bg-panel p-6">
-          <p className="text-sm uppercase tracking-[0.18em] text-cyan">Real creator statistics</p>
-          <h1 className="mt-2 text-3xl font-bold text-white">Statistics</h1>
-          <p className="mt-2 max-w-4xl text-sm text-slate-400">
+        <header className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
+          <p className="text-sm uppercase tracking-[0.18em] text-mint">Real creator statistics</p>
+          <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Statistics</h1>
+          <p className="mt-2 max-w-4xl text-sm text-[var(--muted)]">
             Only official synced platform metrics are counted. Unsupported or unsynced metrics stay unavailable.
           </p>
           <button
             id="stats-snapshot-btn"
             onClick={snapshot}
-            className="focus-ring mt-4 rounded-md bg-cyan px-3 py-2 text-sm font-semibold text-ink"
+            className="focus-ring mt-4 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]"
           >
             Create application snapshot
           </button>
         </header>
 
         {message && (
-          <div className="rounded-md border border-line bg-panel p-3 text-sm text-slate-300">{message}</div>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-sm text-[var(--text)]">{message}</div>
         )}
         {statistics?.unavailableMessage && (
-          <div className="rounded-md border border-gold/30 bg-gold/10 p-3 text-sm text-gold">
+          <div className="rounded-xl border border-gold/30 bg-gold/10 p-3 text-sm text-gold">
             {statistics.unavailableMessage}
           </div>
         )}

@@ -63,34 +63,34 @@ export default function BrandCircularDetailPage() {
   };
 
   if (!circular) {
-    return <AppShell><div className="rounded-lg border border-line bg-panel p-6 text-slate-300">Loading circular...</div></AppShell>;
+    return <AppShell><div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 text-[var(--text)]">Loading circular...</div></AppShell>;
   }
 
   return (
     <AppShell>
       <div className="space-y-6">
-        <header className="rounded-lg border border-line bg-panel p-6">
+        <header className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-sm uppercase tracking-[0.18em] text-cyan">Circular detail</p>
-              <h1 className="mt-2 text-3xl font-bold text-white">{circular.title}</h1>
-              <p className="mt-2 text-sm text-slate-400">{circular.productName} · {circular.productCategory}</p>
+              <p className="text-sm uppercase tracking-[0.18em] text-mint">Circular detail</p>
+              <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">{circular.title}</h1>
+              <p className="mt-2 text-sm text-[var(--muted)]">{circular.productName} · {circular.productCategory}</p>
             </div>
-            <span className="rounded-full bg-cyan/10 px-3 py-1 text-sm font-semibold text-cyan">{circular.status}</span>
+            <span className="rounded-full bg-mint/10 px-3 py-1 text-sm font-semibold text-mint">{circular.status}</span>
           </div>
-          <p className="mt-4 max-w-4xl text-sm text-slate-300">{circular.productDescription}</p>
+          <p className="mt-4 max-w-4xl text-sm text-[var(--text)]">{circular.productDescription}</p>
           <div className="mt-4 flex flex-wrap gap-2">
-            {(circular.platforms || []).map(platform => <span key={platform} className="rounded-full bg-ink px-2 py-1 text-xs text-slate-300">{formatPlatform(platform)}</span>)}
+            {(circular.platforms || []).map(platform => <span key={platform} className="rounded-full bg-[var(--surface2)] px-2 py-1 text-xs text-[var(--text)]">{formatPlatform(platform)}</span>)}
           </div>
         </header>
-        {message && <div className="rounded-md border border-line bg-panel p-3 text-sm text-slate-300">{message}</div>}
+        {message && <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-sm text-[var(--text)]">{message}</div>}
         <section className="grid gap-4 md:grid-cols-3">
           <Info label="Deadline" value={circular.deadline ? new Date(circular.deadline).toLocaleString() : 'n/a'} />
           <Info label="Budget" value={`${circular.budgetAmount || 0} ${circular.currency || 'USD'}`} />
           <Info label="Target" value={circular.targetAudience || 'n/a'} />
         </section>
-        <section className="rounded-lg border border-line bg-panel p-4 text-sm text-slate-300">
-          <h2 className="text-lg font-semibold text-white">Requirements</h2>
+        <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--text)]">
+          <h2 className="text-lg font-semibold text-[var(--text)]">Requirements</h2>
           <p className="mt-2">Objective: {circular.campaignObjective || 'n/a'}</p>
           <p className="mt-2">Eligibility: {circular.eligibilityRequirements || 'n/a'}</p>
           <p className="mt-2">Brand demands: {circular.brandDemands || 'n/a'}</p>
@@ -100,9 +100,9 @@ export default function BrandCircularDetailPage() {
         {user?.role === 'brand_rep' ? (
           <>
             <div className="flex flex-wrap gap-2">
-              <button disabled={busy === 'publish'} onClick={() => transition('publish')} className="focus-ring rounded-md bg-cyan px-3 py-2 text-sm font-semibold text-ink">Publish</button>
-              <button disabled={busy === 'close'} onClick={() => transition('close')} className="focus-ring rounded-md bg-gold px-3 py-2 text-sm font-semibold text-ink">Close</button>
-              <button disabled={busy === 'archive'} onClick={() => transition('archive')} className="focus-ring rounded-md border border-line px-3 py-2 text-sm text-slate-200">Archive</button>
+              <button disabled={busy === 'publish'} onClick={() => transition('publish')} className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]">Publish</button>
+              <button disabled={busy === 'close'} onClick={() => transition('close')} className="focus-ring rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-[#05130d]">Close</button>
+              <button disabled={busy === 'archive'} onClick={() => transition('archive')} className="focus-ring rounded-xl border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]">Archive</button>
             </div>
             <ApplicationReviewPanel applications={applications} onChanged={load} />
           </>
@@ -116,9 +116,9 @@ export default function BrandCircularDetailPage() {
 
 function Info({ label, value }) {
   return (
-    <div className="rounded-lg border border-line bg-panel p-4">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-2 text-sm font-semibold text-white">{value}</div>
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="text-xs uppercase tracking-wide text-[var(--muted)]">{label}</div>
+      <div className="mt-2 text-sm font-semibold text-[var(--text)]">{value}</div>
     </div>
   );
 }

@@ -94,13 +94,13 @@ export default function CampaignDetailPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <header className="rounded-lg border border-line bg-panel p-5">
-          <p className="text-sm uppercase tracking-[0.18em] text-cyan">Campaign</p>
-          <h1 className="mt-2 text-3xl font-bold text-white">{campaign?.name || 'Loading campaign'}</h1>
-          <p className="mt-2 text-sm text-slate-400">{campaign?.goal}</p>
+        <header className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
+          <p className="text-sm uppercase tracking-[0.18em] text-mint">Campaign</p>
+          <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">{campaign?.name || 'Loading campaign'}</h1>
+          <p className="mt-2 text-sm text-[var(--muted)]">{campaign?.goal}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {(campaign?.platforms || []).map(platform => (
-              <span key={platform} className="rounded-full bg-cyan/10 px-2.5 py-1 text-xs text-cyan">
+              <span key={platform} className="rounded-full bg-mint/10 px-2.5 py-1 text-xs text-mint">
                 {formatPlatform(platform)}
               </span>
             ))}
@@ -111,20 +111,20 @@ export default function CampaignDetailPage() {
 
         <section className="grid gap-4 xl:grid-cols-[420px_1fr]">
           <div className="space-y-4">
-            <form onSubmit={saveBrand} className="rounded-lg border border-line bg-panel p-4">
-              <h2 className="text-base font-semibold text-white">Brand profile</h2>
+            <form onSubmit={saveBrand} className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <h2 className="text-base font-semibold text-[var(--text)]">Brand profile</h2>
               <div className="mt-4 grid gap-3">
                 {['brandName', 'tone', 'targetAudience', 'bannedWords', 'ctaStyle'].map(field => (
                   <input
                     key={field}
-                    className="focus-ring rounded-md border border-line bg-ink px-3 py-2 text-sm text-white"
+                    className="focus-ring rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]"
                     placeholder={field}
                     value={brandForm[field]}
                     onChange={event => setBrandForm({ ...brandForm, [field]: event.target.value })}
                   />
                 ))}
               </div>
-              <button className="focus-ring mt-4 rounded-md bg-cyan px-4 py-2 text-sm font-semibold text-ink">
+              <button className="focus-ring mt-4 rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[#05130d]">
                 {brandProfile ? 'Update brand' : 'Create brand'}
               </button>
             </form>
@@ -132,7 +132,7 @@ export default function CampaignDetailPage() {
           </div>
 
           <div className="space-y-4">
-            {message && <div className="rounded-md border border-line bg-panel p-3 text-sm text-slate-300">{message}</div>}
+            {message && <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-sm text-[var(--text)]">{message}</div>}
             <ContentBoard items={contentItems} variantsByContent={variantsByContent} user={user} onRefresh={load} />
           </div>
         </section>
@@ -153,13 +153,13 @@ function CampaignTrackingPanel({ tracking }) {
   const accounts = Object.values(tracking.accountBreakdown || {});
 
   return (
-    <section className="rounded-lg border border-line bg-panel p-4">
+    <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-white">Campaign Tracking</h2>
-          <p className="mt-1 text-sm text-slate-400">Counts come from stored content, variants, real publish jobs, workflow events, and synced platform data.</p>
+          <h2 className="text-base font-semibold text-[var(--text)]">Campaign Tracking</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">Counts come from stored content, variants, real publish jobs, workflow events, and synced platform data.</p>
         </div>
-        <div className="text-right text-xs text-slate-400">
+        <div className="text-right text-xs text-[var(--muted)]">
           <div>{tracking.totalContentItems} content items</div>
           <div>{tracking.totalVariants} variants</div>
         </div>
@@ -178,7 +178,7 @@ function CampaignTrackingPanel({ tracking }) {
         <TrackStat label="Provider URLs" value={(tracking.providerPostUrls || []).length} />
       </div>
       {tracking.analyticsUnavailableMessage && (
-        <p className="mt-3 rounded-md border border-gold/30 bg-gold/10 p-3 text-sm text-gold">{tracking.analyticsUnavailableMessage}</p>
+        <p className="mt-3 rounded-xl border border-gold/30 bg-gold/10 p-3 text-sm text-gold">{tracking.analyticsUnavailableMessage}</p>
       )}
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Breakdown title="Platform breakdown" items={Object.entries(platforms).map(([key, value]) => [formatPlatform(key), value])} />
@@ -190,25 +190,25 @@ function CampaignTrackingPanel({ tracking }) {
 
 function TrackStat({ label, value }) {
   return (
-    <div className="rounded-md border border-line bg-ink p-3">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-bold text-white">{value}</div>
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3">
+      <div className="text-xs text-[var(--muted)]">{label}</div>
+      <div className="mt-1 text-2xl font-bold text-[var(--text)]">{value}</div>
     </div>
   );
 }
 
 function Breakdown({ title, items }) {
   return (
-    <div className="rounded-md border border-line bg-ink p-3">
-      <h3 className="text-sm font-semibold text-white">{title}</h3>
-      <div className="mt-3 grid gap-2 text-xs text-slate-300">
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3">
+      <h3 className="text-sm font-semibold text-[var(--text)]">{title}</h3>
+      <div className="mt-3 grid gap-2 text-xs text-[var(--text)]">
         {items.length === 0 ? (
-          <span className="text-slate-500">No records yet.</span>
+          <span className="text-[var(--muted)]">No records yet.</span>
         ) : (
           items.map(([label, value]) => (
             <div key={label} className="flex items-center justify-between gap-3">
               <span>{label}</span>
-              <span className="font-semibold text-cyan">{value}</span>
+              <span className="font-semibold text-mint">{value}</span>
             </div>
           ))
         )}

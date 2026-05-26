@@ -14,6 +14,22 @@ const brandProfileSchema = new Schema(
       required: true,
       trim: true
     },
+    description: {
+      type: String,
+      default: ''
+    },
+    industry: {
+      type: String,
+      default: ''
+    },
+    website: {
+      type: String,
+      default: ''
+    },
+    logoUrl: {
+      type: String,
+      default: ''
+    },
     tone: {
       type: String,
       default: ''

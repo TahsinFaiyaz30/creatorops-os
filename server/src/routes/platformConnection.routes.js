@@ -21,9 +21,9 @@ router.get('/', listConnections);
 router.get('/status', getStatus);
 router.get('/capabilities', getCapabilities);
 router.get('/:id', getConnection);
-router.post('/:id/disconnect', requireRole(['creator_admin']), disconnect);
-router.post('/:id/refresh', requireRole(['creator_admin']), refresh);
-router.post('/:id/health-check', requireRole(['creator_admin']), healthCheck);
-router.delete('/:id', requireRole(['creator_admin']), remove);
+router.post('/:id/disconnect', disconnect);
+router.post('/:id/refresh', refresh);
+router.post('/:id/health-check', healthCheck);
+router.delete('/:id', remove);
 
 export default router;

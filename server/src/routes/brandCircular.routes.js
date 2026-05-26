@@ -21,7 +21,8 @@ import { requireRole } from '../middleware/role.middleware.js';
 
 const router = express.Router();
 
-router.use(authenticate);
+router.use('/brand-circulars', authenticate);
+router.use('/applications', authenticate);
 
 router.post('/brand-circulars', requireRole(['brand_rep']), createCircular);
 router.get('/brand-circulars', getCirculars);

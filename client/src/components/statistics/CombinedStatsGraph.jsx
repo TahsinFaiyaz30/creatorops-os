@@ -91,18 +91,18 @@ export default function CombinedStatsGraph({ platformStats = [] }) {
   return (
     <section className="space-y-4">
       {/* Controls row */}
-      <div className="rounded-lg border border-line bg-panel p-4">
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-white">Platform Analytics</h2>
+          <h2 className="text-base font-semibold text-[var(--text)]">Platform Analytics</h2>
 
           {/* Metric selector */}
           <div className="flex items-center gap-2">
-            <label htmlFor="stat-metric-select" className="text-xs text-slate-400">Metric</label>
+            <label htmlFor="stat-metric-select" className="text-xs text-[var(--muted)]">Metric</label>
             <select
               id="stat-metric-select"
               value={metric}
               onChange={e => setMetric(e.target.value)}
-              className="rounded-md border border-line bg-ink px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan"
+              className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-1.5 text-xs text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-mint"
             >
               {METRIC_OPTIONS.map(opt => (
                 <option key={opt.key} value={opt.key}>{opt.label}</option>
@@ -115,18 +115,18 @@ export default function CombinedStatsGraph({ platformStats = [] }) {
         {connectedPlatforms.length > 0 ? (
           <div className="mt-4">
             <div className="mb-2 flex items-center gap-3">
-              <span className="text-xs text-slate-500">Platforms</span>
+              <span className="text-xs text-[var(--muted)]">Platforms</span>
               <button
                 id="stats-select-all-platforms"
                 onClick={selectAll}
-                className="text-xs text-cyan hover:underline"
+                className="text-xs text-mint hover:underline"
               >
                 All
               </button>
               <button
                 id="stats-clear-platforms"
                 onClick={clearAll}
-                className="text-xs text-slate-400 hover:text-white"
+                className="text-xs text-[var(--muted)] hover:text-[var(--text)]"
               >
                 None
               </button>
@@ -158,7 +158,7 @@ export default function CombinedStatsGraph({ platformStats = [] }) {
             </div>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-slate-500">
+          <p className="mt-3 text-sm text-[var(--muted)]">
             No connected platform accounts have synced data yet. Connect accounts and publish real posts to see analytics here.
           </p>
         )}

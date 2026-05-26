@@ -10,12 +10,12 @@ import { platformOptions, formatPlatform } from '../../lib/platforms';
 
 // ── colour tokens per event type ────────────────────────────────────────────
 const TYPE_STYLES = {
-  scheduled_post:       { dot: 'bg-cyan',       badge: 'border-cyan/30 bg-cyan/10 text-cyan',           label: 'Scheduled' },
+  scheduled_post:       { dot: 'bg-mint',       badge: 'border-mint/30 bg-mint/10 text-mint',           label: 'Scheduled' },
   published_post:       { dot: 'bg-emerald-400', badge: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300', label: 'Published' },
   circular_deadline:    { dot: 'bg-amber-400',   badge: 'border-amber-400/30 bg-amber-400/10 text-amber-300',       label: 'Deadline' },
   application_deadline: { dot: 'bg-purple-400',  badge: 'border-purple-400/30 bg-purple-400/10 text-purple-300',    label: 'Application' },
-  upcoming_event:       { dot: 'bg-slate-400',   badge: 'border-white/15 bg-white/5 text-slate-300',    label: 'Event' },
-  workflow_milestone:   { dot: 'bg-slate-600',   badge: 'border-line bg-ink text-slate-400',             label: 'Milestone' },
+  upcoming_event:       { dot: 'bg-slate-400',   badge: 'border-white/15 bg-white/5 text-[var(--text)]',    label: 'Event' },
+  workflow_milestone:   { dot: 'bg-slate-600',   badge: 'border-[var(--border)] bg-[var(--surface2)] text-[var(--muted)]',             label: 'Milestone' },
 };
 
 const getStyle = type => TYPE_STYLES[type] || TYPE_STYLES.workflow_milestone;
@@ -126,7 +126,7 @@ export default function FloatingCalendarDrawer() {
         type="button"
         aria-label="Open calendar"
         onClick={() => setOpen(true)}
-        className={`fixed right-0 top-1/2 z-40 -translate-y-1/2 rounded-l-lg border border-r-0 border-line bg-cyan px-2 py-6 font-bold text-ink shadow-soft transition-transform ${open ? 'translate-x-full' : ''}`}
+        className={`fixed right-0 top-1/2 z-40 -translate-y-1/2 rounded-l-lg border border-r-0 border-[var(--border)] bg-mint px-2 py-6 font-bold text-[#05130d] shadow-soft transition-transform ${open ? 'translate-x-full' : ''}`}
       >
         <ChevronLeft size={18} />
       </button>
@@ -141,21 +141,21 @@ export default function FloatingCalendarDrawer() {
 
       {/* Drawer */}
       <aside
-        className={`fixed right-0 top-0 z-50 flex h-screen w-[420px] max-w-[96vw] flex-col border-l border-line bg-[#0c1118] shadow-2xl transition-transform duration-300 ${open ? 'translate-x-0' : 'translate-x-full'}`}
+        className={`fixed right-0 top-0 z-50 flex h-screen w-[420px] max-w-[96vw] flex-col border-l border-[var(--border)] bg-[#0c1118] shadow-2xl transition-transform duration-300 ${open ? 'translate-x-0' : 'translate-x-full'}`}
       >
         {/* Header */}
-        <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-4">
           <div className="flex items-center gap-2">
-            <CalendarDays className="text-cyan" size={20} />
+            <CalendarDays className="text-mint" size={20} />
             <div>
-              <p className="text-[10px] uppercase tracking-[0.18em] text-cyan">Operations Feed</p>
-              <h2 className="text-lg font-bold leading-tight text-white">Calendar</h2>
+              <p className="text-[10px] uppercase tracking-[0.18em] text-mint">Operations Feed</p>
+              <h2 className="text-lg font-bold leading-tight text-[var(--text)]">Calendar</h2>
             </div>
           </div>
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="focus-ring rounded-md border border-line p-2 text-slate-400 hover:bg-white/5"
+            className="focus-ring rounded-xl border border-[var(--border)] p-2 text-[var(--muted)] hover:bg-white/5"
           >
             <X size={16} />
           </button>
@@ -164,24 +164,24 @@ export default function FloatingCalendarDrawer() {
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
 
           {/* ── Month navigator ─────────────────────────────────────────── */}
-          <div className="shrink-0 border-b border-line px-4 pt-4 pb-3">
+          <div className="shrink-0 border-b border-[var(--border)] px-4 pt-4 pb-3">
             <div className="flex items-center justify-between">
               <button
                 type="button"
                 onClick={prevMonth}
-                className="rounded-md p-1.5 text-slate-400 hover:bg-white/5 hover:text-white"
+                className="rounded-xl p-1.5 text-[var(--muted)] hover:bg-white/5 hover:text-[var(--text)]"
                 aria-label="Previous month"
               >
                 <ChevronLeft size={16} />
               </button>
               <div className="flex items-center gap-3">
-                <span className="text-sm font-semibold text-white">
+                <span className="text-sm font-semibold text-[var(--text)]">
                   {MONTHS[cursor.month]} {cursor.year}
                 </span>
                 <button
                   type="button"
                   onClick={goToday}
-                  className="rounded-md border border-cyan/40 px-2 py-0.5 text-[10px] font-semibold text-cyan hover:bg-cyan/10"
+                  className="rounded-xl border border-mint/40 px-2 py-0.5 text-[10px] font-semibold text-mint hover:bg-mint/10"
                 >
                   Today
                 </button>
@@ -189,7 +189,7 @@ export default function FloatingCalendarDrawer() {
               <button
                 type="button"
                 onClick={nextMonth}
-                className="rounded-md p-1.5 text-slate-400 hover:bg-white/5 hover:text-white"
+                className="rounded-xl p-1.5 text-[var(--muted)] hover:bg-white/5 hover:text-[var(--text)]"
                 aria-label="Next month"
               >
                 <ChevronRight size={16} />
@@ -199,7 +199,7 @@ export default function FloatingCalendarDrawer() {
             {/* Day-of-week header */}
             <div className="mt-3 grid grid-cols-7 text-center">
               {DAYS.map(d => (
-                <div key={d} className="py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{d}</div>
+                <div key={d} className="py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">{d}</div>
               ))}
             </div>
 
@@ -219,15 +219,15 @@ export default function FloatingCalendarDrawer() {
                     type="button"
                     disabled={!day}
                     onClick={() => day && setSelected(key === selected ? null : key)}
-                    className={`relative flex flex-col items-center rounded-lg py-1.5 transition
+                    className={`relative flex flex-col items-center rounded-2xl py-1.5 transition
                       ${!day ? 'pointer-events-none' : 'hover:bg-white/5'}
-                      ${isToday && !isSel ? 'ring-1 ring-cyan/50' : ''}
-                      ${isSel ? 'bg-cyan/15 ring-1 ring-cyan' : ''}
+                      ${isToday && !isSel ? 'ring-1 ring-mint/50' : ''}
+                      ${isSel ? 'bg-mint/15 ring-1 ring-mint' : ''}
                     `}
                   >
                     <span className={`text-xs font-medium leading-none
-                      ${isToday ? 'text-cyan' : 'text-slate-300'}
-                      ${isSel ? 'font-bold text-cyan' : ''}
+                      ${isToday ? 'text-mint' : 'text-[var(--text)]'}
+                      ${isSel ? 'font-bold text-mint' : ''}
                     `}>
                       {day || ''}
                     </span>
@@ -248,26 +248,26 @@ export default function FloatingCalendarDrawer() {
             </div>
 
             {/* Legend */}
-            <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-line pt-2">
+            <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-[var(--border)] pt-2">
               {Object.entries(TYPE_STYLES).map(([type, s]) => (
                 <div key={type} className="flex items-center gap-1">
                   <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
-                  <span className="text-[9px] text-slate-500">{s.label}</span>
+                  <span className="text-[9px] text-[var(--muted)]">{s.label}</span>
                 </div>
               ))}
             </div>
           </div>
 
           {/* ── Filters ─────────────────────────────────────────────────── */}
-          <div className="shrink-0 border-b border-line px-4 py-3">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
+          <div className="shrink-0 border-b border-[var(--border)] px-4 py-3">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)] mb-2">
               <Filter size={11} /> Filters
             </div>
             <div className="grid grid-cols-2 gap-2">
               <select
                 value={filters.platform}
                 onChange={e => setFilters({ ...filters, platform: e.target.value })}
-                className="rounded-md border border-line bg-ink px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan"
+                className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-2 py-1.5 text-xs text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-mint"
               >
                 <option value="">All platforms</option>
                 {platformOptions.map(p => <option key={p} value={p}>{formatPlatform(p)}</option>)}
@@ -275,7 +275,7 @@ export default function FloatingCalendarDrawer() {
               <select
                 value={filters.eventType}
                 onChange={e => setFilters({ ...filters, eventType: e.target.value })}
-                className="rounded-md border border-line bg-ink px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan"
+                className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-2 py-1.5 text-xs text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-mint"
               >
                 {eventTypes.map(t => (
                   <option key={t || 'all'} value={t}>{t ? getStyle(t).label : 'All types'}</option>
@@ -285,20 +285,20 @@ export default function FloatingCalendarDrawer() {
           </div>
 
           {message && (
-            <div className="mx-4 mt-3 rounded-md border border-line bg-panel p-2 text-xs text-slate-300">{message}</div>
+            <div className="mx-4 mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2 text-xs text-[var(--text)]">{message}</div>
           )}
 
           {/* ── Selected day events ─────────────────────────────────────── */}
           {selected && (
-            <div className="shrink-0 border-b border-line px-4 py-3">
+            <div className="shrink-0 border-b border-[var(--border)] px-4 py-3">
               <div className="flex items-center gap-2 mb-2">
-                <Clock size={13} className="text-cyan" />
-                <span className="text-xs font-semibold text-white">
+                <Clock size={13} className="text-mint" />
+                <span className="text-xs font-semibold text-[var(--text)]">
                   {new Date(selected + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
                 </span>
               </div>
               {dayEvents.length === 0 ? (
-                <p className="text-xs text-slate-500">No events on this day.</p>
+                <p className="text-xs text-[var(--muted)]">No events on this day.</p>
               ) : (
                 <div className="space-y-2">
                   {dayEvents.map((ev, i) => (
@@ -312,11 +312,11 @@ export default function FloatingCalendarDrawer() {
           {/* ── Full feed list ───────────────────────────────────────────── */}
           <div className="flex-1 px-4 py-3 space-y-4">
             <div>
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
                 Upcoming &amp; scheduled
               </p>
               {feed.events?.length === 0 && (
-                <p className="text-xs text-slate-500">No calendar items match these filters.</p>
+                <p className="text-xs text-[var(--muted)]">No calendar items match these filters.</p>
               )}
               <div className="space-y-2">
                 {feed.events?.map(ev => <EventCard key={ev.id} event={ev} />)}
@@ -325,7 +325,7 @@ export default function FloatingCalendarDrawer() {
 
             {feed.recentActivity?.length > 0 && (
               <div>
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Recent activity</p>
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">Recent activity</p>
                 <div className="space-y-2">
                   {feed.recentActivity.slice(0, 6).map(ev => <EventCard key={`recent-${ev.id}`} event={ev} />)}
                 </div>
@@ -343,9 +343,9 @@ export default function FloatingCalendarDrawer() {
 function EventCard({ event }) {
   const s = getStyle(event.eventType);
   return (
-    <article className={`rounded-lg border p-3 text-xs ${s.badge}`}>
+    <article className={`rounded-2xl border p-3 text-xs ${s.badge}`}>
       <div className="flex items-start justify-between gap-2">
-        <span className="font-semibold text-white leading-tight">{event.title}</span>
+        <span className="font-semibold text-[var(--text)] leading-tight">{event.title}</span>
         {event.date && (
           <span className="shrink-0 text-[10px] opacity-70">
             {new Date(event.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}

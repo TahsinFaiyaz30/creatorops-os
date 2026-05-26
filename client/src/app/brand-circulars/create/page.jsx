@@ -27,11 +27,11 @@ export default function CreateBrandCircularPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <header className="rounded-lg border border-line bg-panel p-6">
-          <p className="text-sm uppercase tracking-[0.18em] text-cyan">New opportunity</p>
-          <h1 className="mt-2 text-3xl font-bold text-white">Create Brand Circular</h1>
+        <header className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
+          <p className="text-sm uppercase tracking-[0.18em] text-mint">New opportunity</p>
+          <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Create Brand Circular</h1>
         </header>
-        {message && <div className="rounded-md border border-line bg-panel p-3 text-sm text-slate-300">{message}</div>}
+        {message && <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-sm text-[var(--text)]">{message}</div>}
         <BrandCircularForm onSubmit={submit} busy={busy} />
       </div>
     </AppShell>

@@ -9,6 +9,7 @@ export const authenticate = async (req, res, next) => {
     const [scheme, token] = authHeader.split(' ');
 
     if (scheme !== 'Bearer' || !token) {
+      console.log(`[AUTH FAILED] Missing token on ${req.method} ${req.originalUrl}`);
       return res.status(401).json({ message: 'Authentication token is required.' });
     }
 

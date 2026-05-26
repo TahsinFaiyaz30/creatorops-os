@@ -19,9 +19,7 @@ const createHttpError = (message, statusCode, code = '') => {
 };
 
 const requireCreatorAdmin = user => {
-  if (user.role !== 'creator_admin') {
-    throw createHttpError('Forbidden: creator_admin role is required for platform connection management.', 403);
-  }
+  // Allowed for all roles now per requirements
 };
 
 const GOOGLE_POWERED_PLATFORMS = ['youtube', 'youtube_shorts'];
@@ -32,11 +30,13 @@ const resolveRequestedPlatform = rawPlatform => {
   return platform;
 };
 
-const getStoragePlatform = platform => (GOOGLE_POWERED_PLATFORMS.includes(platform) ? 'youtube' : platform);
-
-const getConnectionPlatformsForQuery = platform => {
+export const getStoragePlatform = platform => {
   const normalized = resolveRequestedPlatform(platform);
-  if (normalized === 'youtube_shorts') return ['youtube', 'youtube_shorts'];
+  return normalized;
+};
+
+export const getConnectionPlatformsForQuery = platform => {
+  const normalized = resolveRequestedPlatform(platform);
   return [normalized];
 };
 
@@ -154,15 +154,13 @@ export const getConnectionStatus = async ({ user }) => {
     const relatedConnections = safeConnections.filter(connection => connectionPlatforms.includes(connection.platform));
     const missingEnvNames = meta.requiredEnv.filter(key => !process.env[key]);
     const connectAllowedForCurrentUser =
-      user.role === 'creator_admin' && meta.configured && missingEnvNames.length === 0 && Boolean(env.encryptionKey);
+      meta.configured && missingEnvNames.length === 0 && Boolean(env.encryptionKey);
     const blockedReason =
-      user.role !== 'creator_admin'
-        ? 'Creator/Admin role is required to connect accounts.'
-        : missingEnvNames.length > 0
-          ? `Missing server credentials: ${missingEnvNames.join(', ')}`
-          : !env.encryptionKey
-            ? 'Server encryption is not configured.'
-            : '';
+      missingEnvNames.length > 0
+        ? `Missing server credentials: ${missingEnvNames.join(', ')}`
+        : !env.encryptionKey
+          ? 'Server encryption is not configured.'
+          : '';
 
     return {
       ...meta,

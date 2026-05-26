@@ -81,17 +81,17 @@ export default function SchedulePanel({ variant, user, onDone }) {
   };
 
   return (
-    <div className="mt-3 rounded-md border border-line bg-ink/70 p-3">
-      <div className="flex items-center gap-2 text-sm font-semibold text-white">
+    <div className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface2)]/70 p-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text)]">
         <CalendarClock size={16} />
         Real Publishing
       </div>
-      <p className="mt-1 text-xs text-slate-400">Target a connected {formatPlatform(variant.platform)} account. The backend blocks missing credentials, scopes, or unsupported connector methods.</p>
+      <p className="mt-1 text-xs text-[var(--muted)]">Target a connected {formatPlatform(variant.platform)} account. The backend blocks missing credentials, scopes, or unsupported connector methods.</p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <select
           value={platformConnectionId}
           onChange={event => setPlatformConnectionId(event.target.value)}
-          className="focus-ring rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+          className="focus-ring rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)]"
         >
           {connections.length === 0 ? (
             <option value="">No connected account</option>
@@ -107,13 +107,13 @@ export default function SchedulePanel({ variant, user, onDone }) {
           type="datetime-local"
           value={scheduledAt}
           onChange={event => setScheduledAt(event.target.value)}
-          className="focus-ring rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+          className="focus-ring rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)]"
         />
         <button
           type="button"
           onClick={schedule}
           disabled={busy || user?.role !== 'creator_admin' || variant.status !== 'approved' || !platformConnectionId}
-          className="focus-ring inline-flex items-center gap-2 rounded-md bg-gold px-3 py-2 text-sm font-semibold text-ink disabled:opacity-50"
+          className="focus-ring inline-flex items-center gap-2 rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50"
         >
           <CalendarClock size={15} />
           Schedule
@@ -122,7 +122,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
           type="button"
           onClick={publishNow}
           disabled={busy || user?.role !== 'creator_admin' || variant.status !== 'approved' || !platformConnectionId}
-          className="focus-ring inline-flex items-center gap-2 rounded-md bg-mint px-3 py-2 text-sm font-semibold text-ink disabled:opacity-50"
+          className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50"
         >
           <Send size={15} />
           Publish now
@@ -130,12 +130,12 @@ export default function SchedulePanel({ variant, user, onDone }) {
       </div>
       {connections.length === 0 && <p className="mt-2 text-xs text-gold">Connect a real {formatPlatform(variant.platform)} account before scheduling or publishing.</p>}
       {job && (
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-2 text-xs text-[var(--muted)]">
           Job status: {job.status}
           {job.accountSnapshot?.accountHandle ? ` for ${job.accountSnapshot.accountHandle}` : ''}
         </p>
       )}
-      {message && <p className="mt-2 text-sm text-slate-300">{message}</p>}
+      {message && <p className="mt-2 text-sm text-[var(--text)]">{message}</p>}
     </div>
   );
 }

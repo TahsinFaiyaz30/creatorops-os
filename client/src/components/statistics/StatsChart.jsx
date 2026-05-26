@@ -209,24 +209,24 @@ export default function StatsChart({ data = [], metric = 'value', title = '', su
   const hasData = data.length > 0;
 
   return (
-    <div className="rounded-lg border border-line bg-panel p-4">
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          {title && <h2 className="text-lg font-semibold text-white">{title}</h2>}
-          {subtitle && <p className="mt-0.5 text-sm text-slate-400">{subtitle}</p>}
+          {title && <h2 className="text-lg font-semibold text-[var(--text)]">{title}</h2>}
+          {subtitle && <p className="mt-0.5 text-sm text-[var(--muted)]">{subtitle}</p>}
         </div>
-        <div className="flex gap-1 rounded-lg border border-line bg-ink p-1">
+        <div className="flex gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface2)] p-1">
           <button
             id="chart-toggle-bar"
             onClick={() => setView('bar')}
-            className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${view === 'bar' ? 'bg-cyan text-ink' : 'text-slate-400 hover:text-white'}`}
+            className={`rounded-xl px-3 py-1 text-xs font-semibold transition-colors ${view === 'bar' ? 'bg-mint text-[#05130d]' : 'text-[var(--muted)] hover:text-[var(--text)]'}`}
           >
             Bar
           </button>
           <button
             id="chart-toggle-ogive"
             onClick={() => setView('ogive')}
-            className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${view === 'ogive' ? 'bg-cyan text-ink' : 'text-slate-400 hover:text-white'}`}
+            className={`rounded-xl px-3 py-1 text-xs font-semibold transition-colors ${view === 'ogive' ? 'bg-mint text-[#05130d]' : 'text-[var(--muted)] hover:text-[var(--text)]'}`}
           >
             Ogive
           </button>
@@ -235,7 +235,7 @@ export default function StatsChart({ data = [], metric = 'value', title = '', su
 
       <div ref={containerRef} className="mt-4 w-full overflow-x-auto">
         {!hasData ? (
-          <div className="flex h-[280px] items-center justify-center text-sm text-slate-500">
+          <div className="flex h-[280px] items-center justify-center text-sm text-[var(--muted)]">
             No connected platform data to display yet.
           </div>
         ) : view === 'bar' ? (

@@ -23,6 +23,7 @@ import scheduleRoutes from './routes/schedule.routes.js';
 import scriptRoutes from './routes/script.routes.js';
 import socialRoutes from './routes/social.routes.js';
 import statisticsRoutes from './routes/statistics.routes.js';
+import userRoutes from './routes/user.routes.js';
 
 const app = express();
 
@@ -76,8 +77,10 @@ app.use('/api/schedule', scheduleRoutes);
 app.use('/api/scripts', scriptRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/statistics', statisticsRoutes);
+app.use('/api/users', userRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
 
 export default app;
+

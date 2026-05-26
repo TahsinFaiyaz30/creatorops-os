@@ -34,6 +34,20 @@ const userSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: 'Workspace',
       required: true
+    },
+    profile: {
+      bio: { type: String, default: '' },
+      avatarUrl: { type: String, default: '' },
+      socialLinks: { type: [String], default: [] },
+      location: { type: String, default: '' }
+    },
+    averageRating: {
+      type: Number,
+      default: 0
+    },
+    totalReviews: {
+      type: Number,
+      default: 0
     }
   },
   { timestamps: true }

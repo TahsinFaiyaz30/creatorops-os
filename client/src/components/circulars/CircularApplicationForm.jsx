@@ -32,13 +32,13 @@ export default function CircularApplicationForm({ onSubmit, statistics, busy }) 
         event.preventDefault();
         onSubmit({ message, creatorProfileSummary: summary, selectedPostIds, selectedMediaAssetIds });
       }}
-      className="rounded-lg border border-line bg-panel p-4"
+      className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4"
     >
-      <h2 className="text-lg font-semibold text-white">Apply as creator</h2>
-      <p className="mt-1 text-sm text-slate-400">Your current real synced statistics snapshot will be attached. Unavailable metrics stay marked as unavailable.</p>
-      <textarea value={summary} onChange={event => setSummary(event.target.value)} placeholder="Creator profile summary" rows={3} className="focus-ring mt-3 w-full rounded-md border border-line bg-ink px-3 py-2 text-sm text-white" />
-      <textarea value={message} onChange={event => setMessage(event.target.value)} placeholder="Application message" rows={4} className="focus-ring mt-3 w-full rounded-md border border-line bg-ink px-3 py-2 text-sm text-white" />
-      <div className="mt-3 grid gap-2 text-xs text-slate-400 md:grid-cols-3">
+      <h2 className="text-lg font-semibold text-[var(--text)]">Apply as creator</h2>
+      <p className="mt-1 text-sm text-[var(--muted)]">Your current real synced statistics snapshot will be attached. Unavailable metrics stay marked as unavailable.</p>
+      <textarea value={summary} onChange={event => setSummary(event.target.value)} placeholder="Creator profile summary" rows={3} className="focus-ring mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]" />
+      <textarea value={message} onChange={event => setMessage(event.target.value)} placeholder="Application message" rows={4} className="focus-ring mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]" />
+      <div className="mt-3 grid gap-2 text-xs text-[var(--muted)] md:grid-cols-3">
         <span>Views: {statistics?.combinedStats?.views || 0}</span>
         <span>Comments: {statistics?.combinedStats?.comments || 0}</span>
         <span>Source: {statistics?.source || 'unavailable'}</span>
@@ -61,7 +61,7 @@ export default function CircularApplicationForm({ onSubmit, statistics, busy }) 
           renderItem={asset => `${asset.mediaType || 'media'} · ${asset.originalName || asset.publicUrl}`}
         />
       </div>
-      <button type="submit" disabled={busy} className="focus-ring mt-4 rounded-md bg-cyan px-4 py-2 text-sm font-semibold text-ink disabled:opacity-50">
+      <button type="submit" disabled={busy} className="focus-ring mt-4 rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50">
         {busy ? 'Submitting...' : 'Submit application'}
       </button>
     </form>
@@ -70,18 +70,18 @@ export default function CircularApplicationForm({ onSubmit, statistics, busy }) 
 
 function AttachmentPicker({ title, empty, items, selectedIds, onToggle, renderItem }) {
   return (
-    <div className="rounded-md border border-line bg-ink p-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</div>
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{title}</div>
       <div className="mt-2 max-h-48 space-y-2 overflow-auto">
         {items.slice(0, 8).map(item => (
-          <label key={item._id} className="flex items-start gap-2 rounded-md border border-line bg-panel p-2 text-xs text-slate-300">
+          <label key={item._id} className="flex items-start gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2 text-xs text-[var(--text)]">
             <input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => onToggle(item._id)} />
             <span>{renderItem(item)}</span>
           </label>
         ))}
-        {items.length === 0 && <p className="text-xs text-slate-500">{empty}</p>}
+        {items.length === 0 && <p className="text-xs text-[var(--muted)]">{empty}</p>}
       </div>
-      <p className="mt-2 text-xs text-slate-500">Selected: {selectedIds.length}/2</p>
+      <p className="mt-2 text-xs text-[var(--muted)]">Selected: {selectedIds.length}/2</p>
     </div>
   );
 }

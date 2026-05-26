@@ -14,9 +14,9 @@ export default function PlatformStatsGraph({ platformStat }) {
   ];
 
   return (
-    <article className="rounded-lg border border-line bg-panel p-4">
+    <article className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="font-semibold text-white">{formatPlatform(platformStat.platform)}</h3>
+        <h3 className="font-semibold text-[var(--text)]">{formatPlatform(platformStat.platform)}</h3>
         <span className={`rounded-full px-2 py-1 text-xs ${platformStat.source === 'real_sync' ? 'bg-mint/10 text-mint' : 'bg-gold/10 text-gold'}`}>
           {platformStat.source}
         </span>
@@ -24,14 +24,14 @@ export default function PlatformStatsGraph({ platformStat }) {
       <div className="mt-3 space-y-2">
         {bars.map(([label, value]) => (
           <div key={label}>
-            <div className="flex justify-between text-xs text-slate-400"><span>{label}</span><span>{value}</span></div>
-            <div className="mt-1 h-2 rounded-full bg-ink">
-              <div className="h-2 rounded-full bg-cyan" style={{ width: `${Math.max(3, (value / max) * 100)}%` }} />
+            <div className="flex justify-between text-xs text-[var(--muted)]"><span>{label}</span><span>{value}</span></div>
+            <div className="mt-1 h-2 rounded-full bg-[var(--surface2)]">
+              <div className="h-2 rounded-full bg-mint" style={{ width: `${Math.max(3, (value / max) * 100)}%` }} />
             </div>
           </div>
         ))}
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[var(--muted)]">
         <span>Posts: {metrics.postCount || 0}</span>
         <span>Engagement: {metrics.engagementRate || 0}%</span>
         <span>Followers: {metrics.followers ?? 'Unavailable'}</span>

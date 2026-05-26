@@ -128,24 +128,24 @@ export default function AnalyticsPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <header className="rounded-lg border border-line bg-panel p-6">
-          <p className="text-sm uppercase tracking-[0.18em] text-cyan">Unified real social data</p>
-          <h1 className="mt-2 text-3xl font-bold text-white">Post Details & Analytics</h1>
-          <p className="mt-2 max-w-4xl text-sm text-slate-400">
+        <header className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
+          <p className="text-sm uppercase tracking-[0.18em] text-mint">Unified real social data</p>
+          <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Post Details & Analytics</h1>
+          <p className="mt-2 max-w-4xl text-sm text-[var(--muted)]">
             Open one post group to see the same post across connected platforms. Combined totals are shown beside per-platform reactions, comments, shares, views, saves, platform status, comments, and reply controls. No fake metrics are generated.
           </p>
         </header>
 
-        {message && <div className="rounded-md border border-line bg-panel p-3 text-sm text-slate-300">{message}</div>}
+        {message && <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-sm text-[var(--text)]">{message}</div>}
 
         {syncResults.length > 0 && (
-          <section className="rounded-lg border border-line bg-panel p-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Last Sync Result</h2>
+          <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Last Sync Result</h2>
             <div className="mt-3 grid gap-2">
               {syncResults.map(result => (
-                <div key={`${result.platform}-${result.postId}`} className={`rounded-md border p-3 text-sm ${result.ok ? 'border-mint/30 bg-mint/10 text-mint' : 'border-gold/30 bg-gold/10 text-gold'}`}>
+                <div key={`${result.platform}-${result.postId}`} className={`rounded-xl border p-3 text-sm ${result.ok ? 'border-mint/30 bg-mint/10 text-mint' : 'border-gold/30 bg-gold/10 text-gold'}`}>
                   <div className="font-semibold">{formatPlatform(result.platform)}</div>
-                  <div className="mt-1 grid gap-1 text-xs text-slate-300">
+                  <div className="mt-1 grid gap-1 text-xs text-[var(--text)]">
                     <span>Metrics: {result.analytics?.ok ? result.analytics.message || 'synced' : result.analytics?.message || result.message || 'not synced'}</span>
                     <span>Comments: {result.comments?.ok ? `${result.comments.data?.length || 0} real comment${(result.comments.data?.length || 0) === 1 ? '' : 's'} returned` : result.comments?.message || result.message || 'not synced'}</span>
                   </div>
@@ -162,56 +162,56 @@ export default function AnalyticsPage() {
         </section>
 
         {summary?.unavailableMessage && (
-          <div className="rounded-md border border-gold/30 bg-gold/10 p-3 text-sm text-gold">{summary.unavailableMessage}</div>
+          <div className="rounded-xl border border-gold/30 bg-gold/10 p-3 text-sm text-gold">{summary.unavailableMessage}</div>
         )}
 
         <section className="grid gap-5 xl:grid-cols-[360px_1fr]">
           <div className="space-y-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Published Post Groups</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Published Post Groups</h2>
             {groups.map(group => (
               <button
                 key={group.id}
                 type="button"
                 onClick={() => openGroup(group.id)}
-                className={`w-full rounded-lg border p-4 text-left transition hover:border-cyan ${selectedGroup?.id === group.id ? 'border-cyan bg-cyan/10' : 'border-line bg-panel'}`}
+                className={`w-full rounded-2xl border p-4 text-left transition hover:border-mint ${selectedGroup?.id === group.id ? 'border-mint bg-mint/10' : 'border-[var(--border)] bg-[var(--surface)]'}`}
               >
-                <div className="text-sm font-semibold text-white">{group.title}</div>
-                <p className="mt-2 line-clamp-3 text-xs text-slate-400">{group.caption || 'No caption stored.'}</p>
+                <div className="text-sm font-semibold text-[var(--text)]">{group.title}</div>
+                <p className="mt-2 line-clamp-3 text-xs text-[var(--muted)]">{group.caption || 'No caption stored.'}</p>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {group.platforms.map(platform => (
-                    <span key={platform} className="rounded-full bg-ink px-2 py-1 text-xs text-cyan">{formatPlatform(platform)}</span>
+                    <span key={platform} className="rounded-full bg-[var(--surface2)] px-2 py-1 text-xs text-mint">{formatPlatform(platform)}</span>
                   ))}
                 </div>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-400">
+                <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-[var(--muted)]">
                   <span>Likes {group.totals.likes}</span>
                   <span>Comments {group.totals.comments}</span>
                   <span>Shares {group.totals.shares}</span>
                 </div>
               </button>
             ))}
-            {groups.length === 0 && <p className="rounded-lg border border-line bg-panel p-5 text-sm text-slate-400">No post groups yet. Publish from Compose first.</p>}
+            {groups.length === 0 && <p className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 text-sm text-[var(--muted)]">No post groups yet. Publish from Compose first.</p>}
           </div>
 
           <div className="space-y-4">
             {selectedGroup ? (
               <>
-                <section className="rounded-lg border border-line bg-panel p-5">
+                <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <h2 className="text-xl font-bold text-white">{selectedGroup.title}</h2>
-                      <p className="mt-2 max-w-3xl text-sm text-slate-400">{selectedGroup.caption}</p>
+                      <h2 className="text-xl font-bold text-[var(--text)]">{selectedGroup.title}</h2>
+                      <p className="mt-2 max-w-3xl text-sm text-[var(--muted)]">{selectedGroup.caption}</p>
                     </div>
-                    <button type="button" disabled={busy === `sync-${selectedGroup.id}` || user?.role !== 'creator_admin'} onClick={() => syncGroup(selectedGroup)} className="focus-ring inline-flex items-center gap-2 rounded-md bg-cyan px-3 py-2 text-sm font-semibold text-ink disabled:opacity-50">
+                    <button type="button" disabled={busy === `sync-${selectedGroup.id}` || user?.role !== 'creator_admin'} onClick={() => syncGroup(selectedGroup)} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50">
                       <RefreshCw size={15} />
                       Sync all platforms
                     </button>
                   </div>
 
                   <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1 text-xs text-slate-500"><Filter size={13} /> Filter:</span>
-                    <button type="button" onClick={() => openGroup(selectedGroup.id, '')} className={`rounded-full px-3 py-1 text-xs ${!selectedPlatform ? 'bg-cyan text-ink' : 'bg-ink text-slate-300'}`}>All</button>
+                    <span className="inline-flex items-center gap-1 text-xs text-[var(--muted)]"><Filter size={13} /> Filter:</span>
+                    <button type="button" onClick={() => openGroup(selectedGroup.id, '')} className={`rounded-full px-3 py-1 text-xs ${!selectedPlatform ? 'bg-mint text-[#05130d]' : 'bg-[var(--surface2)] text-[var(--text)]'}`}>All</button>
                     {selectedGroup.platforms.map(platform => (
-                      <button key={platform} type="button" onClick={() => openGroup(selectedGroup.id, platform)} className={`rounded-full px-3 py-1 text-xs ${selectedPlatform === platform ? 'bg-cyan text-ink' : 'bg-ink text-slate-300'}`}>
+                      <button key={platform} type="button" onClick={() => openGroup(selectedGroup.id, platform)} className={`rounded-full px-3 py-1 text-xs ${selectedPlatform === platform ? 'bg-mint text-[#05130d]' : 'bg-[var(--surface2)] text-[var(--text)]'}`}>
                         {formatPlatform(platform)}
                       </button>
                     ))}
@@ -223,28 +223,28 @@ export default function AnalyticsPage() {
                 </section>
 
                 <section className="grid gap-3">
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Per-Platform Breakdown</h3>
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Per-Platform Breakdown</h3>
                   {selectedGroup.platformBreakdown.map(item => (
-                    <article key={item.platform} className="rounded-lg border border-line bg-panel p-4">
+                    <article key={item.platform} className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <span className="rounded-full bg-cyan/10 px-2 py-1 text-xs font-semibold text-cyan">{formatPlatform(item.platform)}</span>
-                          <div className="mt-2 text-sm text-slate-300">
+                          <span className="rounded-full bg-mint/10 px-2 py-1 text-xs font-semibold text-mint">{formatPlatform(item.platform)}</span>
+                          <div className="mt-2 text-sm text-[var(--text)]">
                             {item.accountSnapshot?.accountName || 'Unknown account'} {item.accountSnapshot?.accountHandle ? `(${item.accountSnapshot.accountHandle})` : ''}
                           </div>
                         </div>
-                        <span className="rounded-full bg-ink px-2 py-1 text-xs text-slate-300">{item.status}</span>
+                        <span className="rounded-full bg-[var(--surface2)] px-2 py-1 text-xs text-[var(--text)]">{item.status}</span>
                       </div>
                       <div className="mt-4 grid gap-2 md:grid-cols-6">
                         {metricKeys.map(metric => (
-                          <div key={metric} className="rounded-md border border-line bg-ink p-2">
-                            <div className="text-[10px] uppercase text-slate-500">{metric}</div>
-                            <div className="text-base font-bold text-white">{item.metrics?.[metric] || 0}</div>
+                          <div key={metric} className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-2">
+                            <div className="text-[10px] uppercase text-[var(--muted)]">{metric}</div>
+                            <div className="text-base font-bold text-[var(--text)]">{item.metrics?.[metric] || 0}</div>
                           </div>
                         ))}
                       </div>
-                      <div className="mt-3 grid gap-1 text-xs text-slate-400">
-                        {item.providerPostUrl ? <a href={item.providerPostUrl} target="_blank" rel="noreferrer" className="text-cyan underline">View on platform</a> : <span>Provider URL: not available</span>}
+                      <div className="mt-3 grid gap-1 text-xs text-[var(--muted)]">
+                        {item.providerPostUrl ? <a href={item.providerPostUrl} target="_blank" rel="noreferrer" className="text-mint underline">View on platform</a> : <span>Provider URL: not available</span>}
                         {item.latestSyncedAt ? <span>Last synced: {new Date(item.latestSyncedAt).toLocaleString()}</span> : <span>Last synced: never</span>}
                         <span>Metrics sync: {item.analyticsStatus}{item.lastAnalyticsErrorMessage ? ` - ${item.lastAnalyticsErrorMessage}` : ''}</span>
                         <span>Comments sync: {item.commentsStatus}{item.lastCommentsSyncAt ? ` - ${new Date(item.lastCommentsSyncAt).toLocaleString()}` : ''}</span>
@@ -256,40 +256,40 @@ export default function AnalyticsPage() {
                   ))}
                 </section>
 
-                <section className="rounded-lg border border-line bg-panel p-4">
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Comments</h3>
+                <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Comments</h3>
                   <div className="mt-3 space-y-3">
                     {visibleComments.map(comment => (
-                      <div key={comment._id} className="rounded-md border border-line bg-ink p-3">
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <div key={comment._id} className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3">
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
                           <MessageSquare size={13} />
-                          <span className="rounded-full bg-cyan/10 px-2 py-1 text-cyan">{formatPlatform(comment.platform)}</span>
+                          <span className="rounded-full bg-mint/10 px-2 py-1 text-mint">{formatPlatform(comment.platform)}</span>
                           <span>{comment.authorName || comment.authorHandle || 'Platform user'}</span>
                           <span>likes {comment.likeCount || 0}</span>
                           <span>replies {comment.replyCount || 0}</span>
                           <span>source: {comment.source}</span>
                           {comment.isProviderReply && <span className="rounded-full bg-mint/10 px-2 py-1 text-mint">reply</span>}
                         </div>
-                        <p className="mt-2 text-sm text-slate-300">{comment.text}</p>
+                        <p className="mt-2 text-sm text-[var(--text)]">{comment.text}</p>
                         {(comment.providerReplies || []).length > 0 && (
-                          <div className="mt-3 space-y-2 border-l border-line pl-4">
+                          <div className="mt-3 space-y-2 border-l border-[var(--border)] pl-4">
                             {comment.providerReplies.map(reply => (
-                              <div key={reply._id} className="rounded-md border border-line bg-panel p-3">
-                                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              <div key={reply._id} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
+                                <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
                                   <span className="rounded-full bg-mint/10 px-2 py-1 text-mint">reply</span>
                                   <span>{reply.authorName || reply.authorHandle || 'Platform user'}</span>
                                   <span>likes {reply.likeCount || 0}</span>
                                   <span>source: {reply.source}</span>
                                 </div>
-                                <p className="mt-2 text-sm text-slate-300">{reply.text}</p>
+                                <p className="mt-2 text-sm text-[var(--text)]">{reply.text}</p>
                               </div>
                             ))}
                           </div>
                         )}
                         {user?.role === 'creator_admin' && !comment.isProviderReply && (
                           <div className="mt-3 flex gap-2">
-                            <input value={replyText[comment._id] || ''} onChange={event => setReplyText({ ...replyText, [comment._id]: event.target.value })} placeholder={`Reply on ${formatPlatform(comment.platform)} using the publishing account`} className="focus-ring flex-1 rounded-md border border-line bg-panel px-3 py-2 text-sm text-white" />
-                            <button type="button" disabled={busy === comment._id} onClick={() => reply(comment)} className="focus-ring rounded-md bg-mint px-3 py-2 text-sm font-semibold text-ink">Reply</button>
+                            <input value={replyText[comment._id] || ''} onChange={event => setReplyText({ ...replyText, [comment._id]: event.target.value })} placeholder={`Reply on ${formatPlatform(comment.platform)} using the publishing account`} className="focus-ring flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)]" />
+                            <button type="button" disabled={busy === comment._id} onClick={() => reply(comment)} className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]">Reply</button>
                           </div>
                         )}
                       </div>
@@ -297,8 +297,8 @@ export default function AnalyticsPage() {
                     {visibleComments.length === 0 && (
                       <div className="space-y-2">
                         {selectedGroup.platformBreakdown.map(item => (
-                          <p key={item.platform} className="rounded-md border border-line bg-ink p-3 text-sm text-slate-400">
-                            <span className="font-semibold text-white">{formatPlatform(item.platform)}:</span>{' '}
+                          <p key={item.platform} className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3 text-sm text-[var(--muted)]">
+                            <span className="font-semibold text-[var(--text)]">{formatPlatform(item.platform)}:</span>{' '}
                             {item.commentsUnavailableMessage || 'No real comments synced for this platform yet.'}
                           </p>
                         ))}
@@ -308,7 +308,7 @@ export default function AnalyticsPage() {
                 </section>
               </>
             ) : (
-              <div className="rounded-lg border border-line bg-panel p-8 text-sm text-slate-400">Select a post group to see combined analytics and per-platform details.</div>
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-8 text-sm text-[var(--muted)]">Select a post group to see combined analytics and per-platform details.</div>
             )}
           </div>
         </section>
@@ -319,9 +319,9 @@ export default function AnalyticsPage() {
 
 function MetricCard({ label, value }) {
   return (
-    <div className="rounded-lg border border-line bg-panel p-4">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-2 text-2xl font-bold text-white">{value}</div>
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="text-xs uppercase tracking-wide text-[var(--muted)]">{label}</div>
+      <div className="mt-2 text-2xl font-bold text-[var(--text)]">{value}</div>
     </div>
   );
 }

@@ -33,13 +33,13 @@ export default function ContentCard({ item, user, initialVariants = [], onRefres
   };
 
   return (
-    <article className="rounded-lg border border-line bg-[#101720] p-4">
+    <article className="rounded-2xl border border-[var(--border)] bg-[#101720] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-white">{item.title}</h3>
-          <p className="mt-1 max-w-3xl text-sm text-slate-400">{item.rawIdea}</p>
+          <h3 className="text-lg font-semibold text-[var(--text)]">{item.title}</h3>
+          <p className="mt-1 max-w-3xl text-sm text-[var(--muted)]">{item.rawIdea}</p>
         </div>
-        <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-slate-300">{item.status}</span>
+        <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-[var(--text)]">{item.status}</span>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -47,7 +47,7 @@ export default function ContentCard({ item, user, initialVariants = [], onRefres
           type="button"
           onClick={repurpose}
           disabled={busy}
-          className="focus-ring inline-flex items-center gap-2 rounded-md bg-mint px-4 py-2 text-sm font-semibold text-ink"
+          className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[#05130d]"
         >
           <Sparkles size={16} />
           {busy ? 'Generating...' : 'AI Repurpose'}

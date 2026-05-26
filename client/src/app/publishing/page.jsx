@@ -71,26 +71,26 @@ export default function PublishingPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <header className="rounded-lg border border-line bg-panel p-6">
-          <p className="text-sm uppercase tracking-[0.18em] text-cyan">Unified publishing center</p>
-          <h1 className="mt-2 text-3xl font-bold text-white">Real Publish Jobs</h1>
-          <p className="mt-2 max-w-4xl text-sm text-slate-400">
+        <header className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
+          <p className="text-sm uppercase tracking-[0.18em] text-mint">Unified publishing center</p>
+          <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Real Publish Jobs</h1>
+          <p className="mt-2 max-w-4xl text-sm text-[var(--muted)]">
             Jobs only become published after an official connector returns a real provider post id or URL. Missing credentials, scopes, review, or unsupported API methods appear as blocked/failed states.
           </p>
-          <Link href="/compose" className="focus-ring mt-4 inline-flex items-center gap-2 rounded-md bg-cyan px-3 py-2 text-sm font-semibold text-ink">
+          <Link href="/compose" className="focus-ring mt-4 inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]">
             <Send size={15} />
             Open Compose
           </Link>
         </header>
 
-        {message && <div className="rounded-md border border-line bg-panel p-3 text-sm text-slate-300">{message}</div>}
+        {message && <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-sm text-[var(--text)]">{message}</div>}
 
         <div className="grid gap-4 2xl:grid-cols-3">
           {statusOrder.map(status => (
-            <section key={status} className="rounded-lg border border-line bg-panel p-4">
+            <section key={status} className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-white">{status}</h2>
-                <span className="rounded-full bg-cyan/10 px-2 py-1 text-xs text-cyan">{grouped[status]?.length || 0}</span>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--text)]">{status}</h2>
+                <span className="rounded-full bg-mint/10 px-2 py-1 text-xs text-mint">{grouped[status]?.length || 0}</span>
               </div>
               <div className="space-y-3">
                 {(grouped[status] || []).map(job => (
@@ -103,7 +103,7 @@ export default function PublishingPage() {
                     onCancel={() => cancel(job)}
                   />
                 ))}
-                {(grouped[status] || []).length === 0 && <p className="text-sm text-slate-500">No {status} jobs.</p>}
+                {(grouped[status] || []).length === 0 && <p className="text-sm text-[var(--muted)]">No {status} jobs.</p>}
               </div>
             </section>
           ))}
@@ -118,13 +118,13 @@ function JobCard({ job, user, busy, onRetry, onCancel }) {
   const media = job.mediaAssetIds?.[0];
 
   return (
-    <article className="rounded-md border border-line bg-ink p-3">
+    <article className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="rounded-full bg-cyan/10 px-2 py-1 text-xs font-semibold text-cyan">{formatPlatform(job.platform)}</span>
-        <span className="text-xs text-slate-500">{new Date(job.scheduledAt).toLocaleString()}</span>
+        <span className="rounded-full bg-mint/10 px-2 py-1 text-xs font-semibold text-mint">{formatPlatform(job.platform)}</span>
+        <span className="text-xs text-[var(--muted)]">{new Date(job.scheduledAt).toLocaleString()}</span>
       </div>
       {media?.publicUrl && (
-        <div className="mt-3 aspect-[9/16] max-h-56 overflow-hidden rounded-md border border-line bg-panel">
+        <div className="mt-3 aspect-[9/16] max-h-56 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
           {media.mediaType === 'video' ? (
             <video src={media.publicUrl} className="h-full w-full object-cover" controls />
           ) : (
@@ -132,25 +132,25 @@ function JobCard({ job, user, busy, onRetry, onCancel }) {
           )}
         </div>
       )}
-      <p className="mt-3 line-clamp-4 text-xs text-slate-300">{job.caption || job.variantId?.caption || 'No caption'}</p>
-      <div className="mt-3 grid gap-1 text-xs text-slate-400">
+      <p className="mt-3 line-clamp-4 text-xs text-[var(--text)]">{job.caption || job.variantId?.caption || 'No caption'}</p>
+      <div className="mt-3 grid gap-1 text-xs text-[var(--muted)]">
         <span>Account: {account.accountName || 'n/a'} {account.accountHandle ? `(${account.accountHandle})` : ''}</span>
         <span>Visibility: {job.visibility || 'public'}</span>
         {job.providerPostUrl ? (
-          <a href={job.providerPostUrl} target="_blank" rel="noreferrer" className="text-cyan underline">View on platform</a>
+          <a href={job.providerPostUrl} target="_blank" rel="noreferrer" className="text-mint underline">View on platform</a>
         ) : (
           <span>Provider URL: not returned</span>
         )}
         {job.errorMessage && <span className="text-rose">Reason: {job.errorMessage}</span>}
       </div>
       {user?.role === 'creator_admin' && ['failed', 'blocked'].includes(job.status) && (
-        <button type="button" onClick={onRetry} disabled={busy} className="focus-ring mt-3 inline-flex items-center gap-2 rounded-md bg-gold px-3 py-2 text-xs font-semibold text-ink">
+        <button type="button" onClick={onRetry} disabled={busy} className="focus-ring mt-3 inline-flex items-center gap-2 rounded-xl bg-gold px-3 py-2 text-xs font-semibold text-[#05130d]">
           <RotateCcw size={14} />
           Retry
         </button>
       )}
       {user?.role === 'creator_admin' && ['queued', 'failed', 'blocked'].includes(job.status) && (
-        <button type="button" onClick={onCancel} disabled={busy} className="focus-ring ml-2 mt-3 inline-flex items-center gap-2 rounded-md border border-rose/40 px-3 py-2 text-xs text-rose hover:bg-rose/10">
+        <button type="button" onClick={onCancel} disabled={busy} className="focus-ring ml-2 mt-3 inline-flex items-center gap-2 rounded-xl border border-rose/40 px-3 py-2 text-xs text-rose hover:bg-rose/10">
           <XCircle size={14} />
           Cancel
         </button>

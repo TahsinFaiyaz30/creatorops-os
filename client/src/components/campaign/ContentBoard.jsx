@@ -2,7 +2,7 @@ import ContentCard from './ContentCard';
 
 export default function ContentBoard({ items, variantsByContent, user, onRefresh }) {
   if (!items?.length) {
-    return <div className="rounded-lg border border-line bg-panel p-6 text-sm text-slate-400">No content ideas yet.</div>;
+    return <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 text-sm text-[var(--muted)]">No content ideas yet.</div>;
   }
 
   return (

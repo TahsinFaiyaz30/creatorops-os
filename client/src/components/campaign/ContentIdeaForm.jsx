@@ -26,18 +26,18 @@ export default function ContentIdeaForm({ onCreate }) {
   };
 
   return (
-    <form onSubmit={submit} className="rounded-lg border border-line bg-panel p-4">
-      <h2 className="text-base font-semibold text-white">New Content Idea</h2>
+    <form onSubmit={submit} className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+      <h2 className="text-base font-semibold text-[var(--text)]">New Content Idea</h2>
       <div className="mt-4 grid gap-3">
         <input
-          className="focus-ring rounded-md border border-line bg-ink px-3 py-2 text-sm text-white"
+          className="focus-ring rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]"
           placeholder="Title"
           value={form.title}
           onChange={event => setForm({ ...form, title: event.target.value })}
           required
         />
         <textarea
-          className="focus-ring min-h-24 rounded-md border border-line bg-ink px-3 py-2 text-sm text-white"
+          className="focus-ring min-h-24 rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]"
           placeholder="Raw content idea"
           value={form.rawIdea}
           onChange={event => setForm({ ...form, rawIdea: event.target.value })}
@@ -48,7 +48,7 @@ export default function ContentIdeaForm({ onCreate }) {
       <button
         type="submit"
         disabled={busy}
-        className="focus-ring mt-4 inline-flex items-center gap-2 rounded-md bg-mint px-4 py-2 text-sm font-semibold text-ink hover:bg-green-300"
+        className="focus-ring mt-4 inline-flex items-center gap-2 rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[#05130d] hover:bg-green-300"
       >
         <Lightbulb size={16} />
         {busy ? 'Creating...' : 'Create idea'}

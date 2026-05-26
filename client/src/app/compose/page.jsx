@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { CalendarClock, ImagePlus, Sparkles, Send } from 'lucide-react';
+import { CalendarClock, ImagePlus, Sparkles, Send, X, Trash2, CheckCircle2, AlertCircle, LayoutPanelTop, ZoomIn, ZoomOut, Crop } from 'lucide-react';
 import AppShell from '../../components/layout/AppShell';
 import VisibilitySelector from '../../components/publish/VisibilitySelector';
 import { api } from '../../lib/api';
 import { getUser } from '../../lib/auth';
-import { formatPlatform, getPlatformCaptionLimit } from '../../lib/platforms';
+import { formatPlatform, getPlatformCaptionLimit, platformCapabilities } from '../../lib/platforms';
+import Cropper from 'react-easy-crop';
 
 const aspectOptions = [
   { label: '9:16', value: '9:16', className: 'aspect-[9/16]' },
@@ -29,11 +30,15 @@ export default function ComposePage() {
   const [connections, setConnections] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
   const [baseCaption, setBaseCaption] = useState('');
-  const [mediaAsset, setMediaAsset] = useState(null);
+  
+  // Multi-media states
+  const [mediaAssets, setMediaAssets] = useState([]);
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const [coverIndex, setCoverIndex] = useState(0);
+  const [mediaSettings, setMediaSettings] = useState({});
+  const [globalAspect, setGlobalAspect] = useState('9:16');
+
   const [captions, setCaptions] = useState([]);
-  const [aspect, setAspect] = useState('9:16');
-  const [fit, setFit] = useState('cover');
-  const [position, setPosition] = useState({ x: 50, y: 50 });
   const [scheduledAt, setScheduledAt] = useState(() => new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16));
   const [visibility, setVisibility] = useState('public');
   const [message, setMessage] = useState('');
@@ -42,7 +47,7 @@ export default function ComposePage() {
 
   const load = async () => {
     const payload = await api.get('/api/platform-connections');
-    setConnections((payload.data.connections || []).filter(connection => connection.status === 'connected'));
+    setConnections((payload.data.connections || []).filter(c => c.status === 'connected'));
   };
 
   useEffect(() => {
@@ -50,34 +55,123 @@ export default function ComposePage() {
     load().catch(err => setMessage(err.message));
   }, []);
 
+  const activeAsset = mediaAssets[activeMediaIndex];
+  const activeSettings = activeAsset ? mediaSettings[activeAsset._id] || { crop: { x: 0, y: 0 }, zoom: 1 } : null;
+  const aspectClass = aspectOptions.find(option => option.value === globalAspect)?.className || 'aspect-[9/16]';
+  const mediaIds = mediaAssets.map(a => a._id);
+
   const selectedConnections = useMemo(
     () => connections.filter(connection => selectedIds.includes(connection._id)),
     [connections, selectedIds]
   );
 
-  const mediaIds = mediaAsset ? [mediaAsset._id] : [];
-  const aspectClass = aspectOptions.find(option => option.value === aspect)?.className || 'aspect-[9/16]';
+  const updateActiveSettings = (updates) => {
+    if (!activeAsset) return;
+    setMediaSettings(prev => ({
+      ...prev,
+      [activeAsset._id]: { ...(prev[activeAsset._id] || { crop: { x: 0, y: 0 }, zoom: 1 }), ...updates }
+    }));
+  };
 
-  const toggleConnection = id => {
+  // Eligibility Check
+  const getPlatformEligibility = (platform) => {
+    const caps = platformCapabilities[platform];
+    if (!caps) return { eligible: true }; 
+    
+    if (mediaAssets.length > 1 && !caps.multiMedia) {
+      return { eligible: false, reason: 'Does not support multiple media.' };
+    }
+    if (mediaAssets.length > caps.maxMedia) {
+      return { eligible: false, reason: `Max ${caps.maxMedia} media files.` };
+    }
+    for (const asset of mediaAssets) {
+      if (!caps.types.includes(asset.mediaType)) {
+         return { eligible: false, reason: `Does not support ${asset.mediaType}.` };
+      }
+    }
+    return { eligible: true };
+  };
+
+  const toggleConnection = (id, platform) => {
+    const eligibility = getPlatformEligibility(platform);
+    if (!eligibility.eligible && !selectedIds.includes(id)) {
+      setMessage(`Cannot select ${formatPlatform(platform)}: ${eligibility.reason}`);
+      return;
+    }
     setSelectedIds(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
   };
 
+  // Auto-deselect if they become ineligible due to adding media
+  useEffect(() => {
+    if (mediaAssets.length === 0) return;
+    let changed = false;
+    const newSelected = selectedIds.filter(id => {
+      const conn = connections.find(c => c._id === id);
+      if (!conn) return false;
+      const valid = getPlatformEligibility(conn.platform).eligible;
+      if (!valid) changed = true;
+      return valid;
+    });
+    if (changed) {
+      setSelectedIds(newSelected);
+      setMessage('Some platforms were deselected because they do not support the current media selection.');
+    }
+  }, [mediaAssets, connections]);
+
   const upload = async event => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files);
+    if (!files.length) return;
     setBusy('upload');
     setMessage('');
     try {
-      const formData = new FormData();
-      formData.append('media', file);
-      const payload = await api.upload('/api/media/upload', formData);
-      setMediaAsset(payload.data.mediaAsset);
-      setMessage('Original media uploaded. Preview crop metadata does not alter the source file.');
+      const newAssets = [];
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('media', file);
+        const payload = await api.upload('/api/media/upload', formData);
+        newAssets.push(payload.data.mediaAsset);
+      }
+      setMediaAssets(prev => {
+        const combined = [...prev, ...newAssets];
+        if (prev.length === 0) setActiveMediaIndex(0);
+        return combined;
+      });
+      setMessage(`Successfully uploaded ${newAssets.length} file(s).`);
     } catch (err) {
       setMessage(err.message);
     } finally {
       setBusy('');
+      event.target.value = '';
     }
+  };
+
+  const removeMedia = (index) => {
+    setMediaAssets(prev => {
+      const next = [...prev];
+      const removed = next.splice(index, 1)[0];
+      setMediaSettings(s => {
+        const newS = { ...s };
+        delete newS[removed._id];
+        return newS;
+      });
+      return next;
+    });
+    
+    let newActive = activeMediaIndex;
+    if (activeMediaIndex === index) {
+      newActive = Math.max(0, index - 1);
+    } else if (activeMediaIndex > index) {
+      newActive = activeMediaIndex - 1;
+    }
+    setActiveMediaIndex(newActive);
+
+    let newCover = coverIndex;
+    if (coverIndex === index) {
+      newCover = 0;
+    } else if (coverIndex > index) {
+      newCover = coverIndex - 1;
+    }
+    setCoverIndex(newCover);
   };
 
   const customizeCaptions = async () => {
@@ -136,8 +230,8 @@ export default function ComposePage() {
   };
 
   const publish = async ({ mode }) => {
-    if (user?.role !== 'creator_admin') {
-      setMessage('Backend requires Creator/Admin for publishing.');
+    if (user?.role !== 'creator_admin' && user?.role !== 'editor') {
+      setMessage('Backend requires Editor or Creator/Admin for publishing.');
       return;
     }
     setBusy(mode);
@@ -147,6 +241,8 @@ export default function ComposePage() {
       const endpoint = mode === 'now' ? '/api/publish/now' : '/api/publish/schedule';
       const results = [];
       const postGroupId = createPostGroupId();
+      
+      // We pass the mediaIds. The backend logic will associate the media with the job.
       for (const connection of selectedConnections) {
         const customized = captions.find(item => item.connectionId === connection._id);
         try {
@@ -154,6 +250,7 @@ export default function ComposePage() {
             postGroupId,
             platformConnectionId: connection._id,
             mediaAssetIds: mediaIds,
+            coverIndex: coverIndex,
             caption: customized?.caption || baseCaption,
             visibility,
             scheduledAt: new Date(scheduledAt).toISOString()
@@ -190,26 +287,26 @@ export default function ComposePage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <header className="rounded-lg border border-line bg-panel p-6">
-          <p className="text-sm uppercase tracking-[0.18em] text-cyan">Real compose</p>
-          <h1 className="mt-2 text-3xl font-bold text-white">Compose & Publish</h1>
-          <p className="mt-2 max-w-4xl text-sm text-slate-400">
-            Upload original media, preview crop/aspect metadata, customize captions with AI, and queue real publish jobs against connected accounts. Missing credentials, scopes, or platform review block the action instead of faking success.
+        <header className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
+          <p className="text-sm uppercase tracking-[0.18em] text-mint">Advanced Compose</p>
+          <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Compose & Publish</h1>
+          <p className="mt-2 max-w-4xl text-sm text-[var(--muted)]">
+            Upload multiple media files, manage cover and aspect ratios, customize captions with AI, and intelligently deploy to supported platforms. Platforms lacking multi-media capabilities will be gracefully greyed out.
           </p>
         </header>
 
-        {message && <div className="rounded-md border border-line bg-panel p-3 text-sm text-slate-300">{message}</div>}
+        {message && <div className="rounded-xl border border-mint/30 bg-mint/10 p-3 text-sm text-mint">{message}</div>}
 
         {publishResults.length > 0 && (
-          <div className="rounded-lg border border-line bg-panel p-4">
-            <h2 className="text-sm font-semibold text-white">Publish Results</h2>
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            <h2 className="text-sm font-semibold text-[var(--text)]">Publish Results</h2>
             <div className="mt-3 grid gap-2">
               {publishResults.map(result => (
-                <div key={`${result.platform}-${result.accountHandle}`} className={`rounded-md border p-3 text-sm ${result.ok ? 'border-mint/30 bg-mint/10 text-mint' : 'border-rose/30 bg-rose/10 text-rose'}`}>
+                <div key={`${result.platform}-${result.accountHandle}`} className={`rounded-xl border p-3 text-sm ${result.ok ? 'border-mint/30 bg-mint/10 text-mint' : 'border-rose/30 bg-rose/10 text-rose'}`}>
                   <div className="font-semibold">
                     {formatPlatform(result.platform)} {result.accountHandle ? `- ${result.accountHandle}` : ''} · {result.status}
                   </div>
-                  <p className="mt-1 text-xs text-slate-300">{result.detail}</p>
+                  <p className="mt-1 text-xs text-[var(--text)]">{result.detail}</p>
                 </div>
               ))}
             </div>
@@ -217,165 +314,293 @@ export default function ComposePage() {
         )}
 
         {connections.length === 0 ? (
-          <div className="rounded-lg border border-gold/30 bg-gold/10 p-5 text-sm text-gold">
+          <div className="rounded-2xl border border-gold/30 bg-gold/10 p-5 text-sm text-gold">
             Connect real accounts first. <Link href="/accounts" className="underline">Open Accounts</Link>
           </div>
         ) : null}
 
-        <section className="grid gap-6 xl:grid-cols-[420px_1fr]">
-          <div className="space-y-4 rounded-lg border border-line bg-panel p-4">
-            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-line bg-ink px-4 py-8 text-sm text-slate-300 hover:border-cyan">
-              <ImagePlus size={18} />
-              {busy === 'upload' ? 'Uploading...' : 'Upload image or video'}
-              <input type="file" accept="image/*,video/*" onChange={upload} className="hidden" />
-            </label>
-
-            <textarea
-              value={baseCaption}
-              onChange={event => setBaseCaption(event.target.value)}
-              placeholder="Base caption or text-only status"
-              rows={5}
-              className="focus-ring w-full rounded-md border border-line bg-ink px-3 py-2 text-sm text-white"
-            />
-
-            <div>
-              <h2 className="text-sm font-semibold text-white">Select connected accounts</h2>
-              <div className="mt-3 grid gap-2">
-                {connections.map(connection => (
-                  <label key={connection._id} className="flex items-center gap-3 rounded-md border border-line bg-ink p-3 text-sm text-slate-200">
-                    <input type="checkbox" checked={selectedIds.includes(connection._id)} onChange={() => toggleConnection(connection._id)} />
-                    <span className="flex-1">
-                      {formatPlatform(connection.platform)} · {connection.accountName}
-                      <span className="ml-2 text-xs text-slate-500">{connection.accountHandle}</span>
-                    </span>
-                  </label>
-                ))}
+        <section className="grid gap-6 xl:grid-cols-[1fr_420px]">
+          {/* LEFT COLUMN: Media Management & Base Text */}
+          <div className="space-y-4">
+            
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h2 className="text-base font-semibold text-[var(--text)]">Media Gallery</h2>
+                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-4 py-2 text-sm text-[var(--text)] hover:border-mint transition">
+                  <ImagePlus size={16} />
+                  {busy === 'upload' ? 'Uploading...' : 'Add Media'}
+                  <input type="file" accept="image/*,video/*" multiple onChange={upload} className="hidden" />
+                </label>
               </div>
+
+              {mediaAssets.length > 0 ? (
+                <div className="space-y-4">
+                  {/* Thumbnail Row */}
+                  <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
+                    {mediaAssets.map((asset, idx) => (
+                      <div 
+                        key={asset._id} 
+                        onClick={() => setActiveMediaIndex(idx)}
+                        className={`group relative h-20 w-20 shrink-0 cursor-pointer overflow-hidden rounded-xl border-2 transition-all ${activeMediaIndex === idx ? 'border-mint shadow-md' : 'border-transparent opacity-70 hover:opacity-100'}`}
+                      >
+                        {asset.mediaType === 'video' ? (
+                          <video src={asset.publicUrl} className="h-full w-full object-cover" />
+                        ) : (
+                          <img src={asset.publicUrl} className="h-full w-full object-cover" />
+                        )}
+                        {coverIndex === idx && (
+                          <div className="absolute left-1 top-1 rounded bg-[#05130d]/80 px-1 text-[10px] font-bold text-mint backdrop-blur">COVER</div>
+                        )}
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); removeMedia(idx); }}
+                          className="absolute right-1 top-1 hidden rounded-full bg-rose p-1 text-white shadow group-hover:flex hover:bg-red-600"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Active Editor */}
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-sm font-semibold text-[var(--text)]">Edit {activeMediaIndex + 1} of {mediaAssets.length}</div>
+                      <div className="flex gap-2">
+                        {coverIndex !== activeMediaIndex && (
+                          <button onClick={() => setCoverIndex(activeMediaIndex)} className="flex items-center gap-1 rounded border border-gold/30 px-2 py-1 text-xs text-gold hover:bg-gold/10">
+                            <LayoutPanelTop size={12} /> Set Cover
+                          </button>
+                        )}
+                        <button onClick={() => removeMedia(activeMediaIndex)} className="flex items-center gap-1 rounded border border-rose/30 px-2 py-1 text-xs text-rose hover:bg-rose/10">
+                          <Trash2 size={12} /> Remove
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-center gap-6">
+                      {/* Big Preview */}
+                      <div className="relative h-[400px] w-full max-w-[360px] overflow-hidden rounded-2xl border-2 border-[var(--border)] bg-black/40 shadow-inner group">
+                        <Cropper
+                          image={activeAsset.mediaType === 'image' ? activeAsset.publicUrl : undefined}
+                          video={activeAsset.mediaType === 'video' ? activeAsset.publicUrl : undefined}
+                          crop={activeSettings.crop}
+                          zoom={activeSettings.zoom}
+                          aspect={globalAspect === 'original' ? undefined : (
+                            globalAspect === '9:16' ? 9/16 :
+                            globalAspect === '1:1' ? 1 :
+                            globalAspect === '4:5' ? 4/5 :
+                            globalAspect === '16:9' ? 16/9 : 1
+                          )}
+                          onCropChange={crop => updateActiveSettings({ crop })}
+                          onZoomChange={zoom => updateActiveSettings({ zoom })}
+                          showGrid={true}
+                          style={{ containerStyle: { background: 'transparent' } }}
+                        />
+                        <div className="absolute top-3 left-3 bg-black/50 backdrop-blur-md rounded-full px-2.5 py-1 flex items-center gap-1.5 text-[10px] font-bold text-mint border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                          <Crop size={12} /> Drag to position
+                        </div>
+                      </div>
+
+                      {/* Controls */}
+                      <div className="w-full space-y-6">
+                        <div>
+                          <label className="text-xs font-bold uppercase tracking-wider text-[var(--muted)] mb-3 block">Global Aspect Ratio</label>
+                          <div className="flex flex-wrap gap-2">
+                            {aspectOptions.map(option => {
+                              const isActive = globalAspect === option.value;
+                              return (
+                                <button 
+                                  key={option.value} 
+                                  type="button" 
+                                  onClick={() => setGlobalAspect(option.value)} 
+                                  className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-300 ${
+                                    isActive 
+                                      ? 'bg-mint text-[#05130d] shadow-[0_0_15px_rgba(var(--color-mint-rgb),0.3)] border-transparent' 
+                                      : 'bg-[var(--surface)] text-[var(--muted)] border border-[var(--border)] hover:bg-[var(--border)] hover:text-[var(--text)]'
+                                  }`}
+                                >
+                                  {option.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="bg-[var(--surface)] p-4 rounded-2xl border border-[var(--border)] shadow-sm">
+                          <div className="flex items-center justify-between mb-3">
+                            <label className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+                              Zoom Level
+                            </label>
+                            <span className="text-xs font-medium text-mint bg-mint/10 px-2 py-0.5 rounded-md">
+                              {Math.round(activeSettings.zoom * 100)}%
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center gap-3">
+                            <button 
+                              type="button"
+                              onClick={() => updateActiveSettings({ zoom: Math.max(1, activeSettings.zoom - 0.1) })}
+                              className="p-1.5 rounded-full hover:bg-[var(--surface2)] text-[var(--muted)] hover:text-mint transition"
+                            >
+                              <ZoomOut size={16} />
+                            </button>
+                            
+                            <input 
+                              type="range" 
+                              min="1" max="3" step="0.1" 
+                              value={activeSettings.zoom} 
+                              onChange={e => updateActiveSettings({ zoom: Number(e.target.value) })} 
+                              className="w-full h-1.5 bg-[var(--surface2)] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-mint [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(var(--color-mint-rgb),0.5)] [&::-webkit-slider-thumb]:transition-transform hover:[&::-webkit-slider-thumb]:scale-125" 
+                            />
+                            
+                            <button 
+                              type="button"
+                              onClick={() => updateActiveSettings({ zoom: Math.min(3, activeSettings.zoom + 0.1) })}
+                              className="p-1.5 rounded-full hover:bg-[var(--surface2)] text-[var(--muted)] hover:text-mint transition"
+                            >
+                              <ZoomIn size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex min-h-[200px] flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] text-sm text-[var(--muted)]">
+                  <ImagePlus size={32} className="mb-2 opacity-50" />
+                  <p>Drag & drop or upload media here</p>
+                  <p className="text-xs opacity-70">Supports images & videos (multiple allowed)</p>
+                </div>
+              )}
             </div>
 
-            <button
-              type="button"
-              disabled={busy === 'ai' || !baseCaption || selectedIds.length === 0}
-              onClick={customizeCaptions}
-              className="focus-ring inline-flex items-center gap-2 rounded-md bg-cyan px-3 py-2 text-sm font-semibold text-ink disabled:opacity-50"
-            >
-              <Sparkles size={15} />
-              {busy === 'ai' ? 'Customizing...' : 'Customize Captions with AI'}
-            </button>
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <h2 className="text-base font-semibold text-[var(--text)] mb-3">Base Content</h2>
+              <textarea
+                value={baseCaption}
+                onChange={event => setBaseCaption(event.target.value)}
+                placeholder="Write your main caption, script, or idea here..."
+                rows={6}
+                className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]"
+              />
+            </div>
           </div>
 
+          {/* RIGHT COLUMN: Platforms, Captions & Publish */}
           <div className="space-y-4">
-            <div className="rounded-lg border border-line bg-panel p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-base font-semibold text-white">Media Preview</h2>
-                <div className="flex flex-wrap gap-2">
-                  {aspectOptions.map(option => (
-                    <button key={option.value} type="button" onClick={() => setAspect(option.value)} className={`rounded-md border px-2.5 py-1 text-xs ${aspect === option.value ? 'border-cyan text-cyan' : 'border-line text-slate-400'}`}>
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-base font-semibold text-[var(--text)]">Select Platforms</h2>
+                <span className="rounded-full bg-[var(--surface2)] px-2 py-1 text-xs text-[var(--muted)]">{selectedIds.length} selected</span>
               </div>
-
-              <div className={`mx-auto mt-4 max-w-sm overflow-hidden rounded-lg border border-line bg-ink ${aspectClass}`}>
-                {mediaAsset ? (
-                  mediaAsset.mediaType === 'video' ? (
-                    <video src={mediaAsset.publicUrl} controls className="h-full w-full" style={{ objectFit: fit, objectPosition: `${position.x}% ${position.y}%` }} />
-                  ) : (
-                    <img src={mediaAsset.publicUrl} alt={mediaAsset.originalName} className="h-full w-full" style={{ objectFit: fit, objectPosition: `${position.x}% ${position.y}%` }} />
-                  )
-                ) : (
-                  <div className="flex h-full min-h-[360px] items-center justify-center text-sm text-slate-500">9:16 preview area</div>
-                )}
-              </div>
-
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                <select value={fit} onChange={event => setFit(event.target.value)} className="focus-ring rounded-md border border-line bg-ink px-3 py-2 text-sm text-white">
-                  <option value="cover">cover</option>
-                  <option value="contain">contain</option>
-                </select>
-                <label className="text-xs text-slate-400">
-                  Crop X
-                  <input type="range" min="0" max="100" value={position.x} onChange={event => setPosition({ ...position, x: Number(event.target.value) })} className="mt-2 w-full" />
-                </label>
-                <label className="text-xs text-slate-400">
-                  Crop Y
-                  <input type="range" min="0" max="100" value={position.y} onChange={event => setPosition({ ...position, y: Number(event.target.value) })} className="mt-2 w-full" />
-                </label>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-line bg-panel p-4">
-              <h2 className="text-base font-semibold text-white">Platform Captions</h2>
-              <div className="mt-4 grid gap-3">
-                {selectedConnections.map(connection => {
-                  const customized = captions.find(item => item.connectionId === connection._id);
-                  const captionValue = customized?.caption ?? baseCaption;
-                  const maxCaptionLength = customized?.maxCaptionLength || getPlatformCaptionLimit(connection.platform);
-                  const captionLength = captionValue.length;
-                  const captionOverLimit = captionLength > maxCaptionLength;
+              
+              <div className="grid gap-2 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
+                {connections.map(connection => {
+                  const eligibility = getPlatformEligibility(connection.platform);
+                  const isSelected = selectedIds.includes(connection._id);
                   return (
-                    <article key={connection._id} className="rounded-md border border-line bg-ink p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="rounded-full bg-cyan/10 px-2 py-1 text-xs text-cyan">{formatPlatform(connection.platform)}</span>
-                        <span className="text-xs text-slate-500">{connection.accountHandle}</span>
-                      </div>
-                      <textarea
-                        value={captionValue}
-                        onChange={event => updateCaption(connection._id, event.target.value)}
-                        rows={4}
-                        className={`focus-ring mt-3 w-full rounded-md border bg-panel px-3 py-2 text-sm text-white ${captionOverLimit ? 'border-rose' : 'border-line'}`}
+                    <div 
+                      key={connection._id} 
+                      onClick={() => toggleConnection(connection._id, connection.platform)}
+                      className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition-all ${
+                        !eligibility.eligible 
+                          ? 'border-[var(--border)] bg-[var(--surface2)] opacity-50 cursor-not-allowed' 
+                          : isSelected 
+                            ? 'border-mint bg-mint/5 shadow-sm' 
+                            : 'border-[var(--border)] bg-[var(--surface2)] hover:border-[var(--muted)]'
+                      }`}
+                    >
+                      <input 
+                        type="checkbox" 
+                        checked={isSelected} 
+                        readOnly 
+                        className="mt-0.5" 
+                        disabled={!eligibility.eligible}
                       />
-                      <div className={`mt-1 text-xs ${captionOverLimit ? 'text-rose' : 'text-slate-500'}`}>
-                        {captionLength}/{maxCaptionLength} characters
-                      </div>
-                      {customized && (
-                        <div className="mt-2 grid gap-1 text-xs text-slate-400">
-                          <span>Provider: {customized.aiProvider}</span>
-                          <span>Hook: {customized.hook}</span>
-                          <span>CTA: {customized.cta}</span>
-                          <span>Scores: brand {customized.brandScore}, readiness {customized.readinessScore}</span>
-                          {(customized.hashtags || []).length > 0 && <span>Hashtags: {customized.hashtags.join(' ')}</span>}
-                          {(customized.warnings || []).length > 0 && (
-                            <div className="mt-2 rounded-md border border-gold/30 bg-gold/10 p-2 text-gold">
-                              <div className="font-semibold">Warnings</div>
-                              <ul className="mt-1 list-disc space-y-1 pl-4">
-                                {customized.warnings.map(warning => <li key={warning}>{warning}</li>)}
-                              </ul>
-                            </div>
-                          )}
-                          {(customized.suggestions || []).length > 0 && (
-                            <div className="mt-2 rounded-md border border-cyan/20 bg-cyan/10 p-2 text-cyan">
-                              <div className="font-semibold">Suggestions</div>
-                              <ul className="mt-1 list-disc space-y-1 pl-4">
-                                {customized.suggestions.map(suggestion => <li key={suggestion}>{suggestion}</li>)}
-                              </ul>
-                            </div>
-                          )}
+                      <div className="flex-1">
+                        <div className={`font-semibold ${isSelected ? 'text-mint' : 'text-[var(--text)]'}`}>
+                          {formatPlatform(connection.platform)}
                         </div>
-                      )}
-                    </article>
+                        <div className="text-xs text-[var(--muted)]">{connection.accountName} · {connection.accountHandle}</div>
+                        {!eligibility.eligible && (
+                          <div className="mt-1 flex items-center gap-1 text-[10px] font-medium text-rose">
+                            <AlertCircle size={10} /> {eligibility.reason}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   );
                 })}
               </div>
+
+              <button
+                type="button"
+                disabled={busy === 'ai' || !baseCaption || selectedIds.length === 0}
+                onClick={customizeCaptions}
+                className="focus-ring mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-mint px-3 py-2.5 text-sm font-semibold text-[#05130d] transition hover:brightness-110 disabled:opacity-50"
+              >
+                <Sparkles size={16} />
+                {busy === 'ai' ? 'Customizing...' : 'Tailor Captions with AI'}
+              </button>
             </div>
 
-            <div className="rounded-lg border border-line bg-panel p-4">
+            {selectedConnections.length > 0 && (
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 max-h-[400px] overflow-y-auto scrollbar-thin">
+                <h2 className="text-base font-semibold text-[var(--text)] mb-3">Customized Captions</h2>
+                <div className="grid gap-3">
+                  {selectedConnections.map(connection => {
+                    const customized = captions.find(item => item.connectionId === connection._id);
+                    const captionValue = customized?.caption ?? baseCaption;
+                    const maxCaptionLength = customized?.maxCaptionLength || getPlatformCaptionLimit(connection.platform);
+                    const captionLength = captionValue.length;
+                    const captionOverLimit = captionLength > maxCaptionLength;
+                    return (
+                      <article key={connection._id} className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text)]">
+                            <span className="h-2 w-2 rounded-full bg-mint"></span>
+                            {formatPlatform(connection.platform)}
+                          </span>
+                          <span className={`text-[10px] ${captionOverLimit ? 'text-rose font-bold' : 'text-[var(--muted)]'}`}>
+                            {captionLength}/{maxCaptionLength}
+                          </span>
+                        </div>
+                        <textarea
+                          value={captionValue}
+                          onChange={event => updateCaption(connection._id, event.target.value)}
+                          rows={3}
+                          className={`focus-ring w-full rounded-lg border bg-[var(--surface)] px-2 py-1.5 text-xs text-[var(--text)] ${captionOverLimit ? 'border-rose focus:border-rose' : 'border-[var(--border)] focus:border-mint'}`}
+                        />
+                        {customized?.warnings?.length > 0 && (
+                          <div className="mt-1.5 text-[10px] text-gold">
+                            ⚠ {customized.warnings[0]}
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <h2 className="text-base font-semibold text-[var(--text)] mb-3">Publish Setup</h2>
               <div className="mb-4">
-                <VisibilitySelector value={visibility} onChange={setVisibility} mediaType={mediaAsset?.mediaType || ''} />
+                <VisibilitySelector value={visibility} onChange={setVisibility} mediaType={mediaAssets[0]?.mediaType || ''} />
               </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <input type="datetime-local" value={scheduledAt} onChange={event => setScheduledAt(event.target.value)} className="focus-ring rounded-md border border-line bg-ink px-3 py-2 text-sm text-white" />
-                <button type="button" disabled={busy === 'now' || selectedIds.length === 0 || (!baseCaption && !mediaAsset)} onClick={() => publish({ mode: 'now' })} className="focus-ring inline-flex items-center gap-2 rounded-md bg-mint px-3 py-2 text-sm font-semibold text-ink disabled:opacity-50">
-                  <Send size={15} />
-                  Publish Now
+              <label className="mb-4 block">
+                <span className="text-xs text-[var(--muted)]">Scheduled Date & Time</span>
+                <input type="datetime-local" value={scheduledAt} onChange={event => setScheduledAt(event.target.value)} className="focus-ring mt-1 w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]" />
+              </label>
+              <div className="grid gap-2">
+                <button type="button" disabled={busy === 'now' || selectedIds.length === 0 || (!baseCaption && mediaAssets.length === 0)} onClick={() => publish({ mode: 'now' })} className="focus-ring flex items-center justify-center gap-2 rounded-xl bg-mint px-3 py-2.5 text-sm font-semibold text-[#05130d] transition hover:brightness-110 disabled:opacity-50">
+                  <Send size={15} /> Publish Now
                 </button>
-                <button type="button" disabled={busy === 'schedule' || selectedIds.length === 0 || (!baseCaption && !mediaAsset)} onClick={() => publish({ mode: 'schedule' })} className="focus-ring inline-flex items-center gap-2 rounded-md bg-gold px-3 py-2 text-sm font-semibold text-ink disabled:opacity-50">
-                  <CalendarClock size={15} />
-                  Schedule Later
+                <button type="button" disabled={busy === 'schedule' || selectedIds.length === 0 || (!baseCaption && mediaAssets.length === 0)} onClick={() => publish({ mode: 'schedule' })} className="focus-ring flex items-center justify-center gap-2 rounded-xl border border-mint text-mint px-3 py-2.5 text-sm font-semibold hover:bg-mint/10 transition disabled:opacity-50">
+                  <CalendarClock size={15} /> Schedule Later
                 </button>
               </div>
-              <p className="mt-2 text-xs text-slate-500">These buttons call real connector validation. If API access is missing, the job is blocked with the platform reason.</p>
             </div>
           </div>
         </section>

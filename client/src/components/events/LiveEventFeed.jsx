@@ -46,11 +46,11 @@ export default function LiveEventFeed({ compact = false }) {
   }, []);
 
   return (
-    <section className="rounded-lg border border-line bg-panel p-4 shadow-soft">
+    <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-soft">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Activity className="text-cyan" size={18} />
-          <h2 className="text-base font-semibold text-white">Live Workflow Events</h2>
+          <Activity className="text-mint" size={18} />
+          <h2 className="text-base font-semibold text-[var(--text)]">Live Workflow Events</h2>
         </div>
         <span className={`rounded-full px-2 py-1 text-xs ${socketStatus === 'live' ? 'bg-mint/10 text-mint' : 'bg-gold/10 text-gold'}`}>
           {socketStatus}
@@ -58,15 +58,15 @@ export default function LiveEventFeed({ compact = false }) {
       </div>
       <div className={`space-y-3 ${compact ? 'max-h-[360px]' : 'max-h-[520px]'} overflow-auto pr-1`}>
         {events.length === 0 ? (
-          <p className="text-sm text-slate-400">No events yet.</p>
+          <p className="text-sm text-[var(--muted)]">No events yet.</p>
         ) : (
           events.map(event => (
-            <div key={event._id} className="rounded-md border border-line bg-ink/50 p-3">
+            <div key={event._id} className="rounded-xl border border-[var(--border)] bg-[var(--surface2)]/50 p-3">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-semibold uppercase tracking-wide text-cyan">{event.eventType}</span>
-                <span className="text-[11px] text-slate-500">{event.createdAt ? new Date(event.createdAt).toLocaleTimeString() : ''}</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-mint">{event.eventType}</span>
+                <span className="text-[11px] text-[var(--muted)]">{event.createdAt ? new Date(event.createdAt).toLocaleTimeString() : ''}</span>
               </div>
-              <p className="mt-1 text-sm text-slate-200">{event.message}</p>
+              <p className="mt-1 text-sm text-[var(--text)]">{event.message}</p>
             </div>
           ))
         )}
