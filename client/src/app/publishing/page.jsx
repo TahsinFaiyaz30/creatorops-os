@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Activity,
   AlertTriangle,
   CheckCircle2,
   Clock3,
+  Cloud,
   ExternalLink,
   Layers3,
   Loader2,
@@ -14,7 +15,11 @@ import {
   PlayCircle,
   RefreshCw,
   RotateCcw,
+  Search,
   Send,
+  TimerReset,
+  Trash2,
+  UploadCloud,
   XCircle
 } from 'lucide-react';
 import AppShell from '../../components/layout/AppShell';
@@ -24,28 +29,62 @@ import { getUser } from '../../lib/auth';
 import { formatDuration } from '../../lib/duration';
 import { formatPlatform } from '../../lib/platforms';
 import { canPublish } from '../../lib/roles';
+import {
+  cancelUploadSession,
+  deletePendingPublish,
+  deleteUploadFile,
+  getPendingPublishes,
+  pauseUploadSession,
+  putPendingPublish
+} from '../../lib/resumableUploads';
 
 const ACTIVE_STATUSES = ['queued', 'publishing', 'paused'];
 const ATTENTION_STATUSES = ['failed', 'blocked', 'cancelled'];
 const TERMINAL_STATUSES = ['published', 'failed', 'blocked', 'cancelled'];
+const PROCESSING_STAGES = [
+  'starting',
+  'checking_connection',
+  'loading_media',
+  'checking_media_policy',
+  'compressing',
+  'uploading',
+  'uploading_compressed',
+  'initializing_provider_upload',
+  'provider_uploaded',
+  'queued_retry',
+  'queued_resume'
+];
 
 const statusMeta = {
+  waiting_upload: { label: 'Waiting', tone: 'border-sky-400/30 bg-sky-400/10 text-sky-300', dot: 'bg-sky-300' },
+  uploading_client: { label: 'Uploading', tone: 'border-mint/30 bg-mint/10 text-mint', dot: 'bg-mint' },
+  paused_upload: { label: 'Paused', tone: 'border-gold/30 bg-gold/10 text-gold', dot: 'bg-gold' },
+  interrupted_upload: { label: 'Interrupted', tone: 'border-gold/30 bg-gold/10 text-gold', dot: 'bg-gold' },
+  failed_upload: { label: 'Failed', tone: 'border-rose/30 bg-rose/10 text-rose', dot: 'bg-rose' },
+  verifying_upload: { label: 'Verifying', tone: 'border-blue-300/30 bg-blue-300/10 text-blue-200', dot: 'bg-blue-200' },
   queued: { label: 'Queued', tone: 'border-sky-400/30 bg-sky-400/10 text-sky-300', dot: 'bg-sky-300' },
-  publishing: { label: 'Live', tone: 'border-mint/30 bg-mint/10 text-mint', dot: 'bg-mint' },
+  publishing: { label: 'Processing', tone: 'border-mint/30 bg-mint/10 text-mint', dot: 'bg-mint' },
   paused: { label: 'Paused', tone: 'border-gold/30 bg-gold/10 text-gold', dot: 'bg-gold' },
   published: { label: 'Published', tone: 'border-mint/30 bg-mint/10 text-mint', dot: 'bg-mint' },
   failed: { label: 'Failed', tone: 'border-rose/30 bg-rose/10 text-rose', dot: 'bg-rose' },
   blocked: { label: 'Blocked', tone: 'border-gold/30 bg-gold/10 text-gold', dot: 'bg-gold' },
   cancelled: { label: 'Cancelled', tone: 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted)]', dot: 'bg-[var(--muted)]' },
+  expired: { label: 'Expired', tone: 'border-rose/30 bg-rose/10 text-rose', dot: 'bg-rose' },
   mixed: { label: 'Mixed', tone: 'border-blue-300/30 bg-blue-300/10 text-blue-200', dot: 'bg-blue-200' }
 };
 
-const groupFilters = [
-  { id: 'active', label: 'Active' },
-  { id: 'attention', label: 'Needs review' },
+const dispatchFilters = [
+  { id: 'all', label: 'All' },
+  { id: 'uploading', label: 'Uploading' },
+  { id: 'queued', label: 'Queued' },
+  { id: 'processing', label: 'Processing' },
+  { id: 'paused', label: 'Paused' },
+  { id: 'review', label: 'Review' },
   { id: 'published', label: 'Published' },
-  { id: 'all', label: 'All' }
+  { id: 'expired', label: 'Expired' }
 ];
+
+const PLATFORM_DELETE_SUPPORTED = new Set(['youtube', 'youtube_shorts', 'facebook', 'x', 'pinterest', 'wordpress', 'shopify']);
 
 const getTimestamp = value => {
   const timestamp = new Date(value || 0).getTime();
@@ -66,11 +105,26 @@ const formatDateTime = value => {
 
 const formatPercent = value => `${Math.max(0, Math.min(100, Math.round(value)))}%`;
 
+const formatBytes = bytes => {
+  const value = Number(bytes || 0);
+  if (!Number.isFinite(value) || value <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size >= 10 || unitIndex === 0 ? Math.round(size) : size.toFixed(1)} ${units[unitIndex]}`;
+};
+
 const compactId = value => {
   if (!value) return 'Ungrouped';
   const text = String(value);
   return text.length > 14 ? text.slice(-12) : text;
 };
+
+const normalizeText = value => String(value || '').toLowerCase();
 
 const getJobAccount = job => job.accountSnapshot || job.platformConnectionId || {};
 
@@ -80,7 +134,13 @@ const getJobMedia = job => (job.mediaAssetIds || []).find(asset => asset?.public
 
 const getJobStatusMeta = status => statusMeta[status] || statusMeta.mixed;
 
+const isProcessingJob = job =>
+  job.status === 'publishing' ||
+  PROCESSING_STAGES.includes(job.processingStage || '') ||
+  Boolean(job.processingStage && job.status === 'queued' && ['queued_retry', 'queued_resume'].includes(job.processingStage));
+
 const getGroupStatus = jobs => {
+  if (jobs.some(job => job.temporaryMediaExpiredAt)) return 'expired';
   if (jobs.some(job => job.status === 'publishing')) return 'publishing';
   if (jobs.some(job => job.status === 'queued')) return 'queued';
   if (jobs.some(job => job.status === 'paused')) return 'paused';
@@ -116,6 +176,10 @@ const buildDispatchGroups = jobs => {
       const terminalCount = sortedJobs.filter(job => TERMINAL_STATUSES.includes(job.status)).length;
       const activeCount = getActiveCount(sortedJobs);
       const attentionCount = getAttentionCount(sortedJobs);
+      const queuedCount = sortedJobs.filter(job => job.status === 'queued').length;
+      const processingCount = sortedJobs.filter(isProcessingJob).length;
+      const pausedCount = sortedJobs.filter(job => job.status === 'paused').length;
+      const expiredCount = sortedJobs.filter(job => job.temporaryMediaExpiredAt).length;
       const groupStatus = getGroupStatus(sortedJobs);
       const latestUpdatedAt = sortedJobs
         .map(job => job.updatedAt || job.processingStageUpdatedAt || job.createdAt)
@@ -130,6 +194,10 @@ const buildDispatchGroups = jobs => {
         terminalCount,
         activeCount,
         attentionCount,
+        queuedCount,
+        processingCount,
+        pausedCount,
+        expiredCount,
         scheduledAt: sortedJobs[0]?.scheduledAt,
         latestUpdatedAt,
         completionPercent: expectedTargetCount > 0 ? (terminalCount / expectedTargetCount) * 100 : 0,
@@ -147,12 +215,93 @@ const buildDispatchGroups = jobs => {
     });
 };
 
-const filterGroup = (group, filter) => {
+const pendingMediaItems = pending => Array.isArray(pending?.mediaItems) ? pending.mediaItems : [];
+
+const getPendingProgress = pending => {
+  const items = pendingMediaItems(pending);
+  const totalBytes = items.reduce((sum, item) => sum + Number(item.size || 0), 0);
+  const uploadedBytes = items.reduce((sum, item) => {
+    const completeBytes = item.mediaAssetId || item.status === 'completed' ? Number(item.size || 0) : 0;
+    return sum + Math.max(Number(item.bytesUploaded || 0), completeBytes);
+  }, 0);
+  const completedCount = items.filter(item => item.mediaAssetId || item.status === 'completed').length;
+  const statuses = new Set(items.map(item => item.status || 'waiting'));
+  const hasCreatedJobs = (pending.results || []).some(result => result.jobId);
+
+  let status = 'waiting_upload';
+  if (pending.pauseReason === 'user' || statuses.has('paused')) status = 'paused_upload';
+  else if (statuses.has('failed')) status = 'failed_upload';
+  else if (statuses.has('uploading')) status = 'uploading_client';
+  else if (statuses.has('interrupted')) status = 'interrupted_upload';
+  else if (items.length > 0 && completedCount === items.length) status = hasCreatedJobs ? 'verifying_upload' : 'verifying_upload';
+
+  return {
+    totalBytes,
+    uploadedBytes,
+    completedCount,
+    totalCount: items.length,
+    percent: totalBytes > 0 ? (uploadedBytes / totalBytes) * 100 : completedCount === items.length ? 100 : 0,
+    status,
+    hasCreatedJobs,
+    active: ['waiting_upload', 'uploading_client', 'interrupted_upload', 'paused_upload', 'verifying_upload'].includes(status),
+    attention: ['failed_upload', 'interrupted_upload'].includes(status)
+  };
+};
+
+const pendingMatchesFilter = (pending, filter) => {
+  const progress = getPendingProgress(pending);
   if (filter === 'all') return true;
-  if (filter === 'active') return group.activeCount > 0;
-  if (filter === 'attention') return group.attentionCount > 0;
+  if (filter === 'uploading') return ['waiting_upload', 'uploading_client', 'interrupted_upload', 'verifying_upload'].includes(progress.status);
+  if (filter === 'paused') return progress.status === 'paused_upload';
+  if (filter === 'review') return progress.attention;
+  return false;
+};
+
+const groupMatchesFilter = (group, filter) => {
+  if (filter === 'all') return true;
+  if (filter === 'queued') return group.queuedCount > 0;
+  if (filter === 'processing') return group.processingCount > 0;
+  if (filter === 'paused') return group.pausedCount > 0;
+  if (filter === 'review') return group.attentionCount > 0;
   if (filter === 'published') return group.jobs.length > 0 && group.jobs.every(job => job.status === 'published');
-  return true;
+  if (filter === 'expired') return group.expiredCount > 0;
+  return false;
+};
+
+const groupMatchesSearch = (group, query) => {
+  if (!query) return true;
+  return group.jobs.some(job => {
+    const account = getJobAccount(job);
+    return [
+      group.id,
+      job._id,
+      job.platform,
+      account.accountHandle,
+      account.accountName,
+      getJobCaption(job),
+      job.processingStage,
+      job.processingMessage,
+      job.errorMessage
+    ].some(value => normalizeText(value).includes(query));
+  });
+};
+
+const pendingMatchesSearch = (pending, query) => {
+  if (!query) return true;
+  const connectionText = (pending.selectedConnections || [])
+    .map(connection => [connection.platform, connection.accountHandle, connection.targetKey].filter(Boolean).join(' '))
+    .join(' ');
+  const mediaText = pendingMediaItems(pending)
+    .map(item => [item.originalName, item.mimeType, item.mediaType, item.status].filter(Boolean).join(' '))
+    .join(' ');
+  return [
+    pending.id,
+    pending.postGroupId,
+    pending.baseCaption,
+    pending.mode,
+    connectionText,
+    mediaText
+  ].some(value => normalizeText(value).includes(query));
 };
 
 const getGroupActionJobs = (group, action) => {
@@ -168,16 +317,35 @@ const getGroupActionJobs = (group, action) => {
   return [];
 };
 
+const getPlatformDeleteSupport = job => {
+  if (!job.providerPostId) {
+    return { supported: false, reason: 'No platform post id is saved for this row.' };
+  }
+  const connectionDeleteCapability = job.platformConnectionId?.capabilities?.delete;
+  const supported = connectionDeleteCapability === true || PLATFORM_DELETE_SUPPORTED.has(job.platform);
+  return supported
+    ? { supported: true, reason: 'Provider delete API is available for this platform connector.' }
+    : { supported: false, reason: `${formatPlatform(job.platform)} delete API is not supported by this connector yet.` };
+};
+
+const buildInitialDeleteModes = jobs =>
+  Object.fromEntries(jobs.map(job => [String(job._id), 'local']));
+
 export default function PublishingPage() {
   const [user, setUser] = useState(null);
   const [jobs, setJobs] = useState([]);
+  const [pendingUploads, setPendingUploads] = useState([]);
+  const [pendingUploadError, setPendingUploadError] = useState('');
   const [message, setMessage] = useState('');
   const [busyKey, setBusyKey] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
+  const [query, setQuery] = useState('');
   const [publishSettings, setPublishSettings] = useState({ temporaryMediaRetentionSeconds: 7 * 24 * 60 * 60 });
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [liveTransport, setLiveTransport] = useState('connecting');
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
-  const load = async () => {
+  const loadServerState = useCallback(async () => {
     const [jobsPayload, settingsPayload] = await Promise.all([
       api.get('/api/publish/jobs'),
       api.get('/api/publish/settings')
@@ -185,28 +353,117 @@ export default function PublishingPage() {
     setJobs(jobsPayload.data.publishJobs || []);
     setPublishSettings(settingsPayload.data.settings);
     setLastUpdated(new Date());
-  };
-
-  useEffect(() => {
-    setUser(getUser());
-    load().catch(err => setMessage(err.message));
-    const socket = getSocket();
-    const handler = () => load().catch(() => {});
-    socket.on('publishing:job_updated', handler);
-    return () => socket.off('publishing:job_updated', handler);
   }, []);
 
+  const loadPendingUploads = useCallback(async currentUser => {
+    try {
+      const owner = currentUser || user;
+      const pendingItems = await getPendingPublishes();
+      setPendingUploads(
+        pendingItems
+          .filter(item => !owner?._id || !item.userId || item.userId === owner._id)
+          .sort((a, b) => getTimestamp(b.updatedAt || b.createdAt) - getTimestamp(a.updatedAt || a.createdAt))
+      );
+      setPendingUploadError('');
+    } catch (err) {
+      setPendingUploadError(err.message || 'Unable to read resumable upload state in this browser.');
+    }
+  }, [user?._id]);
+
+  const load = useCallback(async () => {
+    await Promise.all([
+      loadServerState(),
+      loadPendingUploads()
+    ]);
+  }, [loadPendingUploads, loadServerState]);
+
+  useEffect(() => {
+    const currentUser = getUser();
+    setUser(currentUser);
+    loadServerState().catch(err => setMessage(err.message));
+    loadPendingUploads(currentUser).catch(() => {});
+
+    const socket = getSocket();
+    const handler = () => loadServerState().catch(() => {});
+    const handleConnect = () => setLiveTransport('socket');
+    const handleDisconnect = () => setLiveTransport('polling');
+    if (socket.connected) handleConnect();
+    socket.on('publishing:job_updated', handler);
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleDisconnect);
+    return () => {
+      socket.off('publishing:job_updated', handler);
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleDisconnect);
+    };
+  }, [loadPendingUploads, loadServerState]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      loadPendingUploads().catch(() => {});
+    }, 1500);
+    const visibilityHandler = () => {
+      if (document.visibilityState === 'visible') loadPendingUploads().catch(() => {});
+    };
+    document.addEventListener('visibilitychange', visibilityHandler);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', visibilityHandler);
+    };
+  }, [loadPendingUploads]);
+
+  useEffect(() => {
+    const refreshLiveServerState = () => {
+      if (document.visibilityState !== 'visible') return;
+      loadServerState().catch(() => {});
+    };
+    const intervalId = window.setInterval(refreshLiveServerState, 3000);
+    const focusHandler = () => {
+      loadServerState().catch(() => {});
+      loadPendingUploads().catch(() => {});
+    };
+    window.addEventListener('focus', focusHandler);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', focusHandler);
+    };
+  }, [loadPendingUploads, loadServerState]);
+
   const groups = useMemo(() => buildDispatchGroups(jobs), [jobs]);
-  const visibleGroups = useMemo(
-    () => groups.filter(group => filterGroup(group, activeFilter)),
-    [groups, activeFilter]
+  const searchQuery = normalizeText(query.trim());
+  const visiblePendingUploads = useMemo(
+    () => pendingUploads.filter(pending => pendingMatchesFilter(pending, activeFilter) && pendingMatchesSearch(pending, searchQuery)),
+    [activeFilter, pendingUploads, searchQuery]
   );
-  const stats = useMemo(() => ({
-    active: groups.filter(group => group.activeCount > 0).length,
-    attention: groups.filter(group => group.attentionCount > 0).length,
-    published: groups.filter(group => group.jobs.length > 0 && group.jobs.every(job => job.status === 'published')).length,
-    platformJobs: jobs.length
-  }), [groups, jobs.length]);
+  const visibleGroups = useMemo(
+    () => groups.filter(group => groupMatchesFilter(group, activeFilter) && groupMatchesSearch(group, searchQuery)),
+    [activeFilter, groups, searchQuery]
+  );
+  const stats = useMemo(() => {
+    const pendingProgress = pendingUploads.map(getPendingProgress);
+    return {
+      uploading: pendingProgress.filter(progress => ['waiting_upload', 'uploading_client', 'interrupted_upload', 'verifying_upload'].includes(progress.status)).length,
+      queued: groups.filter(group => group.queuedCount > 0).length,
+      processing: groups.filter(group => group.processingCount > 0).length,
+      paused: groups.filter(group => group.pausedCount > 0).length + pendingProgress.filter(progress => progress.status === 'paused_upload').length,
+      review: groups.filter(group => group.attentionCount > 0).length + pendingProgress.filter(progress => progress.attention).length,
+      published: groups.filter(group => group.jobs.length > 0 && group.jobs.every(job => job.status === 'published')).length,
+      expired: groups.filter(group => group.expiredCount > 0).length,
+      platformJobs: jobs.length
+    };
+  }, [groups, jobs.length, pendingUploads]);
+  const filterCounts = useMemo(() => ({
+    all: pendingUploads.length + groups.length,
+    uploading: stats.uploading,
+    queued: stats.queued,
+    processing: stats.processing,
+    paused: stats.paused,
+    review: stats.review,
+    published: stats.published,
+    expired: stats.expired
+  }), [groups.length, pendingUploads.length, stats]);
   const temporaryMediaRetentionLabel = formatDuration(publishSettings.temporaryMediaRetentionSeconds);
   const canManage = canPublish(user);
 
@@ -220,7 +477,7 @@ export default function PublishingPage() {
       }
       if (action === 'pause') {
         await api.post(`/api/publish/jobs/${job._id}/pause`, {});
-        setMessage(job.status === 'publishing' ? 'Pause requested for active upload.' : 'Platform job paused.');
+        setMessage(job.status === 'publishing' ? 'Pause requested for active platform upload.' : 'Platform job paused.');
       }
       if (action === 'resume') {
         await api.post(`/api/publish/jobs/${job._id}/resume`, {});
@@ -228,9 +485,9 @@ export default function PublishingPage() {
       }
       if (action === 'cancel') {
         await api.post(`/api/publish/jobs/${job._id}/cancel`, {});
-        setMessage(job.status === 'publishing' ? 'Cancel requested for active upload.' : 'Platform job cancelled.');
+        setMessage(job.status === 'publishing' ? 'Cancel requested for active platform upload.' : 'Platform job cancelled.');
       }
-      await load();
+      await loadServerState();
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -247,6 +504,93 @@ export default function PublishingPage() {
     try {
       await Promise.all(actionJobs.map(job => api.post(`/api/publish/jobs/${job._id}/${action}`, {})));
       setMessage(`${actionJobs.length} platform job${actionJobs.length === 1 ? '' : 's'} updated.`);
+      await loadServerState();
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  const cancelPendingUpload = async pending => {
+    const progress = getPendingProgress(pending);
+    setBusyKey(`cancel-upload:${pending.id}`);
+    setMessage('');
+    try {
+      const items = pendingMediaItems(pending);
+      await Promise.allSettled(
+        items
+          .filter(item => item.sessionId && !item.mediaAssetId)
+          .map(item => cancelUploadSession(item.sessionId))
+      );
+      await Promise.allSettled(items.filter(item => item.uploadKey).map(item => deleteUploadFile(item.uploadKey)));
+      if (!progress.hasCreatedJobs) {
+        await Promise.allSettled(items.map(item => item.mediaAssetId).filter(Boolean).map(mediaAssetId => api.delete(`/api/media/${mediaAssetId}`)));
+      }
+      await deletePendingPublish(pending.id);
+      await loadPendingUploads();
+      setMessage(progress.hasCreatedJobs ? 'Upload intake record cleared. Created platform jobs were kept.' : 'Upload cancelled and temporary cloud media was removed.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  const pausePendingUpload = async pending => {
+    setBusyKey(`pause-upload:${pending.id}`);
+    setMessage('');
+    try {
+      const mediaItems = pendingMediaItems(pending).map(item =>
+        item.mediaAssetId || item.status === 'completed'
+          ? item
+          : {
+              ...item,
+              status: 'paused'
+            }
+      );
+      await Promise.allSettled(
+        mediaItems
+          .filter(item => item.sessionId && !item.mediaAssetId)
+          .map(item => pauseUploadSession(item.sessionId))
+      );
+      await putPendingPublish({
+        ...pending,
+        mediaItems,
+        pauseReason: 'user'
+      });
+      await loadPendingUploads();
+      setMessage('Cloud upload intake paused. It will not resume automatically until opened from Compose.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  const deleteDispatchTarget = async ({ target, targets = [] }) => {
+    const targetId = target.kind === 'group' ? target.group.id : target.job._id;
+    setBusyKey(`delete:${target.kind}:${targetId}`);
+    setMessage('');
+    try {
+      const payload = { targets };
+      const response = target.kind === 'group'
+        ? await api.post(`/api/publish/groups/${encodeURIComponent(target.group.id)}/delete`, payload)
+        : await api.post(`/api/publish/jobs/${target.job._id}/delete`, payload);
+      const result = response.data;
+      const failedProviderDeletes = (result.providerResults || []).filter(item => !item.ok);
+      const deletedCount = (result.deleted?.publishJobs || 0) + (result.deleted?.publishedPosts || 0);
+      const platformDeleteCount = targets.filter(item => item.deleteFromPlatform).length;
+      const firstProviderFailure = failedProviderDeletes[0];
+      const firstProviderFailureText = firstProviderFailure
+        ? `${formatPlatform(firstProviderFailure.platform)}: ${firstProviderFailure.message || firstProviderFailure.code || 'provider delete failed'}`
+        : '';
+      setMessage(
+        failedProviderDeletes.length > 0
+          ? `${deletedCount} CreatorOps records deleted. ${failedProviderDeletes.length} platform delete ${failedProviderDeletes.length === 1 ? 'failed' : 'attempts failed'} and were kept for review. ${firstProviderFailureText}`
+          : `${deletedCount} CreatorOps records deleted${platformDeleteCount > 0 ? ' after selected platform deletes where supported' : ' from this website only'}.`
+      );
+      setDeleteTarget(null);
       await load();
     } catch (err) {
       setMessage(err.message);
@@ -255,92 +599,382 @@ export default function PublishingPage() {
     }
   };
 
+  const hasVisibleWork = visiblePendingUploads.length > 0 || visibleGroups.length > 0;
+
   return (
     <AppShell>
       <div className="space-y-5 pb-6">
-        <header className="flex flex-col gap-4 border-b border-[var(--border)] pb-5 xl:flex-row xl:items-end xl:justify-between">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-mint">Post operations</p>
-            <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Post Dispatch</h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusStat icon={Activity} label="Active" value={stats.active} tone="text-mint" />
-            <StatusStat icon={AlertTriangle} label="Review" value={stats.attention} tone="text-gold" />
-            <StatusStat icon={CheckCircle2} label="Done" value={stats.published} tone="text-mint" />
-            <Link href="/compose" className="focus-ring inline-flex h-10 items-center gap-2 rounded-lg bg-mint px-3 text-sm font-semibold text-[#05130d]">
-              <Send size={16} />
-              Compose
-            </Link>
-            <button
-              type="button"
-              onClick={() => load().catch(err => setMessage(err.message))}
-              className="focus-ring inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)]"
-              title="Refresh"
-              aria-label="Refresh dispatches"
-            >
-              <RefreshCw size={16} />
-            </button>
+        <header className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 md:p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-mint">Post operations</p>
+              <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Post Dispatch</h1>
+              <p className="mt-2 max-w-3xl text-sm text-[var(--muted)]">
+                Track the whole publish path from browser resumable upload to cloud media, provider processing, retries, expiry, and final published posts.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusStat icon={UploadCloud} label="Uploading" value={stats.uploading} tone="text-mint" />
+              <StatusStat icon={Activity} label="Processing" value={stats.processing} tone="text-mint" />
+              <StatusStat icon={AlertTriangle} label="Review" value={stats.review} tone="text-gold" />
+              <StatusStat icon={CheckCircle2} label="Done" value={stats.published} tone="text-mint" />
+              <Link href="/compose" className="focus-ring inline-flex h-10 items-center gap-2 rounded-lg bg-mint px-3 text-sm font-semibold text-[#05130d]">
+                <Send size={16} />
+                Compose
+              </Link>
+              <button
+                type="button"
+                onClick={() => load().catch(err => setMessage(err.message))}
+                className="focus-ring inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)]"
+                title="Refresh"
+                aria-label="Refresh dispatches"
+              >
+                <RefreshCw size={16} />
+              </button>
+            </div>
           </div>
         </header>
 
-        <section className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <section className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-center">
           <div className="flex gap-2 overflow-x-auto rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1">
-            {groupFilters.map(filter => {
+            {dispatchFilters.map(filter => {
               const active = activeFilter === filter.id;
               return (
                 <button
                   key={filter.id}
                   type="button"
                   onClick={() => setActiveFilter(filter.id)}
-                  className={`focus-ring h-9 shrink-0 rounded-md px-3 text-sm font-semibold transition ${
+                  className={`focus-ring inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-semibold transition ${
                     active ? 'bg-[var(--text)] text-[var(--bg)]' : 'text-[var(--muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
                   }`}
                 >
                   {filter.label}
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? 'bg-[var(--bg)]/15 text-[var(--bg)]' : 'bg-[var(--surface2)] text-[var(--muted)]'}`}>
+                    {filterCounts[filter.id] || 0}
+                  </span>
                 </button>
               );
             })}
           </div>
-          <div className="flex min-h-10 items-center justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs text-[var(--muted)] lg:justify-end">
-            <span>{stats.platformJobs} platform jobs</span>
-            <span>{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Connecting'}</span>
-          </div>
+          <label className="focus-within:ring-ring flex h-11 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm">
+            <Search size={16} className="shrink-0 text-[var(--muted)]" />
+            <input
+              value={query}
+              onChange={event => setQuery(event.target.value)}
+              placeholder="Search platform, account, caption, stage"
+              className="min-w-0 flex-1 bg-transparent text-[var(--text)] outline-none placeholder:text-[var(--muted)]"
+            />
+          </label>
         </section>
 
-        {message && (
+        <div className="flex flex-col gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--muted)] md:flex-row md:items-center md:justify-between">
+          <span>{stats.platformJobs} platform jobs · {pendingUploads.length} upload intake {pendingUploads.length === 1 ? 'record' : 'records'}</span>
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full border border-mint/30 bg-mint/10 px-2 py-1 font-semibold text-mint">
+              <Activity size={12} />
+              {liveTransport === 'socket' ? 'Live socket' : liveTransport === 'polling' ? 'Live polling' : 'Connecting'}
+            </span>
+            <span>{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Waiting for first sync'}</span>
+          </span>
+        </div>
+
+        {(message || pendingUploadError) && (
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-sm text-[var(--text)]">
-            {message}
+            {message || pendingUploadError}
           </div>
         )}
 
-        <div className="space-y-4">
-          {visibleGroups.map(group => (
-            <DispatchGroup
-              key={group.id}
-              group={group}
-              canManage={canManage}
-              busyKey={busyKey}
-              retentionLabel={temporaryMediaRetentionLabel}
-              onJobAction={runJobAction}
-              onGroupAction={runGroupAction}
+        {visiblePendingUploads.length > 0 && (
+          <section className="space-y-3">
+            <SectionHeader
+              icon={UploadCloud}
+              title="Cloud Upload Intake"
+              detail="Media appears here before publish jobs exist. Resume paused or interrupted uploads from Compose."
             />
-          ))}
-          {visibleGroups.length === 0 && (
-            <div className="flex min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface)] p-6 text-center">
-              <Layers3 size={24} className="text-[var(--muted)]" />
-              <p className="mt-3 text-sm font-semibold text-[var(--text)]">No dispatches here</p>
-              <p className="mt-1 text-sm text-[var(--muted)]">Try another status filter.</p>
-            </div>
-          )}
-        </div>
+            {visiblePendingUploads.map(pending => (
+              <PendingUploadCard
+                key={pending.id}
+                pending={pending}
+                busyKey={busyKey}
+                canManage={canManage}
+                onPause={pausePendingUpload}
+                onCancel={cancelPendingUpload}
+              />
+            ))}
+          </section>
+        )}
+
+        {visibleGroups.length > 0 && (
+          <section className="space-y-3">
+            <SectionHeader
+              icon={Cloud}
+              title="Platform Dispatches"
+              detail={`Temporary cloud media expires after ${temporaryMediaRetentionLabel} once a group is no longer queued or publishing.`}
+            />
+            {visibleGroups.map(group => (
+              <DispatchGroup
+                key={group.id}
+                group={group}
+                canManage={canManage}
+                busyKey={busyKey}
+                retentionLabel={temporaryMediaRetentionLabel}
+                onJobAction={runJobAction}
+                onGroupAction={runGroupAction}
+                onDeleteGroup={group => setDeleteTarget({ kind: 'group', group })}
+                onDeleteJob={job => setDeleteTarget({ kind: 'job', job })}
+              />
+            ))}
+          </section>
+        )}
+
+        {!hasVisibleWork && (
+          <div className="flex min-h-72 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface)] p-6 text-center">
+            <Layers3 size={26} className="text-[var(--muted)]" />
+            <p className="mt-3 text-sm font-semibold text-[var(--text)]">No dispatches here</p>
+            <p className="mt-1 max-w-md text-sm text-[var(--muted)]">
+              Try another filter, clear search, or start a publish from Compose. Upload intake will show here before platform jobs are created.
+            </p>
+          </div>
+        )}
+
+        {deleteTarget && (
+          <DeleteDispatchModal
+            target={deleteTarget}
+            busyKey={busyKey}
+            onClose={() => setDeleteTarget(null)}
+            onConfirm={deleteDispatchTarget}
+          />
+        )}
       </div>
     </AppShell>
   );
 }
 
+function SectionHeader({ icon: Icon, title, detail }) {
+  return (
+    <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+      <div className="flex items-center gap-2">
+        <Icon size={18} className="text-mint" />
+        <h2 className="text-sm font-semibold text-[var(--text)]">{title}</h2>
+      </div>
+      <p className="text-xs text-[var(--muted)]">{detail}</p>
+    </div>
+  );
+}
+
+function DeleteDispatchModal({ target, busyKey, onClose, onConfirm }) {
+  const isGroup = target.kind === 'group';
+  const jobs = isGroup ? target.group.jobs : [target.job];
+  const [selectedJobIds, setSelectedJobIds] = useState(() => jobs.map(job => String(job._id)));
+  const [deleteModes, setDeleteModes] = useState(() => buildInitialDeleteModes(jobs));
+  const busyId = isGroup ? `delete:group:${target.group.id}` : `delete:job:${target.job._id}`;
+  const busy = busyKey === busyId;
+
+  useEffect(() => {
+    setSelectedJobIds(jobs.map(job => String(job._id)));
+    setDeleteModes(buildInitialDeleteModes(jobs));
+  }, [target]);
+
+  const selectedJobs = jobs.filter(job => selectedJobIds.includes(String(job._id)));
+  const hasPublishing = selectedJobs.some(job => job.status === 'publishing');
+  const canConfirm = selectedJobs.length > 0 && !busy && !hasPublishing;
+  const title = isGroup ? `Delete post ${compactId(target.group.id)}` : `Delete ${formatPlatform(target.job.platform)}`;
+  const selectedPlatformDeleteCount = selectedJobs.filter(job => deleteModes[String(job._id)] === 'platform').length;
+
+  const toggleJob = jobId => {
+    const id = String(jobId);
+    setSelectedJobIds(current =>
+      current.includes(id) ? current.filter(value => value !== id) : [...current, id]
+    );
+  };
+
+  const setJobMode = (jobId, mode) => {
+    setDeleteModes(current => ({ ...current, [String(jobId)]: mode }));
+  };
+
+  const setSupportedJobsToPlatform = () => {
+    setDeleteModes(current => ({
+      ...current,
+      ...Object.fromEntries(jobs.map(job => [String(job._id), getPlatformDeleteSupport(job).supported ? 'platform' : 'local']))
+    }));
+  };
+
+  const confirmDelete = () => {
+    onConfirm({
+      target,
+      targets: selectedJobs.map(job => ({
+        jobId: job._id,
+        deleteFromPlatform: deleteModes[String(job._id)] === 'platform'
+      }))
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <section className="w-full max-w-2xl overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+        <div className="border-b border-[var(--border)] p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-rose">Delete dispatch</p>
+              <h2 className="mt-1 text-xl font-bold text-[var(--text)]">{title}</h2>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="focus-ring inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)]"
+              aria-label="Close delete dialog"
+            >
+              <XCircle size={16} />
+            </button>
+          </div>
+          <p className="mt-2 text-sm text-[var(--muted)]">
+            Choose exactly what each platform row should do. A row can be deleted only here, or deleted here after the provider delete API succeeds.
+          </p>
+        </div>
+
+        <div className="max-h-[70vh] space-y-4 overflow-y-auto p-4">
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface2)] p-3">
+            {isGroup && (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-[var(--text)]">Platforms in this post</h3>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedJobIds(jobs.map(job => String(job._id)))}
+                    className="focus-ring rounded-md border border-[var(--border)] px-2 py-1 text-xs font-semibold text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]"
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedJobIds([])}
+                    className="focus-ring rounded-md border border-[var(--border)] px-2 py-1 text-xs font-semibold text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]"
+                  >
+                    None
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className={`${isGroup ? 'mt-3' : ''} flex flex-wrap gap-2`}>
+              <button
+                type="button"
+                onClick={() => setDeleteModes(buildInitialDeleteModes(jobs))}
+                className="focus-ring rounded-md border border-[var(--border)] px-2 py-1 text-xs font-semibold text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]"
+              >
+                All here only
+              </button>
+              <button
+                type="button"
+                onClick={setSupportedJobsToPlatform}
+                className="focus-ring rounded-md border border-[var(--border)] px-2 py-1 text-xs font-semibold text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]"
+              >
+                Supported platform too
+              </button>
+            </div>
+            <div className="mt-3 grid gap-2">
+              {jobs.map(job => {
+                const account = getJobAccount(job);
+                const checked = selectedJobIds.includes(String(job._id));
+                const support = getPlatformDeleteSupport(job);
+                const mode = deleteModes[String(job._id)] || 'local';
+                return (
+                  <div key={job._id} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleJob(job._id)}
+                        className="mt-1 h-4 w-4 accent-[var(--mint)]"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="truncate text-sm font-semibold text-[var(--text)]">{formatPlatform(job.platform)}</span>
+                          {job.providerPostId ? (
+                            <span className="rounded-full border border-mint/30 px-2 py-0.5 text-[10px] font-semibold text-mint">platform post</span>
+                          ) : (
+                            <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted)]">website only</span>
+                          )}
+                        </div>
+                        <div className="mt-1 truncate text-xs text-[var(--muted)]">
+                          {account.accountHandle || account.accountName || 'account'} · {job.status}
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={() => setJobMode(job._id, 'local')}
+                            disabled={!checked}
+                            className={`focus-ring rounded-lg border px-3 py-2 text-left text-xs transition disabled:opacity-50 ${
+                              mode === 'local'
+                                ? 'border-mint bg-mint/10 text-[var(--text)]'
+                                : 'border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface2)]'
+                            }`}
+                          >
+                            <span className="block font-semibold">Delete from here only</span>
+                            <span className="mt-1 block text-[11px] text-[var(--muted)]">Removes this website record and local history.</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setJobMode(job._id, 'platform')}
+                            disabled={!checked || !support.supported}
+                            className={`focus-ring rounded-lg border px-3 py-2 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                              mode === 'platform'
+                                ? 'border-mint bg-mint/10 text-[var(--text)]'
+                                : 'border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface2)]'
+                            }`}
+                            title={support.reason}
+                          >
+                            <span className="block font-semibold">Delete here + platform</span>
+                            <span className="mt-1 block text-[11px] text-[var(--muted)]">{support.reason}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {hasPublishing && (
+            <div className="rounded-lg border border-gold/30 bg-gold/10 p-3 text-sm text-gold">
+              Active publishing jobs must be paused or cancelled before deletion so the worker cannot finish a provider upload after the local record is gone.
+            </div>
+          )}
+
+          {selectedPlatformDeleteCount > 0 && (
+            <div className="rounded-lg border border-gold/30 bg-gold/10 p-3 text-sm text-gold">
+              {selectedPlatformDeleteCount} selected {selectedPlatformDeleteCount === 1 ? 'platform' : 'platforms'} will call provider delete APIs first. If a provider delete fails, CreatorOps keeps that record for review.
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2 border-t border-[var(--border)] p-4 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="focus-ring inline-flex h-10 items-center justify-center rounded-lg border border-[var(--border)] px-4 text-sm font-semibold text-[var(--muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)] disabled:opacity-60"
+          >
+            Keep
+          </button>
+          <button
+            type="button"
+            onClick={confirmDelete}
+            disabled={!canConfirm}
+            className="focus-ring inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-rose/40 bg-rose/10 px-4 text-sm font-semibold text-rose hover:bg-rose/20 disabled:opacity-60"
+          >
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+            Delete {selectedJobs.length} {selectedJobs.length === 1 ? 'platform' : 'platforms'}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function StatusStat({ icon: Icon, label, value, tone }) {
   return (
-    <div className="flex h-10 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3">
+    <div className="flex h-10 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface2)] px-3">
       <Icon size={15} className={tone} />
       <span className="text-xs font-medium text-[var(--muted)]">{label}</span>
       <span className="text-sm font-bold text-[var(--text)]">{value}</span>
@@ -348,15 +982,142 @@ function StatusStat({ icon: Icon, label, value, tone }) {
   );
 }
 
-function DispatchGroup({ group, canManage, busyKey, retentionLabel, onJobAction, onGroupAction }) {
+function PendingUploadCard({ pending, busyKey, canManage, onPause, onCancel }) {
+  const progress = getPendingProgress(pending);
+  const meta = getJobStatusMeta(progress.status);
+  const items = pendingMediaItems(pending);
+  const targets = pending.selectedConnections || [];
+  const firstCaption = pending.captions?.find(item => item.caption)?.caption || pending.baseCaption || '';
+  const cancelBusy = busyKey === `cancel-upload:${pending.id}`;
+  const pauseBusy = busyKey === `pause-upload:${pending.id}`;
+  const canPauseUpload = canManage && !progress.hasCreatedJobs && ['waiting_upload', 'uploading_client', 'interrupted_upload'].includes(progress.status);
+
+  return (
+    <article className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]">
+      <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-semibold ${meta.tone}`}>
+              {progress.status === 'uploading_client' ? <Loader2 size={12} className="animate-spin" /> : <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />}
+              {meta.label}
+            </span>
+            <span className="text-xs text-[var(--muted)]">{pending.mode === 'schedule' ? 'Scheduled publish' : 'Publish now'}</span>
+            <span className="text-xs text-[var(--muted)]">{compactId(pending.postGroupId || pending.id)}</span>
+          </div>
+          <h3 className="mt-3 truncate text-base font-semibold text-[var(--text)]">
+            {firstCaption || `${items.length} media ${items.length === 1 ? 'file' : 'files'} for ${targets.length} platform ${targets.length === 1 ? 'target' : 'targets'}`}
+          </h3>
+          <div className="mt-4">
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--muted)]">
+              <span>{progress.completedCount}/{progress.totalCount} uploaded to cloud</span>
+              <span>{formatBytes(progress.uploadedBytes)} / {formatBytes(progress.totalBytes)}</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-[var(--surface2)]">
+              <div className="h-full rounded-full bg-mint transition-all" style={{ width: formatPercent(progress.percent) }} />
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {targets.map(connection => (
+              <span key={connection.targetKey || `${connection.platform}-${connection.accountHandle}`} className="rounded-full border border-[var(--border)] px-2 py-1 text-xs text-[var(--muted)]">
+                {formatPlatform(connection.platform)} {connection.accountHandle ? `· ${connection.accountHandle}` : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 xl:items-end">
+          <span className="text-xs text-[var(--muted)]">Updated {formatDateTime(pending.updatedAt || pending.createdAt)}</span>
+          <div className="flex flex-wrap gap-2 xl:justify-end">
+            <Link href="/compose" className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d]">
+              <PlayCircle size={14} />
+              {progress.status === 'paused_upload' ? 'Resume in Compose' : 'Open Compose'}
+            </Link>
+            {canPauseUpload && (
+              <button
+                type="button"
+                onClick={() => onPause(pending)}
+                disabled={pauseBusy}
+                className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-gold/40 px-3 text-xs font-semibold text-gold hover:bg-gold/10 disabled:opacity-60"
+              >
+                {pauseBusy ? <Loader2 size={14} className="animate-spin" /> : <PauseCircle size={14} />}
+                Pause
+              </button>
+            )}
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => onCancel(pending)}
+                disabled={cancelBusy}
+                className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10 disabled:opacity-60"
+              >
+                {cancelBusy ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+                Cancel
+              </button>
+            )}
+          </div>
+          <p className="max-w-xs text-right text-xs text-[var(--muted)]">
+            {pending.pauseReason === 'user'
+              ? 'Paused by you. It will not resume automatically.'
+              : progress.status === 'interrupted_upload'
+                ? 'Interrupted upload is saved. Compose will resume from the last verified chunk.'
+                : 'Upload runs sequentially so every file can resume from its own verified offset.'}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-2 border-t border-[var(--border)] p-3 md:grid-cols-2 xl:grid-cols-3">
+        {items.map(item => (
+          <PendingMediaRow key={item.uploadKey || item.mediaAssetId || item.localId} item={item} />
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function PendingMediaRow({ item }) {
+  const bytesUploaded = Math.max(Number(item.bytesUploaded || 0), item.mediaAssetId || item.status === 'completed' ? Number(item.size || 0) : 0);
+  const percent = item.size ? (bytesUploaded / Number(item.size)) * 100 : item.status === 'completed' ? 100 : 0;
+  const meta = getPendingItemMeta(item);
+
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface2)] p-3">
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="min-w-0 truncate font-semibold text-[var(--text)]">{item.originalName || 'Media file'}</span>
+        <span className={`shrink-0 rounded-full border px-2 py-0.5 font-semibold ${meta.tone}`}>{meta.label}</span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--surface)]">
+        <div className="h-full rounded-full bg-mint transition-all" style={{ width: formatPercent(percent) }} />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[var(--muted)]">
+        <span>{formatBytes(bytesUploaded)} / {formatBytes(item.size)}</span>
+        <span>{item.sessionId ? compactId(item.sessionId) : item.mediaAssetId ? 'verified' : 'not started'}</span>
+      </div>
+    </div>
+  );
+}
+
+function getPendingItemMeta(item) {
+  if (item.mediaAssetId || item.status === 'completed') return { label: 'Cloud', tone: 'border-mint/30 bg-mint/10 text-mint' };
+  if (item.status === 'uploading') return { label: 'Uploading', tone: 'border-mint/30 bg-mint/10 text-mint' };
+  if (item.status === 'paused') return { label: 'Paused', tone: 'border-gold/30 bg-gold/10 text-gold' };
+  if (item.status === 'interrupted') return { label: 'Interrupted', tone: 'border-gold/30 bg-gold/10 text-gold' };
+  if (item.status === 'failed') return { label: 'Failed', tone: 'border-rose/30 bg-rose/10 text-rose' };
+  return { label: 'Waiting', tone: 'border-sky-400/30 bg-sky-400/10 text-sky-300' };
+}
+
+function DispatchGroup({ group, canManage, busyKey, retentionLabel, onJobAction, onGroupAction, onDeleteGroup, onDeleteJob }) {
   const meta = getJobStatusMeta(group.status);
   const pauseJobs = getGroupActionJobs(group, 'pause');
   const resumeJobs = getGroupActionJobs(group, 'resume');
   const cancelJobs = getGroupActionJobs(group, 'cancel');
+  const firstCaption = group.jobs.map(getJobCaption).find(Boolean);
+  const firstMedia = group.jobs.map(getJobMedia).find(Boolean);
 
   return (
     <article className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]">
-      <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_220px]">
+      <div className="grid gap-4 p-4 xl:grid-cols-[128px_minmax(0,1fr)_260px]">
+        <MediaPreview media={firstMedia} emptyLabel={group.expiredCount > 0 ? 'Media expired' : 'Media cleared'} />
+
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-semibold ${meta.tone}`}>
@@ -366,7 +1127,7 @@ function DispatchGroup({ group, canManage, busyKey, retentionLabel, onJobAction,
             <span className="text-xs text-[var(--muted)]">{compactId(group.id)}</span>
             <span className="text-xs text-[var(--muted)]">{formatDateTime(group.scheduledAt)}</span>
           </div>
-          <h2 className="mt-3 truncate text-base font-semibold text-[var(--text)]">Dispatch {compactId(group.id)}</h2>
+          <h2 className="mt-3 line-clamp-2 text-base font-semibold text-[var(--text)]">{firstCaption || `Dispatch ${compactId(group.id)}`}</h2>
 
           <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
             <div>
@@ -395,7 +1156,7 @@ function DispatchGroup({ group, canManage, busyKey, retentionLabel, onJobAction,
                   type="button"
                   onClick={() => onGroupAction({ group, action: 'pause' })}
                   disabled={busyKey === `pause:group:${group.id}`}
-                  className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-gold/40 px-3 text-xs font-semibold text-gold hover:bg-gold/10"
+                  className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-gold/40 px-3 text-xs font-semibold text-gold hover:bg-gold/10 disabled:opacity-60"
                 >
                   <PauseCircle size={14} />
                   Pause {pauseJobs.length}
@@ -406,7 +1167,7 @@ function DispatchGroup({ group, canManage, busyKey, retentionLabel, onJobAction,
                   type="button"
                   onClick={() => onGroupAction({ group, action: 'resume' })}
                   disabled={busyKey === `resume:group:${group.id}`}
-                  className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d]"
+                  className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d] disabled:opacity-60"
                 >
                   <PlayCircle size={14} />
                   Resume {resumeJobs.length}
@@ -417,13 +1178,33 @@ function DispatchGroup({ group, canManage, busyKey, retentionLabel, onJobAction,
                   type="button"
                   onClick={() => onGroupAction({ group, action: 'cancel' })}
                   disabled={busyKey === `cancel:group:${group.id}`}
-                  className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10"
+                  className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10 disabled:opacity-60"
                 >
                   <XCircle size={14} />
                   Cancel {cancelJobs.length}
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => onDeleteGroup(group)}
+                disabled={busyKey === `delete:group:${group.id}`}
+                className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10 disabled:opacity-60"
+              >
+                {busyKey === `delete:group:${group.id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                Delete
+              </button>
             </div>
+          )}
+          {canManage && !(pauseJobs.length > 0 || resumeJobs.length > 0 || cancelJobs.length > 0) && (
+            <button
+              type="button"
+              onClick={() => onDeleteGroup(group)}
+              disabled={busyKey === `delete:group:${group.id}`}
+              className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10 disabled:opacity-60"
+            >
+              {busyKey === `delete:group:${group.id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              Delete
+            </button>
           )}
         </div>
       </div>
@@ -437,6 +1218,7 @@ function DispatchGroup({ group, canManage, busyKey, retentionLabel, onJobAction,
             busyKey={busyKey}
             retentionLabel={retentionLabel}
             onJobAction={onJobAction}
+            onDeleteJob={onDeleteJob}
           />
         ))}
       </div>
@@ -444,10 +1226,8 @@ function DispatchGroup({ group, canManage, busyKey, retentionLabel, onJobAction,
   );
 }
 
-function MediaPreview({ media, compact = false, emptyLabel = 'No local media' }) {
-  const wrapperClassName = compact
-    ? 'h-20 min-h-20 w-full overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface2)]'
-    : 'aspect-video min-h-28 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface2)] xl:aspect-[4/5]';
+function MediaPreview({ media, emptyLabel = 'No cloud media' }) {
+  const wrapperClassName = 'aspect-video min-h-24 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface2)] xl:aspect-square xl:min-h-28';
 
   if (!media?.publicUrl) {
     return (
@@ -460,7 +1240,7 @@ function MediaPreview({ media, compact = false, emptyLabel = 'No local media' })
   return (
     <div className={wrapperClassName}>
       {media.mediaType === 'video' ? (
-        <video src={media.publicUrl} className="h-full w-full object-cover" controls={!compact} muted={compact} playsInline preload="metadata" />
+        <video src={media.publicUrl} className="h-full w-full object-cover" controls muted playsInline preload="metadata" />
       ) : (
         <img src={media.publicUrl} alt={media.originalName || 'media'} className="h-full w-full object-cover" />
       )}
@@ -469,7 +1249,7 @@ function MediaPreview({ media, compact = false, emptyLabel = 'No local media' })
 }
 
 function PlatformPill({ job }) {
-  const meta = getJobStatusMeta(job.status);
+  const meta = getJobStatusMeta(job.temporaryMediaExpiredAt ? 'expired' : job.status);
   return (
     <span className={`inline-flex min-h-7 items-center gap-1.5 rounded-full border px-2 text-xs font-semibold ${meta.tone}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
@@ -478,8 +1258,8 @@ function PlatformPill({ job }) {
   );
 }
 
-function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction }) {
-  const meta = getJobStatusMeta(job.status);
+function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction, onDeleteJob }) {
+  const meta = getJobStatusMeta(job.temporaryMediaExpiredAt ? 'expired' : job.status);
   const account = getJobAccount(job);
   const media = getJobMedia(job);
   const caption = getJobCaption(job);
@@ -495,17 +1275,11 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction }
     job.errorCode === 'FILE_TOO_LARGE' ||
     /too large|size|limit/i.test(job.errorMessage || '')
   );
-  const stageText = job.processingMessage || job.errorMessage || job.processingStage || job.status;
+  const stageText = job.mediaProcessing?.lastCompressionMessage || job.processingMessage || job.errorMessage || job.processingStage || job.status;
   const busy = action => busyKey === `${action}:${job._id}`;
 
   return (
-    <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 border-t border-[var(--border)] px-4 py-3 first:border-t-0 md:grid-cols-[104px_minmax(0,1fr)] xl:grid-cols-[104px_minmax(190px,0.85fr)_minmax(0,1.35fr)_minmax(210px,auto)] xl:items-center">
-      <MediaPreview
-        media={media}
-        compact
-        emptyLabel={job.status === 'published' ? 'Media cleared' : temporaryMediaExpired ? 'Media expired' : 'No local media'}
-      />
-
+    <div className="grid gap-3 border-t border-[var(--border)] px-4 py-3 first:border-t-0 xl:grid-cols-[minmax(170px,0.7fr)_minmax(0,1.35fr)_minmax(220px,auto)] xl:items-center">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-semibold ${meta.tone}`}>
@@ -519,7 +1293,7 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction }
         </p>
       </div>
 
-      <div className="col-span-2 min-w-0 xl:col-span-1">
+      <div className="min-w-0">
         <p className="line-clamp-2 text-sm font-semibold text-[var(--text)]">{caption || 'No caption saved for this platform.'}</p>
         <p className="mt-1 line-clamp-2 text-xs text-[var(--muted)]">{stageText}</p>
         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--muted)]">
@@ -528,6 +1302,8 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction }
             {formatDateTime(job.scheduledAt)}
           </span>
           <span>{job.processingStage || job.status}</span>
+          {job.retryCount > 0 && <span>{job.retryCount} retries</span>}
+          {job.mediaProcessing?.compressBeforeUpload && <span className="text-mint">compression enabled</span>}
           {controlAction && <span className="text-gold">{job.publishControl?.message || 'Control pending'}</span>}
           {temporaryMediaExpired && <span className="text-rose">Media expired after {retentionLabel}</span>}
           {!temporaryMediaExpired && temporaryMediaExpiresAt && (
@@ -536,7 +1312,18 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction }
         </div>
       </div>
 
-      <div className="col-span-2 flex flex-wrap gap-2 xl:col-span-1 xl:justify-end">
+      <div className="flex flex-wrap gap-2 xl:justify-end">
+        {media?.publicUrl && (
+          <a
+            href={media.publicUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] px-3 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface2)]"
+          >
+            <Cloud size={14} />
+            Media
+          </a>
+        )}
         {job.providerPostUrl && (
           <a
             href={job.providerPostUrl}
@@ -553,7 +1340,7 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction }
             type="button"
             onClick={() => onJobAction({ job, action: 'pause' })}
             disabled={busy('pause')}
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-gold/40 px-3 text-xs font-semibold text-gold hover:bg-gold/10"
+            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-gold/40 px-3 text-xs font-semibold text-gold hover:bg-gold/10 disabled:opacity-60"
           >
             <PauseCircle size={14} />
             Pause
@@ -564,7 +1351,7 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction }
             type="button"
             onClick={() => onJobAction({ job, action: 'resume' })}
             disabled={busy('resume')}
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d]"
+            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d] disabled:opacity-60"
           >
             <PlayCircle size={14} />
             Resume
@@ -575,7 +1362,7 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction }
             type="button"
             onClick={() => onJobAction({ job, action: 'retry' })}
             disabled={busy('retry')}
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-gold px-3 text-xs font-semibold text-[#05130d]"
+            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-gold px-3 text-xs font-semibold text-[#05130d] disabled:opacity-60"
           >
             <RotateCcw size={14} />
             Retry
@@ -586,9 +1373,9 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction }
             type="button"
             onClick={() => onJobAction({ job, action: 'retry', options: { mediaProcessing: { compressOnOversize: true, compressBeforeUpload: true } } })}
             disabled={busy('retry')}
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-mint/40 px-3 text-xs font-semibold text-mint hover:bg-mint/10"
+            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-mint/40 px-3 text-xs font-semibold text-mint hover:bg-mint/10 disabled:opacity-60"
           >
-            <AlertTriangle size={14} />
+            <TimerReset size={14} />
             Compress
           </button>
         )}
@@ -597,10 +1384,21 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction }
             type="button"
             onClick={() => onJobAction({ job, action: 'cancel' })}
             disabled={busy('cancel')}
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10"
+            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10 disabled:opacity-60"
           >
             <XCircle size={14} />
             Cancel
+          </button>
+        )}
+        {canManage && (
+          <button
+            type="button"
+            onClick={() => onDeleteJob(job)}
+            disabled={busyKey === `delete:job:${job._id}`}
+            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10 disabled:opacity-60"
+          >
+            {busyKey === `delete:job:${job._id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+            Delete
           </button>
         )}
       </div>

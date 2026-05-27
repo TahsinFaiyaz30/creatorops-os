@@ -80,7 +80,7 @@ export default class YouTubeConnector extends BasePlatformConnector {
   }
 
   getCapabilities() {
-    return { publish: true, schedule: true, analytics: true, comments: true, replies: true, mediaUpload: true };
+    return { publish: true, schedule: true, analytics: true, comments: true, replies: true, mediaUpload: true, delete: true };
   }
 
   getHelperText() {
@@ -502,6 +502,27 @@ export default class YouTubeConnector extends BasePlatformConnector {
       providerPostUrl: result.id ? `https://www.youtube.com/watch?v=${result.id}` : '',
       rawResponse: result
     }, 'Video uploaded to YouTube through the official API.');
+  }
+
+  async deletePublishedPost(connection, providerPostId) {
+    const scopeCheck = this.requireScopes(
+      connection,
+      ['https://www.googleapis.com/auth/youtube.force-ssl'],
+      'delete YouTube videos'
+    );
+    if (!scopeCheck.ok) return scopeCheck;
+    if (!providerPostId) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: `${this.displayName} deletion requires a provider video id.` });
+    }
+    const result = await this.requestJson(
+      `https://www.googleapis.com/youtube/v3/videos?id=${encodeURIComponent(providerPostId)}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${this.getAccessToken(connection)}` }
+      }
+    );
+    if (!result.ok) return result;
+    return okResult({ providerPostId }, `${this.displayName} video deleted through the official YouTube Data API.`);
   }
 
   async fetchComments(connection, providerPostId) {

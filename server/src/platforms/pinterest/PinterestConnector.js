@@ -15,7 +15,7 @@ export default class PinterestConnector extends BasePlatformConnector {
   }
 
   getCapabilities() {
-    return { publish: true, schedule: true, analytics: true, comments: false, replies: false, mediaUpload: true };
+    return { publish: true, schedule: true, analytics: true, comments: false, replies: false, mediaUpload: true, delete: true };
   }
 
   getHelperText() {
@@ -154,5 +154,17 @@ export default class PinterestConnector extends BasePlatformConnector {
       providerPostUrl: result.data.link || '',
       rawResponse: result.data
     }, 'Pinterest pin created through the official API.');
+  }
+
+  async deletePublishedPost(connection, providerPostId) {
+    if (!providerPostId) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'Pinterest deletion requires a provider pin id.' });
+    }
+    const result = await this.requestJson(`https://api.pinterest.com/v5/pins/${encodeURIComponent(providerPostId)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${this.getAccessToken(connection)}` }
+    });
+    if (!result.ok) return result;
+    return okResult({ providerPostId }, 'Pinterest pin deleted through the official API.');
   }
 }

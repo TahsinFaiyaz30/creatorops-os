@@ -1,6 +1,8 @@
 import {
   cancelPublishJob,
   createPublishJob,
+  deletePublishGroupDispatch,
+  deletePublishJobDispatch,
   getPublishMediaPlan,
   getPublishJobById,
   listPublishJobs,
@@ -96,6 +98,24 @@ export const retryJob = async (req, res, next) => {
   try {
     const publishJob = await retryPublishJob({ user: req.user, jobId: req.params.id, input: req.body });
     res.json({ data: { publishJob } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteJobDispatch = async (req, res, next) => {
+  try {
+    const result = await deletePublishJobDispatch({ user: req.user, jobId: req.params.id, input: req.body });
+    res.json({ data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteGroupDispatch = async (req, res, next) => {
+  try {
+    const result = await deletePublishGroupDispatch({ user: req.user, groupId: req.params.id, input: req.body });
+    res.json({ data: result });
   } catch (error) {
     next(error);
   }

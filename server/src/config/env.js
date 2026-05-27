@@ -34,6 +34,7 @@ const env = {
   clientUrl: process.env.CLIENT_URL || clientUrls[0],
   clientUrls,
   publicBaseUrl: process.env.PUBLIC_BASE_URL || 'http://localhost:5000',
+  providerApiTimeoutMs: Math.max(1000, Number(process.env.PROVIDER_API_TIMEOUT_MS || 60000)),
   mediaUploadLimitBytes: process.env.MEDIA_UPLOAD_LIMIT_BYTES ? Number(process.env.MEDIA_UPLOAD_LIMIT_BYTES) : undefined,
   mediaStorage: {
     provider: 's3',

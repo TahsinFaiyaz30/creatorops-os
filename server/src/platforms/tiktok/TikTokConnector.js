@@ -15,7 +15,7 @@ export default class TikTokConnector extends BasePlatformConnector {
   }
 
   getCapabilities() {
-    return { publish: true, schedule: true, analytics: false, comments: false, replies: false, mediaUpload: true };
+    return { publish: true, schedule: true, analytics: false, comments: false, replies: false, mediaUpload: true, delete: false };
   }
 
   getHelperText() {

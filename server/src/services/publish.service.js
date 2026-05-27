@@ -4,6 +4,9 @@ import PlatformConnection from '../models/PlatformConnection.js';
 import PlatformVariant from '../models/PlatformVariant.js';
 import PublishedPost from '../models/PublishedPost.js';
 import PublishJob from '../models/PublishJob.js';
+import SocialComment from '../models/SocialComment.js';
+import SocialMetricSnapshot from '../models/SocialMetricSnapshot.js';
+import SocialReply from '../models/SocialReply.js';
 import { normalizePlatform } from '../constants/platforms.js';
 import { BRAND_REP_ROLE, CONTENT_CREATOR_ROLE, roleMatches } from '../constants/roles.js';
 import { getConnector } from '../platforms/connectorRegistry.js';
@@ -881,6 +884,466 @@ export const listPublishJobs = async ({ user }) => {
   return jobs;
 };
 
+const getGroupDeleteQuery = groupId => {
+  const conditions = [{ postGroupId: groupId }];
+  if (/^[a-f\d]{24}$/i.test(String(groupId || ''))) {
+    conditions.push({ _id: groupId }, { publishJobId: groupId });
+  }
+  return { $or: conditions };
+};
+
+const toId = value => String(value?._id || value || '');
+
+const uniqueDocuments = documents => {
+  const seen = new Set();
+  return documents.filter(document => {
+    const id = toId(document);
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+};
+
+const buildPostConditionsForJobs = jobs =>
+  jobs.flatMap(job => {
+    const conditions = [{ publishJobId: job._id }];
+    if (job.postGroupId) {
+      conditions.push({
+        postGroupId: job.postGroupId,
+        platform: job.platform,
+        platformConnectionId: job.platformConnectionId
+      });
+    }
+    return conditions;
+  });
+
+const selectDeleteJobs = (jobs, input = {}) => {
+  const hasExplicitTargets = Array.isArray(input.targets);
+  const targetJobIds = Array.isArray(input.targets) ? input.targets.map(target => target.jobId).filter(Boolean) : [];
+  const jobIds = new Set([...(input.jobIds || []), ...targetJobIds].map(String));
+  const platforms = new Set((input.platforms || []).map(String));
+  return jobs.filter(job => {
+    if (hasExplicitTargets && !jobIds.has(String(job._id))) return false;
+    if (jobIds.size > 0 && !jobIds.has(String(job._id))) return false;
+    if (platforms.size > 0 && !platforms.has(job.platform)) return false;
+    return true;
+  });
+};
+
+const getDeleteTargetsForJobs = async ({ user, jobs }) => {
+  if (!jobs.length) return { jobs: [], posts: [] };
+  const postConditions = buildPostConditionsForJobs(jobs);
+  const posts = postConditions.length
+    ? await PublishedPost.find({ workspaceId: user.workspaceId, $or: postConditions })
+    : [];
+  return { jobs, posts: uniqueDocuments(posts) };
+};
+
+const getDeleteTargetsForGroup = async ({ user, groupId, input = {} }) => {
+  const groupQuery = getGroupDeleteQuery(groupId);
+  const allJobs = await PublishJob.find({ workspaceId: user.workspaceId, ...groupQuery });
+  const jobs = selectDeleteJobs(allJobs, input);
+  const hasJobSelection = Boolean(input.jobIds?.length) || Array.isArray(input.targets);
+
+  if (hasJobSelection) {
+    return getDeleteTargetsForJobs({ user, jobs });
+  }
+
+  let posts = await PublishedPost.find({ workspaceId: user.workspaceId, ...groupQuery });
+  const platforms = new Set((input.platforms || []).map(String));
+  if (platforms.size > 0) posts = posts.filter(post => platforms.has(post.platform));
+
+  return {
+    jobs,
+    posts: uniqueDocuments(posts)
+  };
+};
+
+const buildDeleteIntentMap = ({ jobs, posts, input = {} }) => {
+  const defaultDeleteFromPlatform = Boolean(input.deleteFromPlatform);
+  const intents = new Map();
+  for (const job of jobs) {
+    intents.set(String(job._id), defaultDeleteFromPlatform);
+  }
+  for (const post of posts) {
+    intents.set(`post:${post._id}`, defaultDeleteFromPlatform);
+  }
+  for (const target of Array.isArray(input.targets) ? input.targets : []) {
+    const deleteFromPlatform = Boolean(target.deleteFromPlatform);
+    if (target.jobId) intents.set(String(target.jobId), deleteFromPlatform);
+    if (target.publishedPostId) intents.set(`post:${target.publishedPostId}`, deleteFromPlatform);
+  }
+  return intents;
+};
+
+const getDeleteIntentForPost = ({ post, jobs, intents }) => {
+  if (intents.has(`post:${post._id}`)) return intents.get(`post:${post._id}`);
+  if (post.publishJobId && intents.has(String(post.publishJobId))) return intents.get(String(post.publishJobId));
+  const relatedJob = jobs.find(job =>
+    job.postGroupId &&
+    post.postGroupId === job.postGroupId &&
+    post.platform === job.platform &&
+    String(post.platformConnectionId || '') === String(job.platformConnectionId || '')
+  );
+  return relatedJob ? Boolean(intents.get(String(relatedJob._id))) : false;
+};
+
+const getDeleteIntentForJob = ({ job, intents }) => Boolean(intents.get(String(job._id)));
+
+const connectorSupportsPostDelete = connector => Boolean(connector?.getCapabilities?.().delete);
+
+const isProviderDeleteAlreadySatisfied = result => {
+  if (!result || result.ok) return false;
+  const code = String(result.code || '').toLowerCase();
+  const message = String(result.message || '').toLowerCase();
+  const status = Number(result.data?.status || result.data?.payload?.status || result.data?.payload?.error?.code || 0);
+  return (
+    status === 404 ||
+    code.includes('404') ||
+    code.includes('not_found') ||
+    code.includes('notfound') ||
+    message.includes('not found') ||
+    message.includes('does not exist') ||
+    message.includes('could not be found')
+  );
+};
+
+const deleteProviderTarget = async ({ user, target }) => {
+  try {
+    if (!target.providerPostId) {
+      return {
+        ok: true,
+        code: 'NO_PROVIDER_POST_ID',
+        message: 'No provider post id exists, so only the CreatorOps record needs deletion.'
+      };
+    }
+
+    const connector = getConnector(target.platform);
+    if (!connector) {
+      return {
+        ok: false,
+        code: 'CONNECTOR_UNAVAILABLE',
+        message: `${target.platform} connector is unavailable.`
+      };
+    }
+
+    if (!connectorSupportsPostDelete(connector)) {
+      return {
+        ok: false,
+        code: 'DELETE_UNSUPPORTED',
+        message: `${connector.getDisplayName()} does not support deleting published posts through the current CreatorOps connector.`
+      };
+    }
+
+    const connection = await getConnectionWithSecrets({ user, connectionId: target.platformConnectionId });
+    if (connection.status !== 'connected') {
+      return {
+        ok: false,
+        code: connection.status?.toUpperCase() || 'NOT_CONNECTED',
+        message: `Connection is ${connection.status || 'not connected'}.`
+      };
+    }
+
+    const refreshAttempt = await refreshStoredConnectionIfNeeded({ connection, connector });
+    if (refreshAttempt.result && !refreshAttempt.result.ok && refreshAttempt.result.code !== 'CAPABILITY_UNAVAILABLE') {
+      return {
+        ok: false,
+        code: refreshAttempt.result.code || 'REFRESH_FAILED',
+        message: refreshAttempt.result.message || 'Connection refresh failed before deletion.'
+      };
+    }
+
+    const result = await connector.deletePublishedPost(connection, target.providerPostId, { post: target });
+    if (isProviderDeleteAlreadySatisfied(result)) {
+      return {
+        ok: true,
+        code: 'PROVIDER_ALREADY_DELETED',
+        message: `${connector.getDisplayName()} did not have this post anymore, so CreatorOps can remove its record.`,
+        data: { providerPostId: target.providerPostId, originalResult: result }
+      };
+    }
+    return result;
+  } catch (error) {
+    return {
+      ok: false,
+      code: error.code || 'PROVIDER_DELETE_FAILED',
+      message: error.message || 'Provider deletion failed before CreatorOps could confirm the platform result.'
+    };
+  }
+};
+
+const deleteLocalPublishedPostData = async ({ workspaceId, postIds }) => {
+  if (!postIds.length) return;
+  const comments = await SocialComment.find({ workspaceId, publishedPostId: { $in: postIds } }).select('_id');
+  const commentIds = comments.map(comment => comment._id);
+  await Promise.all([
+    commentIds.length ? SocialReply.deleteMany({ workspaceId, socialCommentId: { $in: commentIds } }) : Promise.resolve(),
+    SocialComment.deleteMany({ workspaceId, publishedPostId: { $in: postIds } }),
+    SocialMetricSnapshot.deleteMany({ workspaceId, publishedPostId: { $in: postIds } }),
+    PublishedPost.deleteMany({ workspaceId, _id: { $in: postIds } })
+  ]);
+};
+
+const getMediaIdsForDeletedRecords = records => [
+  ...new Set(
+    records
+      .flatMap(record => record.mediaAssetIds || [])
+      .map(id => String(id))
+      .filter(Boolean)
+  )
+];
+
+const deleteUnreferencedTemporaryMedia = async ({ workspaceId, mediaAssetIds = [], deletedJobIds = [], deletedPostIds = [] }) => {
+  const candidateIds = [...new Set(mediaAssetIds.map(String).filter(Boolean))];
+  if (candidateIds.length === 0) return { deletedCount: 0 };
+
+  const [referencingJobs, referencingPosts] = await Promise.all([
+    PublishJob.find({
+      workspaceId,
+      _id: { $nin: deletedJobIds },
+      mediaAssetIds: { $in: candidateIds }
+    }).select('mediaAssetIds'),
+    PublishedPost.find({
+      workspaceId,
+      _id: { $nin: deletedPostIds },
+      mediaAssetIds: { $in: candidateIds }
+    }).select('mediaAssetIds')
+  ]);
+
+  const stillReferenced = new Set(
+    [...referencingJobs, ...referencingPosts]
+      .flatMap(record => record.mediaAssetIds || [])
+      .map(id => String(id))
+  );
+  const unreferencedMediaIds = candidateIds.filter(id => !stillReferenced.has(id));
+  return deleteTemporaryMediaAssets({ workspaceId, mediaAssetIds: unreferencedMediaIds });
+};
+
+const deletePublishJobsSafely = async ({ workspaceId, jobs = [] }) => {
+  const requestedJobIds = jobs.map(job => job._id);
+  if (requestedJobIds.length === 0) return [];
+
+  const now = new Date();
+  await PublishJob.updateMany(
+    { workspaceId, _id: { $in: requestedJobIds }, status: 'queued' },
+    {
+      $set: {
+        status: 'cancelled',
+        processingStage: 'cancelled',
+        processingMessage: 'Dispatch deleted before provider upload started.',
+        processingStageUpdatedAt: now
+      }
+    }
+  );
+
+  const deletableJobs = await PublishJob.find({
+    workspaceId,
+    _id: { $in: requestedJobIds },
+    status: { $ne: 'publishing' }
+  }).select('mediaAssetIds');
+  const deletableJobIds = deletableJobs.map(job => job._id);
+
+  if (deletableJobIds.length > 0) {
+    await PublishJob.deleteMany({
+      workspaceId,
+      _id: { $in: deletableJobIds },
+      status: { $ne: 'publishing' }
+    });
+  }
+
+  return deletableJobs;
+};
+
+const hasRemainingPublishRetryPath = ({ jobs, posts }) => {
+  if (jobs.some(job => ACTIVE_PUBLISH_STATUSES.includes(job.status) || UNSUCCESSFUL_TERMINAL_STATUSES.includes(job.status))) {
+    return true;
+  }
+  return posts.some(post => post.status && post.status !== 'published');
+};
+
+const deleteTemporaryMediaWhenNoRetryPathRemains = async ({ workspaceId, groupId }) => {
+  if (!groupId) return { deletedCount: 0 };
+
+  const [remainingJobs, remainingPosts] = await Promise.all([
+    PublishJob.find({ workspaceId, postGroupId: groupId }).select('status'),
+    PublishedPost.find({ workspaceId, postGroupId: groupId }).select('status')
+  ]);
+  if (hasRemainingPublishRetryPath({ jobs: remainingJobs, posts: remainingPosts })) return { deletedCount: 0 };
+
+  const assets = await MediaAsset.find({
+    workspaceId,
+    cleanupGroupId: groupId,
+    storageIntent: 'temporary_publish'
+  }).select('_id');
+
+  const result = await deleteTemporaryMediaAssets({
+    workspaceId,
+    mediaAssetIds: assets.map(asset => asset._id)
+  });
+  if (result.deletedCount > 0) {
+    await PublishJob.updateMany(
+      { workspaceId, postGroupId: groupId },
+      { $set: { temporaryMediaExpiresAt: null, temporaryMediaExpiredAt: null } }
+    );
+  }
+  return result;
+};
+
+const deleteDispatchTargets = async ({ user, jobs, posts, input = {}, groupId }) => {
+  requirePublishPermission(user);
+  const activeJobs = jobs.filter(job => job.status === 'publishing');
+  if (activeJobs.length > 0) {
+    throw createHttpError('Cancel or pause active publishing jobs before deleting them.', 400, 'PUBLISH_IN_PROGRESS');
+  }
+
+  const intents = buildDeleteIntentMap({ jobs, posts, input });
+  const providerResults = [];
+  const failedPostIds = new Set();
+  const failedJobIds = new Set();
+  const postProviderKeys = new Set(posts.map(post => `${post.platform}:${post.providerPostId || ''}`));
+  const orphanProviderJobs = jobs.filter(job => job.providerPostId && !postProviderKeys.has(`${job.platform}:${job.providerPostId}`));
+  const postsNeedingProviderDelete = posts.filter(post => getDeleteIntentForPost({ post, jobs, intents }));
+  const orphanJobsNeedingProviderDelete = orphanProviderJobs.filter(job => getDeleteIntentForJob({ job, intents }));
+
+  if (postsNeedingProviderDelete.length || orphanJobsNeedingProviderDelete.length) {
+    for (const post of postsNeedingProviderDelete) {
+      const result = await deleteProviderTarget({ user, target: post });
+      providerResults.push({
+        ok: Boolean(result.ok),
+        code: result.code || '',
+        message: result.message || '',
+        platform: post.platform,
+        providerPostId: post.providerPostId || '',
+        publishedPostId: post._id,
+        publishJobId: post.publishJobId || null
+      });
+      if (!result.ok) failedPostIds.add(String(post._id));
+    }
+
+    for (const job of orphanJobsNeedingProviderDelete) {
+      const result = await deleteProviderTarget({ user, target: job });
+      providerResults.push({
+        ok: Boolean(result.ok),
+        code: result.code || '',
+        message: result.message || '',
+        platform: job.platform,
+        providerPostId: job.providerPostId || '',
+        publishedPostId: null,
+        publishJobId: job._id
+      });
+      if (!result.ok) failedJobIds.add(String(job._id));
+    }
+  }
+
+  const postsToDelete = posts.filter(post => {
+    const requestedProviderDelete = getDeleteIntentForPost({ post, jobs, intents });
+    return !requestedProviderDelete || !failedPostIds.has(String(post._id));
+  });
+  const failedPostJobIds = new Set(posts.filter(post => failedPostIds.has(String(post._id))).map(post => String(post.publishJobId || '')).filter(Boolean));
+  const requestedJobsToDelete = jobs.filter(job => {
+    const requestedProviderDelete = getDeleteIntentForJob({ job, intents });
+    return (!requestedProviderDelete || !failedJobIds.has(String(job._id))) && !failedPostJobIds.has(String(job._id));
+  });
+  const postIds = postsToDelete.map(post => post._id);
+  const platformDeleteRequested = postsNeedingProviderDelete.length > 0 || orphanJobsNeedingProviderDelete.length > 0;
+
+  await deleteLocalPublishedPostData({ workspaceId: user.workspaceId, postIds });
+  const deletedJobs = await deletePublishJobsSafely({
+    workspaceId: user.workspaceId,
+    jobs: requestedJobsToDelete
+  });
+  const jobIds = deletedJobs.map(job => job._id);
+  const candidateMediaAssetIds = getMediaIdsForDeletedRecords([...deletedJobs, ...postsToDelete]);
+  const temporaryMediaDeletion = await deleteUnreferencedTemporaryMedia({
+    workspaceId: user.workspaceId,
+    mediaAssetIds: candidateMediaAssetIds,
+    deletedJobIds: jobIds,
+    deletedPostIds: postIds
+  });
+  const noRetryMediaDeletion = await deleteTemporaryMediaWhenNoRetryPathRemains({
+    workspaceId: user.workspaceId,
+    groupId
+  });
+  const deletedTemporaryMediaCount =
+    (temporaryMediaDeletion.deletedCount || 0) + (noRetryMediaDeletion.deletedCount || 0);
+
+  if (postIds.length || jobIds.length) {
+    await createWorkflowEvent({
+      workspaceId: user.workspaceId,
+      actorId: user._id,
+      eventType: platformDeleteRequested ? 'publish.deleted_with_provider' : 'publish.deleted_local',
+      message: platformDeleteRequested
+        ? 'Dispatch records were deleted using per-platform provider deletion choices.'
+        : 'Dispatch records were deleted from CreatorOps only.',
+      entityType: 'PublishJob',
+      entityId: jobIds[0] || null,
+      metadata: {
+        groupId,
+        platformDeleteRequested,
+        deleteTargets: [...intents.entries()].map(([targetId, deleteFromPlatform]) => ({ targetId, deleteFromPlatform })),
+        publishJobIds: jobIds,
+        publishedPostIds: postIds,
+        deletedTemporaryMediaCount,
+        providerResults
+      }
+    });
+  }
+
+  emitRealtimeEvent('publishing:job_updated', {
+    deleted: true,
+    groupId,
+    publishJobIds: jobIds.map(String),
+    publishedPostIds: postIds.map(String),
+    providerResults
+  });
+  emitRealtimeEvent('social:post_deleted', {
+    groupId,
+    publishJobIds: jobIds.map(String),
+    publishedPostIds: postIds.map(String)
+  });
+
+  return {
+    platformDeleteRequested,
+    deleted: {
+      publishJobs: jobIds.length,
+      publishedPosts: postIds.length,
+      temporaryMedia: deletedTemporaryMediaCount
+    },
+    skipped: {
+      publishJobs: jobs.length - jobIds.length,
+      publishedPosts: posts.length - postIds.length
+    },
+    providerResults
+  };
+};
+
+export const deletePublishJobDispatch = async ({ user, jobId, input = {} }) => {
+  const job = await PublishJob.findOne({ _id: jobId, workspaceId: user.workspaceId });
+  if (!job) throw createHttpError('Publish job not found.', 404);
+  const targets = await getDeleteTargetsForJobs({ user, jobs: [job] });
+  return deleteDispatchTargets({
+    user,
+    jobs: targets.jobs,
+    posts: targets.posts,
+    input,
+    groupId: job.postGroupId || String(job._id)
+  });
+};
+
+export const deletePublishGroupDispatch = async ({ user, groupId, input = {} }) => {
+  const targets = await getDeleteTargetsForGroup({ user, groupId, input });
+  if (!targets.jobs.length && !targets.posts.length) {
+    throw createHttpError('Dispatch group not found.', 404);
+  }
+  return deleteDispatchTargets({
+    user,
+    jobs: targets.jobs,
+    posts: targets.posts,
+    input,
+    groupId
+  });
+};
+
 export const cancelPublishJob = async ({ user, jobId }) => {
   requirePublishPermission(user);
   const job = await PublishJob.findOne({ _id: jobId, workspaceId: user.workspaceId });
@@ -1463,6 +1926,12 @@ export const processTemporaryPublishMediaCleanup = async () => {
       }
       continue;
     }
+
+    const noRetryDeletion = await deleteTemporaryMediaWhenNoRetryPathRemains({
+      workspaceId: group.workspaceId,
+      groupId: group.cleanupGroupId
+    });
+    if (noRetryDeletion.deletedCount > 0) continue;
 
     await refreshTemporaryMediaLifecycleForGroup({
       workspaceId: group.workspaceId,

@@ -2,6 +2,8 @@ import express from 'express';
 
 import {
   cancelJob,
+  deleteGroupDispatch,
+  deleteJobDispatch,
   getJob,
   getJobs,
   getPublishSettings,
@@ -29,9 +31,11 @@ router.post('/now', requireRole(publishRoles), publishNow);
 router.post('/schedule', requireRole(publishRoles), schedulePublish);
 router.get('/jobs', getJobs);
 router.get('/jobs/:id', getJob);
+router.post('/groups/:id/delete', requireRole(publishRoles), deleteGroupDispatch);
 router.post('/jobs/:id/pause', requireRole(publishRoles), pauseJob);
 router.post('/jobs/:id/resume', requireRole(publishRoles), resumeJob);
 router.post('/jobs/:id/cancel', requireRole(publishRoles), cancelJob);
 router.post('/jobs/:id/retry', requireRole(publishRoles), retryJob);
+router.post('/jobs/:id/delete', requireRole(publishRoles), deleteJobDispatch);
 
 export default router;

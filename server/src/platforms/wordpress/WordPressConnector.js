@@ -15,7 +15,7 @@ export default class WordPressConnector extends BasePlatformConnector {
   }
 
   getCapabilities() {
-    return { publish: true, schedule: true, analytics: false, comments: true, replies: true, mediaUpload: false };
+    return { publish: true, schedule: true, analytics: false, comments: true, replies: true, mediaUpload: false, delete: true };
   }
 
   getHelperText() {
@@ -102,6 +102,20 @@ export default class WordPressConnector extends BasePlatformConnector {
       providerPostUrl: result.data.link || '',
       rawResponse: result.data
     }, 'WordPress draft created through the REST API.');
+  }
+
+  async deletePublishedPost(connection, providerPostId) {
+    if (!providerPostId) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'WordPress deletion requires a provider post id.' });
+    }
+    const auth = Buffer.from(`${connection.platformMetadata.username}:${this.getAppPassword(connection)}`).toString('base64');
+    const baseUrl = connection.platformMetadata.baseUrl;
+    const result = await this.requestJson(`${baseUrl}/wp-json/wp/v2/posts/${encodeURIComponent(providerPostId)}?force=true`, {
+      method: 'DELETE',
+      headers: { Authorization: `Basic ${auth}` }
+    });
+    if (!result.ok) return result;
+    return okResult({ providerPostId, rawResponse: result.data }, 'WordPress post deleted through the REST API.');
   }
 
   async fetchComments(connection, providerPostId) {

@@ -17,7 +17,7 @@ export default class ShopifyConnector extends BasePlatformConnector {
   }
 
   getCapabilities() {
-    return { publish: true, schedule: true, analytics: false, comments: false, replies: false, mediaUpload: false };
+    return { publish: true, schedule: true, analytics: false, comments: false, replies: false, mediaUpload: false, delete: true };
   }
 
   getHelperText() {
@@ -123,6 +123,27 @@ export default class ShopifyConnector extends BasePlatformConnector {
       providerPostUrl: result.data?.article?.admin_graphql_api_id || '',
       rawResponse: result.data
     }, 'Shopify blog article draft created through the Admin API.');
+  }
+
+  async deletePublishedPost(connection, providerPostId, context = {}) {
+    if (!providerPostId) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'Shopify deletion requires a provider article id.' });
+    }
+    const shopDomain = connection.platformMetadata.shopDomain;
+    const token = this.getApiSecret(connection);
+    const blogId = context.post?.providerRawResponse?.article?.blog_id || context.post?.providerRawResponse?.blog_id || connection.platformMetadata?.blogId;
+    if (!blogId) {
+      return connectorResult({
+        code: 'MISSING_CONFIGURATION',
+        message: 'Shopify article deletion requires the source blog id. This older record does not include it.'
+      });
+    }
+    const result = await this.requestJson(`https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/blogs/${blogId}/articles/${providerPostId}.json`, {
+      method: 'DELETE',
+      headers: { 'X-Shopify-Access-Token': token }
+    });
+    if (!result.ok) return result;
+    return okResult({ providerPostId }, 'Shopify article deleted through the Admin API.');
   }
 
   async fetchAnalytics() {

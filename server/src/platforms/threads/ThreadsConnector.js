@@ -15,7 +15,7 @@ export default class ThreadsConnector extends BasePlatformConnector {
   }
 
   getCapabilities() {
-    return { publish: true, schedule: true, analytics: true, comments: true, replies: true, mediaUpload: true };
+    return { publish: true, schedule: true, analytics: true, comments: true, replies: true, mediaUpload: true, delete: false };
   }
 
   getHelperText() {

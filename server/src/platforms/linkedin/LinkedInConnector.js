@@ -15,7 +15,7 @@ export default class LinkedInConnector extends BasePlatformConnector {
   }
 
   getCapabilities() {
-    return { publish: true, schedule: true, analytics: false, comments: false, replies: false, mediaUpload: false };
+    return { publish: true, schedule: true, analytics: false, comments: false, replies: false, mediaUpload: false, delete: false };
   }
 
   getHelperText() {

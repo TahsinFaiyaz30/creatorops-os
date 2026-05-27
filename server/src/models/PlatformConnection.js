@@ -16,7 +16,8 @@ const capabilitySchema = new Schema(
     analytics: { type: Boolean, default: false },
     comments: { type: Boolean, default: false },
     replies: { type: Boolean, default: false },
-    mediaUpload: { type: Boolean, default: false }
+    mediaUpload: { type: Boolean, default: false },
+    delete: { type: Boolean, default: false }
   },
   { _id: false }
 );

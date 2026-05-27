@@ -30,7 +30,7 @@ export default class XConnector extends BasePlatformConnector {
   }
 
   getCapabilities() {
-    return { publish: true, schedule: true, analytics: false, comments: false, replies: true, mediaUpload: true };
+    return { publish: true, schedule: true, analytics: false, comments: false, replies: true, mediaUpload: true, delete: true };
   }
 
   getHelperText() {
@@ -395,5 +395,18 @@ export default class XConnector extends BasePlatformConnector {
         mediaUploads: mediaUploadResponses
       }
     }, mediaIds.length > 0 ? 'X post with image media published through the official API.' : 'X post published through the official API.');
+  }
+
+  async deletePublishedPost(connection, providerPostId) {
+    if (!providerPostId) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'X deletion requires a provider post id.' });
+    }
+    const result = await this.requestJson(`https://api.x.com/2/tweets/${encodeURIComponent(providerPostId)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${this.getAccessToken(connection)}` }
+    });
+    const normalized = normalizeXResult(result);
+    if (!normalized.ok) return normalized;
+    return okResult({ providerPostId, rawResponse: normalized.data }, 'X post deleted through the official API.');
   }
 }

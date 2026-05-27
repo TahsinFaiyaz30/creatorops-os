@@ -54,6 +54,47 @@ const getApiHost = url => {
   }
 };
 
+const createTimedFetchOptions = ({ fetchOptions, timeoutMs }) => {
+  const resolvedTimeoutMs = Number(timeoutMs);
+  if (!Number.isFinite(resolvedTimeoutMs) || resolvedTimeoutMs <= 0) {
+    return {
+      fetchOptions,
+      didTimeout: () => false,
+      cleanup: () => {}
+    };
+  }
+
+  const controller = new AbortController();
+  const upstreamSignal = fetchOptions.signal;
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, resolvedTimeoutMs);
+  timeoutId.unref?.();
+  const abortFromUpstream = () => controller.abort(upstreamSignal.reason);
+
+  if (upstreamSignal) {
+    if (upstreamSignal.aborted) {
+      abortFromUpstream();
+    } else {
+      upstreamSignal.addEventListener('abort', abortFromUpstream, { once: true });
+    }
+  }
+
+  return {
+    fetchOptions: {
+      ...fetchOptions,
+      signal: controller.signal
+    },
+    didTimeout: () => timedOut,
+    cleanup: () => {
+      clearTimeout(timeoutId);
+      upstreamSignal?.removeEventListener?.('abort', abortFromUpstream);
+    }
+  };
+};
+
 export default class BasePlatformConnector {
   constructor(platform, displayName) {
     this.platform = platform;
@@ -83,7 +124,8 @@ export default class BasePlatformConnector {
       analytics: false,
       comments: false,
       replies: false,
-      mediaUpload: false
+      mediaUpload: false,
+      delete: false
     };
   }
 
@@ -171,6 +213,10 @@ export default class BasePlatformConnector {
     return notImplementedResult(`${this.displayName} publishing is not implemented for this connector yet.`);
   }
 
+  async deletePublishedPost() {
+    return unavailableResult(`${this.displayName} post deletion is unavailable with the current connector/scopes.`);
+  }
+
   async fetchAnalytics() {
     return unavailableResult(`${this.displayName} analytics are unavailable with the current connector/scopes.`);
   }
@@ -209,35 +255,42 @@ export default class BasePlatformConnector {
   }
 
   async requestJson(url, options = {}) {
-    const { retryNetworkErrors, ...fetchOptions } = options;
+    const { retryNetworkErrors, timeoutMs = env.providerApiTimeoutMs, ...fetchOptions } = options;
     const method = String(fetchOptions.method || 'GET').toUpperCase();
     const safeToRetry = ['GET', 'HEAD'].includes(method);
     const retries = safeToRetry
       ? Math.max(0, Number.isFinite(Number(retryNetworkErrors)) ? Number(retryNetworkErrors) : 1)
       : 0;
     let response;
+    let payload;
 
     for (let attempt = 0; attempt <= retries; attempt += 1) {
+      const timedFetch = createTimedFetchOptions({ fetchOptions, timeoutMs });
       try {
-        response = await fetch(url, fetchOptions);
+        response = await fetch(url, timedFetch.fetchOptions);
+        payload = await parseJsonSafe(response);
         break;
       } catch (error) {
+        const didTimeout = timedFetch.didTimeout();
         if (attempt < retries) continue;
         const host = getApiHost(url);
         return connectorResult({
-          code: 'NETWORK_ERROR',
-          message: `${this.displayName} API could not be reached from the CreatorOps server (${host}). Retry the action after checking server network access.`,
+          code: didTimeout ? 'PROVIDER_TIMEOUT' : 'NETWORK_ERROR',
+          message: didTimeout
+            ? `${this.displayName} API did not respond from the CreatorOps server within ${Math.round(Number(timeoutMs) / 1000)} seconds (${host}). Retry the action later.`
+            : `${this.displayName} API could not be reached from the CreatorOps server (${host}). Retry the action after checking server network access.`,
           data: {
             host,
             method,
+            timeoutMs: Number(timeoutMs),
             networkError: error.message || 'fetch failed',
             networkCauseCode: error.cause?.code || ''
           }
         });
+      } finally {
+        timedFetch.cleanup();
       }
     }
-
-    const payload = await parseJsonSafe(response);
 
     if (!response.ok) {
       const firstProviderError = Array.isArray(payload?.errors) ? payload.errors[0] : null;

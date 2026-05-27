@@ -17,7 +17,7 @@ export default class FacebookConnector extends BasePlatformConnector {
   }
 
   getCapabilities() {
-    return { publish: true, schedule: true, analytics: true, comments: true, replies: true, mediaUpload: true };
+    return { publish: true, schedule: true, analytics: true, comments: true, replies: true, mediaUpload: true, delete: true };
   }
 
   getHelperText() {
@@ -128,6 +128,19 @@ export default class FacebookConnector extends BasePlatformConnector {
       providerPostUrl: postId ? `https://www.facebook.com/${postId}` : '',
       rawResponse: result.data
     }, 'Facebook post published through the official API.');
+  }
+
+  async deletePublishedPost(connection, providerPostId) {
+    if (!providerPostId) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'Facebook deletion requires a provider post id.' });
+    }
+    const body = new URLSearchParams({ access_token: this.getAccessToken(connection) });
+    const result = await this.requestJson(`https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(providerPostId)}`, {
+      method: 'DELETE',
+      body
+    });
+    if (!result.ok) return result;
+    return okResult({ providerPostId, rawResponse: result.data }, 'Facebook post deleted through the Graph API.');
   }
 
   async fetchAnalytics(connection, providerPostId) {
