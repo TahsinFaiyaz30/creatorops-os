@@ -5,6 +5,7 @@ const { Schema } = mongoose;
 export const MEDIA_TYPES = ['image', 'video'];
 export const MEDIA_STATUSES = ['uploaded', 'ready', 'failed'];
 export const MEDIA_STORAGE_INTENTS = ['library', 'temporary_publish'];
+export const MEDIA_STORAGE_PROVIDERS = ['s3'];
 
 const mediaAssetSchema = new Schema(
   {
@@ -35,10 +36,20 @@ const mediaAssetSchema = new Schema(
       type: String,
       default: ''
     },
-    localPath: {
+    storageProvider: {
       type: String,
-      required: true,
+      enum: MEDIA_STORAGE_PROVIDERS,
+      default: 's3',
+      index: true
+    },
+    objectKey: {
+      type: String,
+      default: '',
       select: false
+    },
+    storageETag: {
+      type: String,
+      default: ''
     },
     publicUrl: {
       type: String,
@@ -111,13 +122,13 @@ const mediaAssetSchema = new Schema(
     timestamps: true,
     toJSON: {
       transform: (_doc, ret) => {
-        delete ret.localPath;
+        delete ret.objectKey;
         return ret;
       }
     },
     toObject: {
       transform: (_doc, ret) => {
-        delete ret.localPath;
+        delete ret.objectKey;
         return ret;
       }
     }

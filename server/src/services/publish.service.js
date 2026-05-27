@@ -10,7 +10,7 @@ import { getConnector } from '../platforms/connectorRegistry.js';
 import { emitRealtimeEvent } from '../sockets/socket.js';
 import { createWorkflowEvent } from './event.service.js';
 import { createCompressedMediaAssets, deleteDerivativeFiles } from './mediaDerivative.service.js';
-import { deleteTemporaryMediaAssets } from './media.service.js';
+import { deleteTemporaryMediaAssets, hydrateMediaAssetPublicUrls, prepareMediaAssetsForPublishing } from './media.service.js';
 import { refreshStoredConnectionIfNeeded, sanitizeConnection } from './platformConnection.service.js';
 import { getTemporaryMediaRetentionSeconds } from './systemSettings.service.js';
 import { createVariantVersion } from './versioning.service.js';
@@ -430,13 +430,13 @@ const getScopedContentItem = async ({ user, contentItemId }) => {
   return contentItem;
 };
 
-const getMediaAssets = async ({ user, mediaAssetIds = [], includeLocalPath = false }) => {
+const getMediaAssets = async ({ user, mediaAssetIds = [], includeObjectKey = false }) => {
   if (!Array.isArray(mediaAssetIds) || mediaAssetIds.length === 0) return [];
   let query = MediaAsset.find({
     _id: { $in: mediaAssetIds },
     workspaceId: user.workspaceId
   });
-  if (includeLocalPath) query = query.select('+localPath');
+  if (includeObjectKey) query = query.select('+objectKey');
   const assets = await query;
   if (assets.length !== mediaAssetIds.length) {
     throw createHttpError('One or more media assets were not found in this workspace.', 404);
@@ -634,7 +634,7 @@ export const validatePublishPayload = async ({ user, input }) => {
     user,
     contentItemId: normalized.contentItemId || variant?.contentItemId
   });
-  const mediaAssets = await getMediaAssets({ user, mediaAssetIds: normalized.mediaAssetIds, includeLocalPath: true });
+  const mediaAssets = await getMediaAssets({ user, mediaAssetIds: normalized.mediaAssetIds, includeObjectKey: true });
   const visibilityCheck = validateVisibility({
     platform: finalPublishPlatform,
     mediaAssets,
@@ -856,7 +856,7 @@ export const getPublishJobById = async ({ user, jobId }) => {
     workspaceId: user.workspaceId
   })
     .populate('platformConnectionId', 'platform accountName accountHandle externalAccountId accountType status capabilities')
-    .populate('mediaAssetIds')
+    .populate({ path: 'mediaAssetIds', select: '+objectKey' })
     .populate('variantId', 'platform caption hook cta hashtags status brandScore readinessScore')
     .populate('contentItemId', 'title rawIdea status')
     .populate('createdBy', 'name email role');
@@ -865,17 +865,21 @@ export const getPublishJobById = async ({ user, jobId }) => {
     throw createHttpError('Publish job not found.', 404);
   }
 
+  await hydrateMediaAssetPublicUrls(job.mediaAssetIds);
   return job;
 };
 
-export const listPublishJobs = async ({ user }) =>
-  PublishJob.find({ workspaceId: user.workspaceId })
+export const listPublishJobs = async ({ user }) => {
+  const jobs = await PublishJob.find({ workspaceId: user.workspaceId })
     .sort({ scheduledAt: -1, createdAt: -1 })
     .populate('platformConnectionId', 'platform accountName accountHandle externalAccountId accountType status capabilities')
-    .populate('mediaAssetIds')
+    .populate({ path: 'mediaAssetIds', select: '+objectKey' })
     .populate('variantId', 'platform caption hook cta hashtags status brandScore readinessScore')
     .populate('contentItemId', 'title rawIdea status')
     .populate('createdBy', 'name email role');
+  await Promise.all(jobs.map(job => hydrateMediaAssetPublicUrls(job.mediaAssetIds)));
+  return jobs;
+};
 
 export const cancelPublishJob = async ({ user, jobId }) => {
   requirePublishPermission(user);
@@ -1123,6 +1127,7 @@ export const processPublishJob = async ({ jobId }) => {
   emitRealtimeEvent('publishing:job_updated', lockedJob);
   const abortController = new AbortController();
   activePublishControls.set(String(lockedJob._id), { controller: abortController, action: '' });
+  let preparedMediaCleanup = async () => {};
 
   await createWorkflowEvent({
     workspaceId: lockedJob.workspaceId,
@@ -1155,13 +1160,19 @@ export const processPublishJob = async ({ jobId }) => {
     if (connectionControl) return finalizeControlledPublishJob({ job: lockedJob, result: connectionControl });
 
     await updatePublishJobStage(lockedJob, 'loading_media', 'Loading temporary media for provider upload.');
-    const mediaAssets = await MediaAsset.find({
+    const storedMediaAssets = await MediaAsset.find({
       _id: { $in: lockedJob.mediaAssetIds },
       workspaceId: lockedJob.workspaceId
-    }).select('+localPath');
+    }).select('+objectKey');
+    const preparedMedia = await prepareMediaAssetsForPublishing({
+      workspaceId: lockedJob.workspaceId,
+      jobId: lockedJob._id,
+      mediaAssets: storedMediaAssets
+    });
+    preparedMediaCleanup = preparedMedia.cleanup;
     const payload = {
       caption: lockedJob.caption,
-      mediaAssets,
+      mediaAssets: preparedMedia.mediaAssets,
       platform: lockedJob.platform,
       ...(getVisibilityOptions(lockedJob.platform).length > 1 ? { visibility: lockedJob.visibility } : {}),
       account: sanitizeConnection(connection),
@@ -1334,6 +1345,7 @@ export const processPublishJob = async ({ jobId }) => {
     emitRealtimeEvent('publishing:job_updated', lockedJob);
     return lockedJob;
   } finally {
+    await preparedMediaCleanup();
     activePublishControls.delete(String(lockedJob._id));
   }
 };

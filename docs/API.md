@@ -112,13 +112,13 @@ Callbacks do not require JWT because secure state restores user/workspace/platfo
 | POST | `/api/media/resumable/:sessionId/chunk` | Auth | Append the next binary chunk with `Content-Range` |
 | POST | `/api/media/resumable/:sessionId/pause` | Auth | Pause a media upload session |
 | POST | `/api/media/resumable/:sessionId/resume` | Auth | Resume a paused media upload session |
-| DELETE | `/api/media/resumable/:sessionId` | Auth | Cancel a media upload session and delete partial server bytes |
+| DELETE | `/api/media/resumable/:sessionId` | Auth | Cancel a media upload session and abort/delete partial object-storage bytes |
 | GET | `/api/media` | Auth | List media |
 | GET | `/api/media/:id` | Auth | Get media metadata |
 | PATCH | `/api/media/:id` | Auth | Update crop preview metadata |
-| DELETE | `/api/media/:id` | Auth | Delete media and local file |
+| DELETE | `/api/media/:id` | Auth | Delete media metadata and backing object |
 
-All media uploads use resumable sessions. The old multipart `/api/media/upload` endpoint does not exist. The client sends the original file SHA-256 before chunks start; the server hashes the assembled file and creates `MediaAsset` only after the hashes match. Original files are stored without recompression. Crop settings are preview metadata.
+All media uploads use resumable sessions. The old multipart `/api/media/upload` endpoint does not exist, and the API does not serve media from a normal `/uploads` directory. With `MEDIA_STORAGE_PROVIDER=s3`, resumable sessions use Cloudflare R2/S3-compatible multipart uploads: start creates the object upload, each client chunk is uploaded as a multipart part, byte offsets and part ETags are stored in `MediaUploadSession`, completion streams the stored object back for SHA-256 verification, and corrupted objects are deleted before any `MediaAsset` is created. Original files are stored without recompression. Crop settings are preview metadata.
 
 ## Publish
 

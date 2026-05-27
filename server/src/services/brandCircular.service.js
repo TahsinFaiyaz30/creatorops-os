@@ -6,6 +6,7 @@ import { normalizePlatforms } from '../constants/platforms.js';
 import { isBrandRepRole } from '../constants/roles.js';
 import { emitRealtimeEvent } from '../sockets/socket.js';
 import { createWorkflowEvent } from './event.service.js';
+import { hydrateMediaAssetPublicUrls } from './media.service.js';
 import { createNotification } from './notification.service.js';
 import { getCreatorStatistics } from './statistics.service.js';
 
@@ -72,8 +73,9 @@ const scopedCircular = async ({ user, circularId, includePublishedMarketplace = 
 
   const circular = await BrandCircular.findOne(filter)
     .populate('brandRepId', 'name email role workspaceId')
-    .populate('mediaAssetIds');
+    .populate({ path: 'mediaAssetIds', select: '+objectKey' });
   if (!circular) throw createHttpError('Brand circular not found.', 404);
+  await hydrateMediaAssetPublicUrls(circular.mediaAssetIds);
   return circular;
 };
 
@@ -129,7 +131,12 @@ export const listBrandCirculars = async ({ user, query = {} }) => {
     if (query.platform) filter.platforms = query.platform;
   }
 
-  return BrandCircular.find(filter).sort({ createdAt: -1 }).populate('brandRepId', 'name email role workspaceId').populate('mediaAssetIds');
+  const circulars = await BrandCircular.find(filter)
+    .sort({ createdAt: -1 })
+    .populate('brandRepId', 'name email role workspaceId')
+    .populate({ path: 'mediaAssetIds', select: '+objectKey' });
+  await Promise.all(circulars.map(circular => hydrateMediaAssetPublicUrls(circular.mediaAssetIds)));
+  return circulars;
 };
 
 export const getBrandCircular = async ({ user, circularId }) =>

@@ -1,12 +1,15 @@
 import { spawn } from 'child_process';
-import fs from 'fs/promises';
-import path from 'path';
-
 import ffmpegPath from 'ffmpeg-static';
 import sharp from 'sharp';
 
-import env from '../config/env.js';
-import { UPLOAD_ROOT } from './media.service.js';
+import {
+  createMediaObjectKey,
+  createStoredObjectReadStream,
+  deleteStoredObject,
+  getStoredObjectBuffer,
+  getStoredObjectUrl,
+  putStoredObjectFromBuffer
+} from './mediaStorage.service.js';
 
 const createHttpError = (message, statusCode, code = '') => {
   const error = new Error(message);
@@ -14,15 +17,6 @@ const createHttpError = (message, statusCode, code = '') => {
   if (code) error.code = code;
   return error;
 };
-
-const ensureDir = async dir => {
-  await fs.mkdir(dir, { recursive: true });
-};
-
-const getDerivativeBase = ({ workspaceId, jobId }) => path.join(UPLOAD_ROOT, String(workspaceId), 'derivatives', String(jobId));
-
-const toPublicUrl = ({ workspaceId, jobId, filename }) =>
-  `${env.publicBaseUrl}/uploads/${workspaceId}/derivatives/${jobId}/${filename}`;
 
 const getTargetBytes = value => {
   const bytes = Number(value);
@@ -51,6 +45,31 @@ const createCompressionError = ({ asset, targetBytes, actualBytes }) =>
     'MEDIA_COMPRESSION_TARGET_UNREACHABLE'
   );
 
+const runFfmpegToBuffer = args =>
+  new Promise((resolve, reject) => {
+    if (!ffmpegPath) {
+      reject(createHttpError('Video compression is unavailable because ffmpeg is not installed.', 500, 'MEDIA_COMPRESSION_UNAVAILABLE'));
+      return;
+    }
+
+    const child = spawn(ffmpegPath, args, { windowsHide: true });
+    const output = [];
+    let stderr = '';
+
+    child.stdout.on('data', chunk => output.push(Buffer.from(chunk)));
+    child.stderr.on('data', chunk => {
+      stderr += chunk.toString();
+    });
+    child.on('error', reject);
+    child.on('close', code => {
+      if (code === 0) {
+        resolve(Buffer.concat(output));
+        return;
+      }
+      reject(createHttpError(stderr || 'Media compression failed.', 500, 'MEDIA_COMPRESSION_FAILED'));
+    });
+  });
+
 const getImageAttempts = ({ level }) => {
   const baseQuality = Math.max(42, 82 - level * 16);
   const baseEdge = Math.max(960, 2400 - level * 480);
@@ -68,55 +87,32 @@ const getImageAttempts = ({ level }) => {
   ];
 };
 
-const compressImage = async ({ asset, outputPath, level, targetBytes }) => {
+const compressImageFromCloud = async ({ asset, level, targetBytes }) => {
   let bestBytes = 0;
+  const sourceBuffer = await getStoredObjectBuffer({ objectKey: asset.objectKey });
 
   for (const attempt of getImageAttempts({ level })) {
-    await fs.rm(outputPath, { force: true });
-    await sharp(asset.localPath)
+    const buffer = await sharp(sourceBuffer)
       .rotate()
       .resize({ width: attempt.maxEdge, height: attempt.maxEdge, fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: attempt.quality, mozjpeg: true })
-      .toFile(outputPath);
-
-    const stat = await fs.stat(outputPath);
-    bestBytes = bestBytes === 0 ? stat.size : Math.min(bestBytes, stat.size);
-    if (!targetBytes || stat.size <= targetBytes) return stat;
+      .toBuffer();
+    bestBytes = bestBytes === 0 ? buffer.length : Math.min(bestBytes, buffer.length);
+    if (!targetBytes || buffer.length <= targetBytes) return buffer;
   }
 
   throw createCompressionError({ asset, targetBytes, actualBytes: bestBytes });
 };
 
-const runFfmpeg = (args) =>
-  new Promise((resolve, reject) => {
-    if (!ffmpegPath) {
-      reject(createHttpError('Video compression is unavailable because ffmpeg is not installed.', 500, 'MEDIA_COMPRESSION_UNAVAILABLE'));
+const inspectVideoDurationSeconds = async asset => {
+  if (Number(asset.durationSeconds) > 0) return Number(asset.durationSeconds);
+  const objectUrl = await getStoredObjectUrl({ storageProvider: asset.storageProvider, objectKey: asset.objectKey });
+  return new Promise((resolve, reject) => {
+    if (!ffmpegPath || !objectUrl) {
+      reject(createHttpError('Could not read video duration before compression.', 400, 'MEDIA_DURATION_UNAVAILABLE'));
       return;
     }
-
-    const child = spawn(ffmpegPath, args, { windowsHide: true });
-    let stderr = '';
-    child.stderr.on('data', chunk => {
-      stderr += chunk.toString();
-    });
-    child.on('error', reject);
-    child.on('close', code => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(createHttpError(stderr || 'Video compression failed.', 500, 'MEDIA_COMPRESSION_FAILED'));
-    });
-  });
-
-const inspectVideoDurationSeconds = assetPath =>
-  new Promise((resolve, reject) => {
-    if (!ffmpegPath) {
-      reject(createHttpError('Video compression is unavailable because ffmpeg is not installed.', 500, 'MEDIA_COMPRESSION_UNAVAILABLE'));
-      return;
-    }
-
-    const child = spawn(ffmpegPath, ['-i', assetPath], { windowsHide: true });
+    const child = spawn(ffmpegPath, ['-i', objectUrl], { windowsHide: true });
     let stderr = '';
     child.stderr.on('data', chunk => {
       stderr += chunk.toString();
@@ -137,6 +133,7 @@ const inspectVideoDurationSeconds = assetPath =>
       resolve(duration);
     });
   });
+};
 
 const getVideoAttempts = ({ level, targetBytes, durationSeconds }) => {
   if (!targetBytes) {
@@ -162,16 +159,16 @@ const getVideoAttempts = ({ level, targetBytes, durationSeconds }) => {
   }));
 };
 
-const compressVideo = async ({ asset, outputPath, level, targetBytes }) => {
-  const durationSeconds = targetBytes ? await inspectVideoDurationSeconds(asset.localPath) : null;
+const compressVideo = async ({ asset, level, targetBytes }) => {
+  const objectUrl = await getStoredObjectUrl({ storageProvider: asset.storageProvider, objectKey: asset.objectKey });
+  const durationSeconds = targetBytes ? await inspectVideoDurationSeconds(asset) : null;
   let bestBytes = 0;
 
   for (const attempt of getVideoAttempts({ level, targetBytes, durationSeconds })) {
-    await fs.rm(outputPath, { force: true });
     const args = [
       '-y',
       '-i',
-      asset.localPath,
+      objectUrl,
       '-vf',
       `scale=${attempt.width}:-2`,
       '-c:v',
@@ -199,54 +196,78 @@ const compressVideo = async ({ asset, outputPath, level, targetBytes }) => {
       args.push('-an');
     }
 
-    args.push('-movflags', '+faststart', outputPath);
-    await runFfmpeg(args);
-
-    const stat = await fs.stat(outputPath);
-    bestBytes = bestBytes === 0 ? stat.size : Math.min(bestBytes, stat.size);
-    if (!targetBytes || stat.size <= targetBytes) return stat;
+    args.push('-f', 'mp4', '-movflags', 'frag_keyframe+empty_moov', 'pipe:1');
+    const buffer = await runFfmpegToBuffer(args);
+    bestBytes = bestBytes === 0 ? buffer.length : Math.min(bestBytes, buffer.length);
+    if (!targetBytes || buffer.length <= targetBytes) return buffer;
   }
 
   throw createCompressionError({ asset, targetBytes, actualBytes: bestBytes });
 };
 
-const getGifAttempts = () => [
-  { width: 960, fps: 15 },
-  { width: 720, fps: 12 },
-  { width: 540, fps: 10 },
-  { width: 360, fps: 8 },
-  { width: 240, fps: 6 }
-];
-
-const compressGif = async ({ asset, outputPath, targetBytes }) => {
+const compressGif = async ({ asset, targetBytes }) => {
+  const objectUrl = await getStoredObjectUrl({ storageProvider: asset.storageProvider, objectKey: asset.objectKey });
+  const attempts = [
+    { width: 960, fps: 15 },
+    { width: 720, fps: 12 },
+    { width: 540, fps: 10 },
+    { width: 360, fps: 8 },
+    { width: 240, fps: 6 }
+  ];
   let bestBytes = 0;
 
-  for (const attempt of getGifAttempts()) {
-    await fs.rm(outputPath, { force: true });
-    await runFfmpeg([
+  for (const attempt of attempts) {
+    const buffer = await runFfmpegToBuffer([
       '-y',
       '-i',
-      asset.localPath,
+      objectUrl,
       '-vf',
       `fps=${attempt.fps},scale=${attempt.width}:-1:flags=lanczos`,
       '-loop',
       '0',
-      outputPath
+      '-f',
+      'gif',
+      'pipe:1'
     ]);
-
-    const stat = await fs.stat(outputPath);
-    bestBytes = bestBytes === 0 ? stat.size : Math.min(bestBytes, stat.size);
-    if (!targetBytes || stat.size <= targetBytes) return stat;
+    bestBytes = bestBytes === 0 ? buffer.length : Math.min(bestBytes, buffer.length);
+    if (!targetBytes || buffer.length <= targetBytes) return buffer;
   }
 
   throw createCompressionError({ asset, targetBytes, actualBytes: bestBytes });
 };
 
-export const createCompressedMediaAssets = async ({ workspaceId, jobId, platform, mediaAssets = [], mediaTargets = [], level = 1 }) => {
-  const baseDir = getDerivativeBase({ workspaceId, jobId });
-  await ensureDir(baseDir);
+const storeDerivative = async ({ workspaceId, jobId, filename, mimeType, buffer }) => {
+  const objectKey = createMediaObjectKey({
+    workspaceId,
+    storageIntent: 'temporary_publish',
+    kind: 'derivatives',
+    id: jobId,
+    filename
+  });
+  return putStoredObjectFromBuffer({
+    buffer,
+    objectKey,
+    mimeType
+  });
+};
 
-  const derivativePaths = [];
+const createPreparedDerivative = ({ rawAsset, stored, originalName, mimeType, mediaType, size, targetBytes }) => ({
+  ...rawAsset,
+  publicUrl: stored.publicUrl,
+  storageProvider: stored.storageProvider,
+  objectKey: stored.objectKey || '',
+  originalName,
+  mimeType,
+  mediaType,
+  size,
+  isDerivative: true,
+  compressionTargetBytes: targetBytes,
+  createReadStream: options => createStoredObjectReadStream({ objectKey: stored.objectKey, ...options }),
+  readBuffer: options => getStoredObjectBuffer({ objectKey: stored.objectKey, ...options })
+});
+
+export const createCompressedMediaAssets = async ({ workspaceId, jobId, platform, mediaAssets = [], mediaTargets = [], level = 1 }) => {
+  const derivativeRefs = [];
   const compressedAssets = [];
 
   try {
@@ -255,81 +276,72 @@ export const createCompressedMediaAssets = async ({ workspaceId, jobId, platform
       const target = getTargetForAsset({ asset, mediaTargets });
       const targetBytes = getTargetBytes(target?.maxBytes);
 
-      if (!asset.localPath || !targetBytes || Number(asset.size || 0) <= targetBytes) {
+      if (!asset.objectKey || !targetBytes || Number(asset.size || 0) <= targetBytes) {
         compressedAssets.push(asset);
         continue;
       }
 
       if (asset.mediaType === 'image' && asset.mimeType === 'image/gif') {
         const filename = `${platform}-${asset._id || Date.now()}-${level}.gif`;
-        const outputPath = path.join(baseDir, filename);
-        derivativePaths.push(outputPath);
-        const stat = await compressGif({ asset, outputPath, targetBytes });
-        compressedAssets.push({
-          ...rawAsset,
-          localPath: outputPath,
-          publicUrl: toPublicUrl({ workspaceId, jobId, filename }),
-          originalName: `${path.parse(asset.originalName || 'image').name}-compressed.gif`,
+        const buffer = await compressGif({ asset, targetBytes });
+        const stored = await storeDerivative({ workspaceId, jobId, filename, mimeType: 'image/gif', buffer });
+        derivativeRefs.push(stored);
+        compressedAssets.push(createPreparedDerivative({
+          rawAsset,
+          stored,
+          originalName: `${String(asset.originalName || 'image').replace(/\.[^.]+$/, '')}-compressed.gif`,
           mimeType: 'image/gif',
           mediaType: 'image',
-          size: stat.size,
-          isDerivative: true,
-          compressionTargetBytes: targetBytes
-        });
+          size: buffer.length,
+          targetBytes
+        }));
         continue;
       }
 
       if (asset.mediaType === 'image') {
         const filename = `${platform}-${asset._id || Date.now()}-${level}.jpg`;
-        const outputPath = path.join(baseDir, filename);
-        derivativePaths.push(outputPath);
-        const stat = await compressImage({ asset, outputPath, level, targetBytes });
-        compressedAssets.push({
-          ...rawAsset,
-          localPath: outputPath,
-          publicUrl: toPublicUrl({ workspaceId, jobId, filename }),
-          originalName: `${path.parse(asset.originalName || 'image').name}-compressed.jpg`,
+        const buffer = await compressImageFromCloud({ asset, level, targetBytes });
+        const stored = await storeDerivative({ workspaceId, jobId, filename, mimeType: 'image/jpeg', buffer });
+        derivativeRefs.push(stored);
+        compressedAssets.push(createPreparedDerivative({
+          rawAsset,
+          stored,
+          originalName: `${String(asset.originalName || 'image').replace(/\.[^.]+$/, '')}-compressed.jpg`,
           mimeType: 'image/jpeg',
           mediaType: 'image',
-          size: stat.size,
-          isDerivative: true,
-          compressionTargetBytes: targetBytes
-        });
+          size: buffer.length,
+          targetBytes
+        }));
         continue;
       }
 
       if (asset.mediaType === 'video') {
         const filename = `${platform}-${asset._id || Date.now()}-${level}.mp4`;
-        const outputPath = path.join(baseDir, filename);
-        derivativePaths.push(outputPath);
-        const stat = await compressVideo({ asset, outputPath, level, targetBytes });
-        compressedAssets.push({
-          ...rawAsset,
-          localPath: outputPath,
-          publicUrl: toPublicUrl({ workspaceId, jobId, filename }),
-          originalName: `${path.parse(asset.originalName || 'video').name}-compressed.mp4`,
+        const buffer = await compressVideo({ asset, level, targetBytes });
+        const stored = await storeDerivative({ workspaceId, jobId, filename, mimeType: 'video/mp4', buffer });
+        derivativeRefs.push(stored);
+        compressedAssets.push(createPreparedDerivative({
+          rawAsset,
+          stored,
+          originalName: `${String(asset.originalName || 'video').replace(/\.[^.]+$/, '')}-compressed.mp4`,
           mimeType: 'video/mp4',
           mediaType: 'video',
-          size: stat.size,
-          isDerivative: true,
-          compressionTargetBytes: targetBytes
-        });
+          size: buffer.length,
+          targetBytes
+        }));
         continue;
       }
 
       compressedAssets.push(asset);
     }
   } catch (error) {
-    await Promise.allSettled(derivativePaths.map(filePath => fs.rm(filePath, { force: true })));
-    await fs.rm(baseDir, { recursive: true, force: true });
+    await deleteDerivativeFiles(derivativeRefs);
     throw error;
   }
 
-  return { mediaAssets: compressedAssets, derivativePaths };
+  return { mediaAssets: compressedAssets, derivativePaths: derivativeRefs };
 };
 
-export const deleteDerivativeFiles = async (paths = []) => {
-  await Promise.allSettled(paths.map(filePath => fs.rm(filePath, { force: true })));
-  const dirs = [...new Set(paths.map(filePath => path.dirname(filePath)))];
-  await Promise.allSettled(dirs.map(dir => fs.rm(dir, { recursive: true, force: true })));
+export const deleteDerivativeFiles = async (refs = []) => {
+  await Promise.allSettled(refs.map(ref => deleteStoredObject(ref)));
 };

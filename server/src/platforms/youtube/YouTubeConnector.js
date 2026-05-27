@@ -1,6 +1,3 @@
-import { createReadStream } from 'fs';
-import fs from 'fs/promises';
-
 import env from '../../config/env.js';
 import { inspectVideoMetadata } from '../../services/mediaMetadata.service.js';
 import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
@@ -278,7 +275,7 @@ export default class YouTubeConnector extends BasePlatformConnector {
     };
     const metadata = storedMetadata.width && storedMetadata.height && storedMetadata.durationSeconds
       ? storedMetadata
-      : await inspectVideoMetadata(video.localPath);
+      : await inspectVideoMetadata(video.publicUrl);
 
     if (!metadata.width || !metadata.height || !metadata.durationSeconds) {
       return connectorResult({
@@ -418,7 +415,7 @@ export default class YouTubeConnector extends BasePlatformConnector {
             'Content-Type': video.mimeType || 'video/mp4',
             'Content-Range': `bytes ${offset}-${lastByte}/${totalBytes}`
           },
-          body: createReadStream(video.localPath, { start: offset, end: lastByte }),
+          body: await video.createReadStream({ start: offset, end: lastByte }),
           duplex: 'half',
           signal
         });
@@ -462,12 +459,11 @@ export default class YouTubeConnector extends BasePlatformConnector {
     const targetValidation = await this.validateTargetMedia(payload, connection);
     if (!targetValidation.ok) return targetValidation;
     const video = payload.mediaAssets.find(asset => asset.mediaType === 'video');
-    if (!video?.localPath) {
-      return connectorResult({ code: 'VALIDATION_FAILED', message: 'YouTube upload requires the stored local video file.' });
+    if (!video?.objectKey || typeof video.createReadStream !== 'function') {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'YouTube upload requires verified cloud media.' });
     }
     const token = this.getAccessToken(connection);
-    const fileStat = await fs.stat(video.localPath);
-    const totalBytes = fileStat.size;
+    const totalBytes = Number(video.size || 0);
     const privacyStatus = payload.visibility === 'public' ? 'public' : 'private';
     const metadata = {
       snippet: {

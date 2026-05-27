@@ -23,6 +23,8 @@ const parseClientUrls = () => {
 
 const clientUrls = parseClientUrls();
 
+const parseBoolean = value => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+
 const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT || 5000),
@@ -33,6 +35,20 @@ const env = {
   clientUrls,
   publicBaseUrl: process.env.PUBLIC_BASE_URL || 'http://localhost:5000',
   mediaUploadLimitBytes: process.env.MEDIA_UPLOAD_LIMIT_BYTES ? Number(process.env.MEDIA_UPLOAD_LIMIT_BYTES) : undefined,
+  mediaStorage: {
+    provider: 's3',
+    signedUrlExpiresSeconds: Math.max(60, Number(process.env.MEDIA_SIGNED_URL_EXPIRES_SECONDS || 60 * 60 * 6)),
+    s3: {
+      endpoint: process.env.MEDIA_S3_ENDPOINT || process.env.S3_ENDPOINT || process.env.R2_ENDPOINT || process.env.CLOUDFLARE_R2_ENDPOINT || '',
+      region: process.env.MEDIA_S3_REGION || process.env.S3_REGION || process.env.R2_REGION || process.env.CLOUDFLARE_R2_REGION || 'auto',
+      bucket: process.env.MEDIA_S3_BUCKET || process.env.S3_BUCKET || process.env.R2_BUCKET || process.env.CLOUDFLARE_R2_BUCKET || '',
+      accessKeyId: process.env.MEDIA_S3_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY_ID || process.env.R2_ACCESS_KEY_ID || process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '',
+      secretAccessKey: process.env.MEDIA_S3_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY || process.env.R2_SECRET_ACCESS_KEY || process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '',
+      publicBaseUrl: (process.env.MEDIA_S3_PUBLIC_BASE_URL || process.env.S3_PUBLIC_BASE_URL || process.env.R2_PUBLIC_BASE_URL || process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
+      keyPrefix: (process.env.MEDIA_S3_KEY_PREFIX || process.env.S3_KEY_PREFIX || process.env.R2_KEY_PREFIX || process.env.CLOUDFLARE_R2_KEY_PREFIX || '').replace(/^\/+|\/+$/g, ''),
+      forcePathStyle: parseBoolean(process.env.MEDIA_S3_FORCE_PATH_STYLE || process.env.S3_FORCE_PATH_STYLE || process.env.R2_FORCE_PATH_STYLE || process.env.CLOUDFLARE_R2_FORCE_PATH_STYLE || 'true')
+    }
+  },
   encryptionKey: process.env.ENCRYPTION_KEY || '',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
   geminiModel: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
@@ -107,6 +123,11 @@ export const validateEnv = () => {
 
   if (!env.mongoUri) missing.push('MONGO_URI');
   if (!env.jwtSecret) missing.push('JWT_SECRET');
+  if (env.mediaStorage.provider === 's3') {
+    if (!env.mediaStorage.s3.bucket) missing.push('MEDIA_S3_BUCKET');
+    if (!env.mediaStorage.s3.accessKeyId) missing.push('MEDIA_S3_ACCESS_KEY_ID');
+    if (!env.mediaStorage.s3.secretAccessKey) missing.push('MEDIA_S3_SECRET_ACCESS_KEY');
+  }
 
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);

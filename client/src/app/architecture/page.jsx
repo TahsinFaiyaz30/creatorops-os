@@ -16,6 +16,7 @@ const blocks = [
   ['Format rules', 'Platform limits and readiness checklist'],
   ['Creator review service', 'Final review queue with comments and audit events'],
   ['Publishing worker', 'Queued real connector jobs that block when credentials/scopes are missing'],
+  ['R2/S3 media storage', 'Resumable multipart uploads with SHA-256 verification and temporary cleanup'],
   ['Campaign tracking', 'Stored counts by status, platform, connection, publish job, and synced metrics'],
   ['Socket.IO', 'workflow:event plus publishing/social realtime updates']
 ];
@@ -76,7 +77,6 @@ export default function ArchitecturePage() {
               <li>Move worker jobs to Redis/BullMQ.</li>
               <li>Complete app review and production scopes per platform.</li>
               <li>Add deeper analytics ingestion and performance clustering.</li>
-              <li>Move media from local uploads to object storage/CDN.</li>
               <li>Split services only when operational load requires it.</li>
             </ul>
           </div>

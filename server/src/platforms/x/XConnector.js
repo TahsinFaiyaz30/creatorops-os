@@ -1,5 +1,3 @@
-import fs from 'fs/promises';
-
 import env from '../../config/env.js';
 import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
 
@@ -315,13 +313,13 @@ export default class XConnector extends BasePlatformConnector {
   }
 
   async uploadImageMedia(asset, token, payload) {
-    if (!asset.localPath) {
-      return connectorResult({ code: 'VALIDATION_FAILED', message: 'X media upload requires the stored local image file.' });
+    if (!asset.objectKey || typeof asset.readBuffer !== 'function') {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'X media upload requires verified cloud media.' });
     }
 
     const controlBeforeRead = await this.checkPublishControl(payload);
     if (controlBeforeRead) return controlBeforeRead;
-    const fileBuffer = await fs.readFile(asset.localPath);
+    const fileBuffer = await asset.readBuffer();
     const controlBeforeUpload = await this.checkPublishControl(payload);
     if (controlBeforeUpload) return controlBeforeUpload;
     const mediaCategory = asset.mimeType === 'image/gif' ? 'tweet_gif' : 'tweet_image';

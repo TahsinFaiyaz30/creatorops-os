@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-import { MEDIA_STORAGE_INTENTS, MEDIA_TYPES } from './MediaAsset.js';
+import { MEDIA_STORAGE_INTENTS, MEDIA_STORAGE_PROVIDERS, MEDIA_TYPES } from './MediaAsset.js';
 
 const { Schema } = mongoose;
 
@@ -56,9 +56,33 @@ const mediaUploadSessionSchema = new Schema(
       default: 0,
       min: 0
     },
-    localPath: {
+    storageProvider: {
       type: String,
-      required: true,
+      enum: MEDIA_STORAGE_PROVIDERS,
+      default: 's3',
+      index: true
+    },
+    objectKey: {
+      type: String,
+      default: '',
+      select: false
+    },
+    multipartUploadId: {
+      type: String,
+      default: '',
+      select: false
+    },
+    multipartParts: {
+      type: [
+        {
+          partNumber: { type: Number, required: true },
+          etag: { type: String, default: '' },
+          size: { type: Number, required: true },
+          start: { type: Number, required: true },
+          end: { type: Number, required: true }
+        }
+      ],
+      default: [],
       select: false
     },
     publicUrl: {
@@ -107,13 +131,17 @@ const mediaUploadSessionSchema = new Schema(
     timestamps: true,
     toJSON: {
       transform: (_doc, ret) => {
-        delete ret.localPath;
+        delete ret.objectKey;
+        delete ret.multipartUploadId;
+        delete ret.multipartParts;
         return ret;
       }
     },
     toObject: {
       transform: (_doc, ret) => {
-        delete ret.localPath;
+        delete ret.objectKey;
+        delete ret.multipartUploadId;
+        delete ret.multipartParts;
         return ret;
       }
     }

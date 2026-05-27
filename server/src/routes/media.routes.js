@@ -17,8 +17,9 @@ import { authenticate } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
+const minMultipartPartBytes = 5 * 1024 * 1024;
 const resumableChunkLimitBytes = Number.isFinite(env.mediaUploadLimitBytes)
-  ? Math.min(env.mediaUploadLimitBytes, 16 * 1024 * 1024)
+  ? Math.max(minMultipartPartBytes, Math.min(env.mediaUploadLimitBytes, 64 * 1024 * 1024))
   : 16 * 1024 * 1024;
 
 router.use(authenticate);

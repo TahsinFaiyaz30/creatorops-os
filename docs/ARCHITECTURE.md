@@ -15,7 +15,7 @@ CreatorOps OS is a modular monolith. That choice is intentional: the hackathon M
 - Platform connector registry
 - OAuth state service
 - AES-256-GCM encryption service
-- Media upload service
+- Media upload service with R2/S3 multipart storage
 - Publish job service and worker
 - Social sync service
 - Brand circular/application service
@@ -38,6 +38,15 @@ Content creator
   -> upload/select media
   -> validate publish payload
   -> queue publish job
+
+Media storage
+  -> local preview in browser until publish/schedule
+  -> /api/media/resumable/* session
+  -> Cloudflare R2/S3 multipart parts
+  -> stream stored object for SHA-256 verification
+  -> process/provider upload from cloud object streams or signed URLs
+  -> temporary derivatives stored in cloud and deleted after use
+  -> MediaAsset metadata only after verification
 
 Admin
   -> inspect Admin Panel control overview
@@ -105,7 +114,6 @@ Common codes:
 ## Scalability Strategy
 
 - Replace in-process worker with Redis/BullMQ.
-- Move local uploads to object storage/CDN.
 - Use workspace-specific Socket.IO rooms.
 - Add provider webhooks where platforms support them.
 - Add a metrics ingestion pipeline.

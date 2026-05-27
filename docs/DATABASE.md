@@ -69,11 +69,11 @@ Platform-specific limits and content requirements: caption length, hashtag count
 
 ### MediaAsset
 
-Original uploaded image/video metadata. Stores local path privately, public URL, MIME type, size, SHA-256, media type, and crop preview metadata. Original files are not recompressed.
+Original uploaded image/video metadata. Stores storage provider, private object key, refreshed public/signed URL, MIME type, size, SHA-256, media type, and crop preview metadata. Original files are not recompressed, and large bytes live in object storage rather than MongoDB.
 
 ### MediaUploadSession
 
-Generic resumable client-to-CreatorOps upload session. Tracks owner, upload key, original file metadata, expected SHA-256, received byte count, partial local path, pause/resume/cancel status, failure reason, and the finalized `MediaAsset`. A `MediaAsset` is created only after the assembled file matches the expected SHA-256.
+Generic resumable client-to-CreatorOps upload session. Tracks owner, upload key, original file metadata, expected SHA-256, received byte count, storage provider, object key, multipart upload id, uploaded part ETags/ranges, pause/resume/cancel status, failure reason, and the finalized `MediaAsset`. In R2/S3 mode each client chunk is a multipart object-storage part. A `MediaAsset` is created only after the completed object matches the expected SHA-256; corrupted objects are deleted immediately.
 
 ### PublishJob
 

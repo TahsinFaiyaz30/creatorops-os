@@ -9,6 +9,7 @@ import { BRAND_REP_ROLE, CONTENT_CREATOR_ROLE, roleMatches } from '../constants/
 import { getConnector } from '../platforms/connectorRegistry.js';
 import { emitRealtimeEvent } from '../sockets/socket.js';
 import { createWorkflowEvent } from './event.service.js';
+import { hydrateMediaAssetPublicUrls } from './media.service.js';
 import { refreshStoredConnectionIfNeeded } from './platformConnection.service.js';
 
 const createHttpError = (message, statusCode, code = '') => {
@@ -174,13 +175,16 @@ const buildUnifiedPostGroup = ({ groupId, jobs = [], posts = [], metricMap = new
   };
 };
 
-export const listPublishedPosts = async ({ user }) =>
-  PublishedPost.find({ workspaceId: user.workspaceId })
+export const listPublishedPosts = async ({ user }) => {
+  const posts = await PublishedPost.find({ workspaceId: user.workspaceId })
     .sort({ publishedAt: -1, createdAt: -1 })
     .populate('platformConnectionId', 'platform accountName accountHandle accountType status')
-    .populate('mediaAssetIds')
+    .populate({ path: 'mediaAssetIds', select: '+objectKey' })
     .populate('variantId', 'platform caption status')
     .populate('contentItemId', 'title rawIdea status');
+  await Promise.all(posts.map(post => hydrateMediaAssetPublicUrls(post.mediaAssetIds)));
+  return posts;
+};
 
 const getGroupQuery = groupId => {
   const conditions = [{ postGroupId: groupId }];
@@ -194,7 +198,7 @@ const getJobsForGroups = async ({ user }) =>
   PublishJob.find({ workspaceId: user.workspaceId })
     .sort({ createdAt: -1 })
     .populate('platformConnectionId', 'platform accountName accountHandle accountType status')
-    .populate('mediaAssetIds')
+    .populate({ path: 'mediaAssetIds', select: '+objectKey' })
     .populate('variantId', 'platform caption status')
     .populate('contentItemId', 'title rawIdea status');
 
@@ -202,12 +206,16 @@ const getPostsForGroups = async ({ user }) =>
   PublishedPost.find({ workspaceId: user.workspaceId })
     .sort({ publishedAt: -1, createdAt: -1 })
     .populate('platformConnectionId', 'platform accountName accountHandle accountType status')
-    .populate('mediaAssetIds')
+    .populate({ path: 'mediaAssetIds', select: '+objectKey' })
     .populate('variantId', 'platform caption status')
     .populate('contentItemId', 'title rawIdea status');
 
 export const listUnifiedPostGroups = async ({ user }) => {
   const [jobs, posts] = await Promise.all([getJobsForGroups({ user }), getPostsForGroups({ user })]);
+  await Promise.all([
+    ...jobs.map(job => hydrateMediaAssetPublicUrls(job.mediaAssetIds)),
+    ...posts.map(post => hydrateMediaAssetPublicUrls(post.mediaAssetIds))
+  ]);
   const metricMap = await getLatestMetricMap({ workspaceId: user.workspaceId, postIds: posts.map(post => post._id) });
   const groupIds = unique([...jobs.map(getGroupIdForJob), ...posts.map(getGroupIdForPost)]);
 
@@ -229,13 +237,13 @@ export const getUnifiedPostGroup = async ({ user, groupId, platform = '' }) => {
     PublishJob.find({ workspaceId: user.workspaceId, ...groupQuery })
       .sort({ createdAt: 1 })
       .populate('platformConnectionId', 'platform accountName accountHandle accountType status')
-      .populate('mediaAssetIds')
+      .populate({ path: 'mediaAssetIds', select: '+objectKey' })
       .populate('variantId', 'platform caption status')
       .populate('contentItemId', 'title rawIdea status'),
     PublishedPost.find({ workspaceId: user.workspaceId, ...groupQuery })
       .sort({ publishedAt: 1, createdAt: 1 })
       .populate('platformConnectionId', 'platform accountName accountHandle accountType status')
-      .populate('mediaAssetIds')
+      .populate({ path: 'mediaAssetIds', select: '+objectKey' })
       .populate('variantId', 'platform caption status')
       .populate('contentItemId', 'title rawIdea status')
   ]);
@@ -246,6 +254,10 @@ export const getUnifiedPostGroup = async ({ user, groupId, platform = '' }) => {
 
   const filteredPosts = platform ? posts.filter(post => post.platform === platform) : posts;
   const filteredJobs = platform ? jobs.filter(job => job.platform === platform) : jobs;
+  await Promise.all([
+    ...filteredJobs.map(job => hydrateMediaAssetPublicUrls(job.mediaAssetIds)),
+    ...filteredPosts.map(post => hydrateMediaAssetPublicUrls(post.mediaAssetIds))
+  ]);
   const postIds = filteredPosts.map(post => post._id);
   const [metricMap, comments] = await Promise.all([
     getLatestMetricMap({ workspaceId: user.workspaceId, postIds }),
@@ -336,10 +348,11 @@ export const syncUnifiedPostGroup = async ({ user, groupId }) => {
 export const getPublishedPost = async ({ user, postId }) => {
   const post = await PublishedPost.findOne({ _id: postId, workspaceId: user.workspaceId })
     .populate('platformConnectionId', 'platform accountName accountHandle accountType status')
-    .populate('mediaAssetIds')
+    .populate({ path: 'mediaAssetIds', select: '+objectKey' })
     .populate('variantId', 'platform caption status')
     .populate('contentItemId', 'title rawIdea status');
   if (!post) throw createHttpError('Published post not found.', 404);
+  await hydrateMediaAssetPublicUrls(post.mediaAssetIds);
   return post;
 };
 
