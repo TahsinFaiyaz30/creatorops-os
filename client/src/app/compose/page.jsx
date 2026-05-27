@@ -172,9 +172,10 @@ export default function ComposePage() {
   const [uploadQueue, setUploadQueue] = useState([]);
   const [pendingUploadNotice, setPendingUploadNotice] = useState('');
   const [isUploadPaused, setIsUploadPaused] = useState(false);
-  const uploadControlRef = useRef({ paused: false, cancelled: false, abortController: null, currentSessionId: '' });
+  const uploadControlRef = useRef({ paused: false, cancelled: false, abortController: null, currentSessionId: '', stopOnPause: true });
   const currentPendingRef = useRef(null);
   const retryTimerRef = useRef(null);
+  const resumeAfterPauseRef = useRef(false);
 
   const load = async () => {
     const [connectionsResult, settingsResult] = await Promise.allSettled([
@@ -418,6 +419,17 @@ export default function ComposePage() {
     return `Job ${publishJob.status}.`;
   };
 
+  const upsertTargetResult = (results, nextResult) => {
+    const existingIndex = results.findIndex(result => result.targetKey === nextResult.targetKey);
+    if (existingIndex === -1) return [...results, nextResult];
+    const nextResults = [...results];
+    nextResults[existingIndex] = {
+      ...results[existingIndex],
+      ...nextResult
+    };
+    return nextResults;
+  };
+
   const deleteUploadedMedia = async mediaAssetIds => {
     await Promise.allSettled(mediaAssetIds.map(mediaAssetId => api.delete(`/api/media/${mediaAssetId}`)));
   };
@@ -430,6 +442,10 @@ export default function ComposePage() {
   };
 
   const isShaMismatchUploadError = error => String(error?.message || '').toLowerCase().includes('sha-256');
+
+  const isUploadPausedError = error => error?.code === 'UPLOAD_PAUSED' || String(error?.message || '').toLowerCase() === 'upload paused.';
+
+  const isMissingUploadFileError = error => error?.code === 'UPLOAD_FILE_UNAVAILABLE';
 
   const updateUploadQueueFromPending = pending => {
     setUploadQueue((pending.mediaItems || []).map(item => ({
@@ -568,7 +584,10 @@ export default function ComposePage() {
 
       const file = await getUploadFile(item.uploadKey);
       if (!file) {
-        throw new Error(`${item.originalName} is no longer available locally. Select the file again to continue.`);
+        const error = new Error(`${item.originalName} is no longer available in this browser. Select the file again to continue.`);
+        error.code = 'UPLOAD_FILE_UNAVAILABLE';
+        error.uploadItem = item;
+        throw error;
       }
 
       item.status = 'uploading';
@@ -618,7 +637,7 @@ export default function ComposePage() {
   };
 
   const createPublishJobsForPending = async ({ pending, mediaAssetIds, uploadedMediaIds }) => {
-    const results = [...(pending.results || [])];
+    let results = [...(pending.results || [])];
     const completedKeys = new Set(results.filter(result => result.jobId).map(result => result.targetKey));
 
     for (const connection of pending.selectedConnections) {
@@ -642,7 +661,7 @@ export default function ComposePage() {
           scheduledAt: new Date(pending.scheduledAt).toISOString()
         });
         const publishJob = payload.data.publishJob;
-        results.push({
+        results = upsertTargetResult(results, {
           ok: !['blocked', 'failed'].includes(publishJob?.status),
           targetKey: connection.targetKey,
           platform: connection.platform,
@@ -651,8 +670,9 @@ export default function ComposePage() {
           jobId: publishJob?._id,
           detail: describePublishJob(publishJob)
         });
+        pending.results = results;
       } catch (err) {
-        results.push({
+        results = upsertTargetResult(results, {
           ok: false,
           targetKey: connection.targetKey,
           platform: connection.platform,
@@ -660,14 +680,14 @@ export default function ComposePage() {
           status: 'blocked',
           detail: err.message
         });
+        pending.results = results;
       }
 
-      pending.results = results;
       await persistPending(pending);
     }
 
     const acceptedCount = results.filter(result => result.jobId).length;
-    if (acceptedCount === 0) {
+    if (acceptedCount === 0 && (pending.selectedConnections || []).length === 0) {
       await deleteUploadedMedia(uploadedMediaIds);
     }
 
@@ -730,7 +750,7 @@ export default function ComposePage() {
     }
 
     pending.pauseReason = '';
-    uploadControlRef.current = { paused: false, cancelled: false, abortController: null, currentSessionId: '' };
+    uploadControlRef.current = { paused: false, cancelled: false, abortController: null, currentSessionId: '', stopOnPause: true };
     setIsUploadPaused(false);
     setBusy(pending.mode);
     setMessage('Uploading media to CreatorOps with resumable verification...');
@@ -739,10 +759,21 @@ export default function ComposePage() {
     try {
       const { mediaAssetIds, uploadedMediaIds } = await uploadMediaForPendingPublish(pending);
       const results = await createPublishJobsForPending({ pending, mediaAssetIds, uploadedMediaIds });
+      const acceptedTargetCount = new Set(results.filter(result => result.jobId).map(result => result.targetKey)).size;
+      const targetCount = (pending.selectedConnections || []).length;
+      setPublishResults(results);
+
+      if (targetCount > 0 && acceptedTargetCount < targetCount) {
+        await persistPending(pending).catch(() => {});
+        const missingCount = targetCount - acceptedTargetCount;
+        setPendingUploadNotice(`${missingCount} platform target${missingCount === 1 ? '' : 's'} still need a publish job. Continue from Dispatch.`);
+        setMessage(`${acceptedTargetCount}/${targetCount} platform request${targetCount === 1 ? '' : 's'} accepted. The rest stayed in Dispatch for retry.`);
+        return;
+      }
+
       await cleanupPendingPublish({ pending, deleteUploaded: false });
       setUploadQueue([]);
       setPendingUploadNotice('');
-      setPublishResults(results);
       const successCount = results.filter(result => result.ok).length;
       const action = pending.mode === 'now' ? 'publish' : 'schedule';
       setMessage(`${successCount}/${results.length} ${action} request${results.length === 1 ? '' : 's'} accepted. See per-account results below.`);
@@ -752,6 +783,20 @@ export default function ComposePage() {
         setUploadQueue([]);
         setPendingUploadNotice('');
         setMessage('Upload cancelled. Temporary uploaded media was removed.');
+      } else if (isUploadPausedError(error) || uploadControlRef.current.paused) {
+        pending.pauseReason = 'user';
+        pending.mediaItems = (pending.mediaItems || []).map(item =>
+          item.mediaAssetId || item.status === 'completed'
+            ? item
+            : {
+                ...item,
+                status: 'paused'
+              }
+        );
+        await persistPending(pending).catch(() => {});
+        setIsUploadPaused(true);
+        setPendingUploadNotice('Media upload is paused. Resume from any upload surface when ready.');
+        setMessage('Media upload paused.');
       } else if (isShaMismatchUploadError(error) && error.uploadItem) {
         error.uploadItem.sessionId = '';
         error.uploadItem.bytesUploaded = 0;
@@ -772,6 +817,13 @@ export default function ComposePage() {
           setPendingUploadNotice('Upload stopped after corruption was detected. Resume to retry.');
           setMessage('Upload corruption detected. The corrupted server copy was deleted.');
         }
+      } else if (isMissingUploadFileError(error) && error.uploadItem) {
+        error.uploadItem.status = 'failed';
+        pending.pauseReason = 'user';
+        await persistPending(pending).catch(() => {});
+        setIsUploadPaused(true);
+        setPendingUploadNotice('The saved browser copy is unavailable. Select the media again before retrying.');
+        setMessage(error.message);
       } else {
         markPendingInterrupted(pending);
         await persistPending(pending).catch(() => {});
@@ -785,6 +837,13 @@ export default function ComposePage() {
       }
     } finally {
       setBusy('');
+      if (resumeAfterPauseRef.current && currentPendingRef.current?.id === pending.id && !uploadControlRef.current.cancelled) {
+        resumeAfterPauseRef.current = false;
+        window.setTimeout(() => {
+          const latestPending = currentPendingRef.current;
+          if (latestPending) continuePendingPublish(latestPending, { force: true }).catch(() => {});
+        }, 0);
+      }
     }
   };
 
@@ -831,7 +890,7 @@ export default function ComposePage() {
   };
 
   const resumeClientUpload = async () => {
-    uploadControlRef.current.paused = false;
+    uploadControlRef.current = { paused: false, cancelled: false, abortController: null, currentSessionId: '', stopOnPause: true };
     setIsUploadPaused(false);
     setPendingUploadNotice('');
     const pending = currentPendingRef.current;
@@ -846,7 +905,10 @@ export default function ComposePage() {
             }
       );
       await persistPending(pending).catch(() => {});
-      if (!busy) {
+      if (busy) {
+        resumeAfterPauseRef.current = true;
+        setPendingUploadNotice('Resume queued. Upload will continue after the pause finishes.');
+      } else {
         await continuePendingPublish(pending, { force: true });
       }
     }

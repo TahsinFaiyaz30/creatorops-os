@@ -54,8 +54,6 @@ export default function VersionHistory({ contentItemId }) {
                   {version.snapshot?.platform && <span>Platform: {version.snapshot.platform}</span>}
                   <span>Status: {version.snapshot?.status || version.snapshot?.variantStatus || version.snapshot?.contentItemStatus || 'n/a'}</span>
                   {version.snapshot?.approvalStatus && <span>Review: {version.snapshot.approvalStatus}</span>}
-                  {version.snapshot?.scheduleJobStatus && <span>Schedule: {version.snapshot.scheduleJobStatus}</span>}
-                  {version.snapshot?.platformAccountSnapshot?.accountHandle && <span>Account: {version.snapshot.platformAccountSnapshot.accountHandle}</span>}
                   {version.snapshot?.accountSnapshot?.accountHandle && <span>Account: {version.snapshot.accountSnapshot.accountHandle}</span>}
                   {version.snapshot?.providerPostUrl && <span>Provider URL: {version.snapshot.providerPostUrl}</span>}
                   {version.snapshot?.resultMessage && <span>Publish result: {version.snapshot.resultMessage}</span>}

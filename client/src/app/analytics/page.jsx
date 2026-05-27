@@ -293,7 +293,7 @@ export default function AnalyticsPage() {
                 </div>
               </button>
             ))}
-            {groups.length === 0 && <p className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 text-sm text-[var(--muted)]">No post groups yet. Publish from Compose first.</p>}
+            {groups.length === 0 && <p className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 text-sm text-[var(--muted)]">No post groups yet. Publish a post first.</p>}
           </div>
 
           <div className="space-y-4">

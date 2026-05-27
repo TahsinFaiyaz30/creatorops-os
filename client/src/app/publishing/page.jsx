@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   Activity,
@@ -33,9 +33,11 @@ import {
   cancelUploadSession,
   deletePendingPublish,
   deleteUploadFile,
+  getUploadFile,
   getPendingPublishes,
   pauseUploadSession,
-  putPendingPublish
+  putPendingPublish,
+  uploadFileResumable
 } from '../../lib/resumableUploads';
 
 const ACTIVE_STATUSES = ['queued', 'publishing', 'paused'];
@@ -229,8 +231,8 @@ const getPendingProgress = pending => {
   const hasCreatedJobs = (pending.results || []).some(result => result.jobId);
 
   let status = 'waiting_upload';
-  if (pending.pauseReason === 'user' || statuses.has('paused')) status = 'paused_upload';
-  else if (statuses.has('failed')) status = 'failed_upload';
+  if (statuses.has('failed')) status = 'failed_upload';
+  else if (pending.pauseReason === 'user' || statuses.has('paused')) status = 'paused_upload';
   else if (statuses.has('uploading')) status = 'uploading_client';
   else if (statuses.has('interrupted')) status = 'interrupted_upload';
   else if (items.length > 0 && completedCount === items.length) status = hasCreatedJobs ? 'verifying_upload' : 'verifying_upload';
@@ -331,6 +333,57 @@ const getPlatformDeleteSupport = job => {
 const buildInitialDeleteModes = jobs =>
   Object.fromEntries(jobs.map(job => [String(job._id), 'local']));
 
+const getConnectionTargetKey = connection =>
+  connection.targetKey || `${connection.platformConnectionId || connection._id || 'connection'}:${connection.platform || 'platform'}`;
+
+const describePublishJob = publishJob => {
+  if (!publishJob) return 'No publish job returned.';
+  if (publishJob.status === 'published') {
+    return publishJob.providerPostUrl ? `Published: ${publishJob.providerPostUrl}` : 'Published through the connected platform API.';
+  }
+  if (publishJob.status === 'blocked' || publishJob.status === 'failed') {
+    return publishJob.errorMessage || `Job ${publishJob.status}.`;
+  }
+  return `Job ${publishJob.status}.`;
+};
+
+const markPendingInterrupted = pending => {
+  pending.pauseReason = '';
+  pending.mediaItems = pendingMediaItems(pending).map(item =>
+    item.mediaAssetId || item.status === 'completed'
+      ? item
+      : {
+          ...item,
+          status: item.sessionId ? 'interrupted' : 'waiting'
+        }
+  );
+};
+
+const isShaMismatchUploadError = error => String(error?.message || '').toLowerCase().includes('sha-256');
+
+const isUploadPausedError = error => error?.code === 'UPLOAD_PAUSED' || String(error?.message || '').toLowerCase() === 'upload paused.';
+
+const isMissingUploadFileError = error => error?.code === 'UPLOAD_FILE_UNAVAILABLE';
+
+const shouldAutoResumePending = pending => {
+  if (!pending || pending.pauseReason === 'user') return false;
+  const needsReview = (pending.results || []).some(result => !result.jobId && (result.ok === false || ['blocked', 'failed'].includes(result.status)));
+  if (needsReview) return false;
+  const progress = getPendingProgress(pending);
+  return ['waiting_upload', 'uploading_client', 'interrupted_upload', 'verifying_upload'].includes(progress.status);
+};
+
+const upsertTargetResult = (results, nextResult) => {
+  const existingIndex = results.findIndex(result => result.targetKey === nextResult.targetKey);
+  if (existingIndex === -1) return [...results, nextResult];
+  const nextResults = [...results];
+  nextResults[existingIndex] = {
+    ...results[existingIndex],
+    ...nextResult
+  };
+  return nextResults;
+};
+
 export default function PublishingPage() {
   const [user, setUser] = useState(null);
   const [jobs, setJobs] = useState([]);
@@ -344,6 +397,44 @@ export default function PublishingPage() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [liveTransport, setLiveTransport] = useState('connecting');
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const uploadControlsRef = useRef(new Map());
+  const autoResumeIdsRef = useRef(new Set());
+
+  const sortPendingUploads = items =>
+    [...items].sort((a, b) => getTimestamp(b.updatedAt || b.createdAt) - getTimestamp(a.updatedAt || a.createdAt));
+
+  const upsertPendingUploadState = useCallback(pending => {
+    setPendingUploads(current => {
+      const next = current.filter(item => item.id !== pending.id);
+      next.push({ ...pending });
+      return sortPendingUploads(next);
+    });
+  }, []);
+
+  const removePendingUploadState = useCallback(pendingId => {
+    setPendingUploads(current => current.filter(item => item.id !== pendingId));
+  }, []);
+
+  const persistPendingUpload = useCallback(async pending => {
+    await putPendingPublish(pending);
+    upsertPendingUploadState(pending);
+  }, [upsertPendingUploadState]);
+
+  const getUploadControlRef = useCallback(pendingId => {
+    const key = String(pendingId);
+    if (!uploadControlsRef.current.has(key)) {
+      uploadControlsRef.current.set(key, {
+        current: {
+          paused: false,
+          cancelled: false,
+          abortController: null,
+          currentSessionId: '',
+          stopOnPause: true
+        }
+      });
+    }
+    return uploadControlsRef.current.get(key);
+  }, []);
 
   const loadServerState = useCallback(async () => {
     const [jobsPayload, settingsPayload] = await Promise.all([
@@ -514,6 +605,12 @@ export default function PublishingPage() {
 
   const cancelPendingUpload = async pending => {
     const progress = getPendingProgress(pending);
+    const controlRef = uploadControlsRef.current.get(String(pending.id));
+    if (controlRef?.current) {
+      controlRef.current.cancelled = true;
+      controlRef.current.paused = false;
+      controlRef.current.abortController?.abort();
+    }
     setBusyKey(`cancel-upload:${pending.id}`);
     setMessage('');
     try {
@@ -528,6 +625,7 @@ export default function PublishingPage() {
         await Promise.allSettled(items.map(item => item.mediaAssetId).filter(Boolean).map(mediaAssetId => api.delete(`/api/media/${mediaAssetId}`)));
       }
       await deletePendingPublish(pending.id);
+      removePendingUploadState(pending.id);
       await loadPendingUploads();
       setMessage(progress.hasCreatedJobs ? 'Upload intake record cleared. Created platform jobs were kept.' : 'Upload cancelled and temporary cloud media was removed.');
     } catch (err) {
@@ -538,6 +636,11 @@ export default function PublishingPage() {
   };
 
   const pausePendingUpload = async pending => {
+    const controlRef = uploadControlsRef.current.get(String(pending.id));
+    if (controlRef?.current) {
+      controlRef.current.paused = true;
+      controlRef.current.abortController?.abort();
+    }
     setBusyKey(`pause-upload:${pending.id}`);
     setMessage('');
     try {
@@ -560,13 +663,255 @@ export default function PublishingPage() {
         pauseReason: 'user'
       });
       await loadPendingUploads();
-      setMessage('Cloud upload intake paused. It will not resume automatically until opened from Compose.');
+      setMessage('Cloud upload intake paused. Resume it from Dispatch when ready.');
     } catch (err) {
       setMessage(err.message);
     } finally {
       setBusyKey('');
     }
   };
+
+  const uploadMediaForPending = async ({ pending, controlRef }) => {
+    const mediaAssetIds = [];
+
+    for (const item of pendingMediaItems(pending)) {
+      if (item.mediaAssetId) {
+        mediaAssetIds.push(item.mediaAssetId);
+        continue;
+      }
+
+      const file = await getUploadFile(item.uploadKey);
+      if (!file) {
+        const error = new Error(`${item.originalName} is no longer available in this browser. Select the file again to continue.`);
+        error.code = 'UPLOAD_FILE_UNAVAILABLE';
+        error.uploadItem = item;
+        throw error;
+      }
+
+      item.status = 'uploading';
+      await persistPendingUpload(pending);
+
+      let mediaAsset;
+      try {
+        mediaAsset = await uploadFileResumable({
+          file,
+          uploadKey: item.uploadKey,
+          sha256: item.sha256,
+          sessionId: item.sessionId,
+          storageIntent: 'temporary_publish',
+          cleanupGroupId: pending.postGroupId,
+          cropMetadata: item.cropMetadata,
+          controlRef,
+          onSession: session => {
+            item.sessionId = session._id;
+            item.bytesUploaded = session.bytesReceived || 0;
+            item.status = session.status;
+            if (session.mediaAsset?._id) item.mediaAssetId = session.mediaAsset._id;
+            persistPendingUpload(pending).catch(() => {});
+          },
+          onProgress: session => {
+            item.bytesUploaded = session.bytesReceived || 0;
+            item.status = session.status;
+            if (session.mediaAsset?._id) item.mediaAssetId = session.mediaAsset._id;
+            persistPendingUpload(pending).catch(() => {});
+          }
+        });
+      } catch (error) {
+        error.uploadItem = item;
+        throw error;
+      }
+
+      item.mediaAssetId = mediaAsset._id;
+      item.bytesUploaded = item.size;
+      item.status = 'completed';
+      mediaAssetIds.push(mediaAsset._id);
+      await deleteUploadFile(item.uploadKey);
+      await persistPendingUpload(pending);
+    }
+
+    return mediaAssetIds;
+  };
+
+  const createPublishJobsForPending = async ({ pending, mediaAssetIds }) => {
+    let results = [...(pending.results || [])];
+    const completedKeys = new Set(results.filter(result => result.jobId).map(result => result.targetKey));
+
+    for (const connection of pending.selectedConnections || []) {
+      const targetKey = getConnectionTargetKey(connection);
+      if (completedKeys.has(targetKey)) continue;
+
+      const customizedForTarget = (pending.captions || []).find(
+        item => item.connectionId === connection.platformConnectionId && item.platform === connection.platform
+      );
+      const scheduledAt = new Date(pending.scheduledAt || Date.now());
+
+      try {
+        const payload = await api.post(pending.endpoint || '/api/publish/now', {
+          postGroupId: pending.postGroupId,
+          groupTargetCount: pending.groupTargetCount || (pending.selectedConnections || []).length || 1,
+          platformConnectionId: connection.platformConnectionId,
+          targetPlatform: connection.platform,
+          mediaAssetIds,
+          mediaProcessing: pending.mediaProcessingDecisions?.[targetKey] || { compressOnOversize: false, compressBeforeUpload: false },
+          coverIndex: pending.coverIndex,
+          caption: customizedForTarget?.caption || pending.baseCaption,
+          visibility: pending.visibility,
+          scheduledAt: Number.isNaN(scheduledAt.getTime()) ? new Date().toISOString() : scheduledAt.toISOString()
+        });
+        const publishJob = payload.data.publishJob;
+        results = upsertTargetResult(results, {
+          ok: !['blocked', 'failed'].includes(publishJob?.status),
+          targetKey,
+          platform: connection.platform,
+          accountHandle: connection.accountHandle,
+          status: publishJob?.status || 'queued',
+          jobId: publishJob?._id,
+          detail: describePublishJob(publishJob)
+        });
+        pending.results = results;
+      } catch (err) {
+        results = upsertTargetResult(results, {
+          ok: false,
+          targetKey,
+          platform: connection.platform,
+          accountHandle: connection.accountHandle,
+          status: 'blocked',
+          detail: err.message
+        });
+        pending.results = results;
+      }
+
+      await persistPendingUpload(pending);
+    }
+
+    return results;
+  };
+
+  const cleanupPendingUploadRecord = async pending => {
+    const items = pendingMediaItems(pending);
+    await Promise.allSettled(items.filter(item => item.uploadKey).map(item => deleteUploadFile(item.uploadKey)));
+    await deletePendingPublish(pending.id);
+    removePendingUploadState(pending.id);
+  };
+
+  const resumePendingUpload = async pending => {
+    const controlRef = getUploadControlRef(pending.id);
+    controlRef.current = {
+      paused: false,
+      cancelled: false,
+      abortController: null,
+      currentSessionId: '',
+      stopOnPause: true
+    };
+    setBusyKey(`resume-upload:${pending.id}`);
+    setMessage('');
+
+    try {
+      pending.pauseReason = '';
+      pending.mediaItems = pendingMediaItems(pending).map(item =>
+        item.mediaAssetId || item.status === 'completed'
+          ? item
+          : {
+              ...item,
+              status: item.sessionId ? 'interrupted' : 'waiting'
+            }
+      );
+      await persistPendingUpload(pending);
+
+      const mediaAssetIds = await uploadMediaForPending({ pending, controlRef });
+      const results = await createPublishJobsForPending({ pending, mediaAssetIds });
+      const acceptedTargetCount = new Set(results.filter(result => result.jobId).map(result => result.targetKey)).size;
+      const targetCount = (pending.selectedConnections || []).length;
+
+      if (targetCount > 0 && acceptedTargetCount < targetCount) {
+        pending.results = results;
+        await persistPendingUpload(pending);
+        await load();
+        const missingCount = targetCount - acceptedTargetCount;
+        setMessage(`${acceptedTargetCount}/${targetCount} platform request${targetCount === 1 ? '' : 's'} accepted. ${missingCount} target${missingCount === 1 ? '' : 's'} stayed in Dispatch for retry.`);
+        return;
+      }
+
+      await cleanupPendingUploadRecord(pending);
+      await load();
+      const action = pending.mode === 'schedule' ? 'schedule' : 'publish';
+      setMessage(`${acceptedTargetCount}/${targetCount || results.length} ${action} request${results.length === 1 ? '' : 's'} accepted from Dispatch.`);
+    } catch (err) {
+      if (isUploadPausedError(err) || controlRef.current.paused) {
+        pending.pauseReason = 'user';
+        pending.mediaItems = pendingMediaItems(pending).map(item =>
+          item.mediaAssetId || item.status === 'completed'
+            ? item
+            : {
+                ...item,
+                status: 'paused'
+              }
+        );
+        await persistPendingUpload(pending).catch(() => {});
+        setMessage('Cloud upload intake paused. Resume it from Dispatch when ready.');
+        return;
+      }
+
+      if (controlRef.current.cancelled || String(err.message || '').toLowerCase().includes('cancelled')) {
+        await cleanupPendingUploadRecord(pending).catch(() => {});
+        setMessage('Upload cancelled. Temporary uploaded media was removed.');
+        return;
+      }
+
+      if (isShaMismatchUploadError(err) && err.uploadItem) {
+        err.uploadItem.sessionId = '';
+        err.uploadItem.bytesUploaded = 0;
+        err.uploadItem.status = 'failed';
+        err.uploadItem.mediaAssetId = '';
+        pending.pauseReason = 'user';
+        await persistPendingUpload(pending).catch(() => {});
+        const retry = window.confirm(`${err.uploadItem.originalName} was corrupted during upload and CreatorOps deleted the uploaded copy. Retry this upload from the beginning?`);
+        if (retry) {
+          err.uploadItem.status = 'waiting';
+          pending.pauseReason = '';
+          await persistPendingUpload(pending).catch(() => {});
+          await resumePendingUpload(pending);
+          return;
+        }
+      } else if (isMissingUploadFileError(err) && err.uploadItem) {
+        err.uploadItem.status = 'failed';
+        pending.pauseReason = 'user';
+        await persistPendingUpload(pending).catch(() => {});
+      } else {
+        markPendingInterrupted(pending);
+        await persistPendingUpload(pending).catch(() => {});
+      }
+
+      setMessage(err.message);
+    } finally {
+      uploadControlsRef.current.delete(String(pending.id));
+      setBusyKey('');
+      await loadPendingUploads().catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    if (!canManage || busyKey) return;
+    const pending = pendingUploads.find(item => {
+      const pendingId = String(item.id);
+      return (
+        shouldAutoResumePending(item) &&
+        !autoResumeIdsRef.current.has(pendingId) &&
+        !uploadControlsRef.current.has(pendingId)
+      );
+    });
+    if (!pending) return;
+
+    const pendingId = String(pending.id);
+    autoResumeIdsRef.current.add(pendingId);
+    window.setTimeout(() => {
+      resumePendingUpload({ ...pending })
+        .catch(err => setMessage(err.message))
+        .finally(() => {
+          autoResumeIdsRef.current.delete(pendingId);
+        });
+    }, 0);
+  }, [busyKey, canManage, pendingUploads]);
 
   const deleteDispatchTarget = async ({ target, targets = [] }) => {
     const targetId = target.kind === 'group' ? target.group.id : target.job._id;
@@ -689,7 +1034,7 @@ export default function PublishingPage() {
             <SectionHeader
               icon={UploadCloud}
               title="Cloud Upload Intake"
-              detail="Media appears here before publish jobs exist. Resume paused or interrupted uploads from Compose."
+              detail="Media appears here before publish jobs exist. Resume, pause, or cancel cloud upload intake from here."
             />
             {visiblePendingUploads.map(pending => (
               <PendingUploadCard
@@ -697,6 +1042,7 @@ export default function PublishingPage() {
                 pending={pending}
                 busyKey={busyKey}
                 canManage={canManage}
+                onResume={resumePendingUpload}
                 onPause={pausePendingUpload}
                 onCancel={cancelPendingUpload}
               />
@@ -732,7 +1078,7 @@ export default function PublishingPage() {
             <Layers3 size={26} className="text-[var(--muted)]" />
             <p className="mt-3 text-sm font-semibold text-[var(--text)]">No dispatches here</p>
             <p className="mt-1 max-w-md text-sm text-[var(--muted)]">
-              Try another filter, clear search, or start a publish from Compose. Upload intake will show here before platform jobs are created.
+              Try another filter, clear search, or start a new publish. Upload intake will show here before platform jobs are created.
             </p>
           </div>
         )}
@@ -982,7 +1328,7 @@ function StatusStat({ icon: Icon, label, value, tone }) {
   );
 }
 
-function PendingUploadCard({ pending, busyKey, canManage, onPause, onCancel }) {
+function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onCancel }) {
   const progress = getPendingProgress(pending);
   const meta = getJobStatusMeta(progress.status);
   const items = pendingMediaItems(pending);
@@ -990,6 +1336,13 @@ function PendingUploadCard({ pending, busyKey, canManage, onPause, onCancel }) {
   const firstCaption = pending.captions?.find(item => item.caption)?.caption || pending.baseCaption || '';
   const cancelBusy = busyKey === `cancel-upload:${pending.id}`;
   const pauseBusy = busyKey === `pause-upload:${pending.id}`;
+  const resumeBusy = busyKey === `resume-upload:${pending.id}`;
+  const acceptedTargetCount = new Set((pending.results || []).filter(result => result.jobId).map(result => result.targetKey)).size;
+  const hasUnfinishedTargets = targets.length > acceptedTargetCount;
+  const canResumeUpload = canManage && (
+    ['paused_upload', 'interrupted_upload', 'failed_upload', 'waiting_upload'].includes(progress.status) ||
+    (progress.status === 'verifying_upload' && hasUnfinishedTargets)
+  );
   const canPauseUpload = canManage && !progress.hasCreatedJobs && ['waiting_upload', 'uploading_client', 'interrupted_upload'].includes(progress.status);
 
   return (
@@ -1028,10 +1381,17 @@ function PendingUploadCard({ pending, busyKey, canManage, onPause, onCancel }) {
         <div className="flex flex-col gap-2 xl:items-end">
           <span className="text-xs text-[var(--muted)]">Updated {formatDateTime(pending.updatedAt || pending.createdAt)}</span>
           <div className="flex flex-wrap gap-2 xl:justify-end">
-            <Link href="/compose" className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d]">
-              <PlayCircle size={14} />
-              {progress.status === 'paused_upload' ? 'Resume in Compose' : 'Open Compose'}
-            </Link>
+            {canResumeUpload && (
+              <button
+                type="button"
+                onClick={() => onResume(pending)}
+                disabled={resumeBusy}
+                className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d] disabled:opacity-60"
+              >
+                {resumeBusy ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />}
+                Resume
+              </button>
+            )}
             {canPauseUpload && (
               <button
                 type="button"
@@ -1057,9 +1417,9 @@ function PendingUploadCard({ pending, busyKey, canManage, onPause, onCancel }) {
           </div>
           <p className="max-w-xs text-right text-xs text-[var(--muted)]">
             {pending.pauseReason === 'user'
-              ? 'Paused by you. It will not resume automatically.'
+              ? 'Paused by you. Resume from any upload surface when ready.'
               : progress.status === 'interrupted_upload'
-                ? 'Interrupted upload is saved. Compose will resume from the last verified chunk.'
+                ? 'Interrupted upload is saved. Resume from the last verified chunk here.'
                 : 'Upload runs sequentially so every file can resume from its own verified offset.'}
           </p>
         </div>

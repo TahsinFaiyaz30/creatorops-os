@@ -9,7 +9,7 @@ const DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024;
 const openUploadDb = () =>
   new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
-      reject(new Error('This browser does not support resumable local upload storage.'));
+      reject(new Error('This browser does not support resumable upload recovery storage.'));
       return;
     }
 
@@ -129,6 +129,11 @@ export const uploadFileResumable = async ({
     if (controlRef?.current?.paused) {
       await pauseUploadSession(session._id).catch(() => {});
       onProgress?.({ ...session, status: 'paused' });
+      if (controlRef.current.stopOnPause) {
+        const error = new Error('Upload paused.');
+        error.code = 'UPLOAD_PAUSED';
+        throw error;
+      }
       while (controlRef?.current?.paused && !controlRef?.current?.cancelled) {
         await sleep(350);
       }
