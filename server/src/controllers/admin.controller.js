@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 import { USER_ROLES, normalizeRoles, primaryRole } from '../constants/roles.js';
 import User from '../models/User.js';
+import { getSystemSettings, updateSystemSettings } from '../services/systemSettings.service.js';
 
 const serializeUser = user => ({
   id: user._id.toString(),
@@ -56,5 +57,23 @@ export const updateAdminUserRoles = async (req, res, next) => {
     return res.json({ data: { user: serializeUser(user) } });
   } catch (error) {
     return next(error);
+  }
+};
+
+export const getAdminSettings = async (_req, res, next) => {
+  try {
+    const settings = await getSystemSettings();
+    res.json({ data: { settings } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateAdminSettings = async (req, res, next) => {
+  try {
+    const settings = await updateSystemSettings({ user: req.user, input: req.body });
+    res.json({ data: { settings } });
+  } catch (error) {
+    next(error);
   }
 };

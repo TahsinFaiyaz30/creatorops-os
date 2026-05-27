@@ -32,6 +32,7 @@ const env = {
   clientUrl: process.env.CLIENT_URL || clientUrls[0],
   clientUrls,
   publicBaseUrl: process.env.PUBLIC_BASE_URL || 'http://localhost:5000',
+  mediaUploadLimitBytes: process.env.MEDIA_UPLOAD_LIMIT_BYTES ? Number(process.env.MEDIA_UPLOAD_LIMIT_BYTES) : undefined,
   encryptionKey: process.env.ENCRYPTION_KEY || '',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
   geminiModel: process.env.GEMINI_MODEL || 'gemini-3.5-flash',

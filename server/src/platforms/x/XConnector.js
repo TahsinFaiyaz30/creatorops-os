@@ -3,10 +3,6 @@ import fs from 'fs/promises';
 import env from '../../config/env.js';
 import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
 
-const MAX_X_IMAGES = 4;
-const MAX_X_IMAGE_BYTES = 5 * 1024 * 1024;
-const MAX_X_GIF_BYTES = 15 * 1024 * 1024;
-
 const normalizeXResult = result => {
   if (result.ok) return result;
 
@@ -41,6 +37,147 @@ export default class XConnector extends BasePlatformConnector {
 
   getHelperText() {
     return 'Connect X account';
+  }
+
+  parseProviderLimitBytes(result) {
+    const text = [
+      result?.message,
+      result?.data?.payload?.detail,
+      result?.data?.payload?.title,
+      ...(Array.isArray(result?.data?.payload?.errors) ? result.data.payload.errors.map(error => error.detail || error.title || '') : [])
+    ].filter(Boolean).join(' ');
+    const match = text.match(/(?:max(?:imum)?|limit)[^\d]*(\d+(?:\.\d+)?)\s*(gb|mb|kb|bytes?)/i);
+    if (!match) return null;
+
+    const value = Number(match[1]);
+    const unit = match[2].toLowerCase();
+    if (unit.startsWith('gb')) return Math.floor(value * 1024 * 1024 * 1024);
+    if (unit.startsWith('mb')) return Math.floor(value * 1024 * 1024);
+    if (unit.startsWith('kb')) return Math.floor(value * 1024);
+    return Math.floor(value);
+  }
+
+  getMediaCategory(item) {
+    if (item.mediaType === 'video') return 'tweet_video';
+    if (item.mimeType === 'image/gif') return 'tweet_gif';
+    return 'tweet_image';
+  }
+
+  async preflightMediaItem(item, connection) {
+    if (!['image', 'video'].includes(item.mediaType)) {
+      return {
+        mediaAssetId: item.mediaAssetId,
+        originalName: item.originalName,
+        mediaType: item.mediaType,
+        size: item.size,
+        accepted: false,
+        tooLarge: false,
+        compressionAvailable: false,
+        message: 'Unsupported media type for X.'
+      };
+    }
+
+    if (item.mediaType === 'video') {
+      return {
+        mediaAssetId: item.mediaAssetId,
+        originalName: item.originalName,
+        mediaType: item.mediaType,
+        size: item.size,
+        accepted: false,
+        tooLarge: false,
+        compressionAvailable: false,
+        message: 'X video upload is not enabled in this connector.'
+      };
+    }
+
+    const result = await this.requestJson('https://api.x.com/2/media/upload/initialize', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.getAccessToken(connection)}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        media_category: this.getMediaCategory(item),
+        media_type: item.mimeType,
+        total_bytes: Number(item.size || 0)
+      })
+    });
+    const normalized = normalizeXResult(result);
+
+    if (normalized.ok) {
+      return {
+        mediaAssetId: item.mediaAssetId,
+        originalName: item.originalName,
+        mediaType: item.mediaType,
+        mimeType: item.mimeType,
+        size: item.size,
+        accepted: true,
+        tooLarge: false,
+        maxBytes: null,
+        providerAcceptedBytes: normalized.data?.data?.size || item.size,
+        providerSessionExpiresInSeconds: normalized.data?.data?.expires_after_secs || null,
+        compressionAvailable: true,
+        message: 'X provider API accepted this media size for upload initialization.'
+      };
+    }
+
+    if (this.isFileTooLargeResult(normalized)) {
+      const maxBytes = this.parseProviderLimitBytes(normalized);
+      return {
+        mediaAssetId: item.mediaAssetId,
+        originalName: item.originalName,
+        mediaType: item.mediaType,
+        mimeType: item.mimeType,
+        size: item.size,
+        accepted: false,
+        tooLarge: true,
+        maxBytes,
+        exactMaxBytesKnown: Boolean(maxBytes),
+        compressionAvailable: Boolean(maxBytes),
+        message: normalized.message || 'X provider API reported this media is too large.'
+      };
+    }
+
+    return {
+      mediaAssetId: item.mediaAssetId,
+      originalName: item.originalName,
+      mediaType: item.mediaType,
+      mimeType: item.mimeType,
+      size: item.size,
+      accepted: false,
+      tooLarge: false,
+      maxBytes: null,
+      compressionAvailable: false,
+      message: normalized.message || 'X provider API could not preflight this media.'
+    };
+  }
+
+  async getMediaUploadPolicy({ connection, mediaItems = [] } = {}) {
+    const mediaChecks = [];
+    for (const item of mediaItems) {
+      mediaChecks.push(await this.preflightMediaItem(item, connection));
+    }
+
+    const oversizedMedia = mediaChecks.filter(item => item.tooLarge);
+    const compressibleOversizedMedia = oversizedMedia.filter(item => item.compressionAvailable && item.maxBytes);
+    return okResult({
+      platform: this.platform,
+      displayName: this.displayName,
+      source: 'provider_api_preflight',
+      policyAvailable: true,
+      compressionSupported: compressibleOversizedMedia.length > 0,
+      promptForCompression: compressibleOversizedMedia.length > 0,
+      mediaChecks,
+      oversizedMedia,
+      prompts: compressibleOversizedMedia.map(item => ({
+        mediaAssetId: item.mediaAssetId,
+        mediaType: item.mediaType,
+        mediaName: item.originalName,
+        currentBytes: item.size,
+        maxBytes: item.maxBytes,
+        reason: `${item.originalName} exceeds the exact max size returned by the X provider API.`
+      }))
+    }, 'X media size was checked with the provider upload initialization API.');
   }
 
   isConfigured() {
@@ -86,6 +223,35 @@ export default class XConnector extends BasePlatformConnector {
     });
   }
 
+  async refreshToken(connection) {
+    const refreshToken = this.getRefreshToken(connection);
+    if (!refreshToken) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored X refresh token was found. Reconnect this account.' });
+    }
+
+    const body = new URLSearchParams({
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+      client_id: env.oauth.x.clientId
+    });
+    const basic = Buffer.from(`${env.oauth.x.clientId}:${env.oauth.x.clientSecret}`).toString('base64');
+    const result = await this.requestJson('https://api.x.com/2/oauth2/token', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${basic}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body
+    });
+    if (!result.ok) return result;
+    return okResult({
+      accessToken: result.data.access_token,
+      refreshToken: result.data.refresh_token || refreshToken,
+      expiresIn: result.data.expires_in,
+      scopes: String(result.data.scope || connection.scopes?.join(' ') || '').split(/\s+/).filter(Boolean)
+    }, 'X access token refreshed.');
+  }
+
   async fetchAccountProfileFromToken(tokenData) {
     const result = await this.requestJson('https://api.x.com/2/users/me?user.fields=username,name', {
       headers: { Authorization: `Bearer ${tokenData.accessToken}` }
@@ -101,6 +267,22 @@ export default class XConnector extends BasePlatformConnector {
     });
   }
 
+  async healthCheck(connection) {
+    const base = await super.healthCheck(connection);
+    if (base.code !== 'CAPABILITY_UNAVAILABLE') return base;
+
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored X access token was found. Reconnect this account.' });
+    }
+
+    const result = await this.requestJson('https://api.x.com/2/users/me?user.fields=username,name', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!result.ok) return normalizeXResult(result);
+    return okResult({ account: result.data?.data || null }, 'X token verified through the X API.');
+  }
+
   validatePublishPayload(payload, connection) {
     const base = super.validatePublishPayload(payload, connection);
     if (!base.ok) return base;
@@ -110,15 +292,12 @@ export default class XConnector extends BasePlatformConnector {
       return connectorResult({ code: 'MISSING_PERMISSIONS', message: 'Missing X tweet.write scope.' });
     }
     const mediaAssets = payload.mediaAssets || [];
-    if (mediaAssets.length > 0) {
+      if (mediaAssets.length > 0) {
       if (!connection.scopes?.includes('media.write')) {
         return connectorResult({
           code: 'MISSING_PERMISSIONS',
           message: 'X image publishing requires the media.write OAuth scope. Reconnect the X account after adding media.write to the app permissions.'
         });
-      }
-      if (mediaAssets.length > MAX_X_IMAGES) {
-        return connectorResult({ code: 'VALIDATION_FAILED', message: `X supports up to ${MAX_X_IMAGES} images per post in this connector.` });
       }
       const videoAsset = mediaAssets.find(asset => asset.mediaType === 'video');
       if (videoAsset) {
@@ -131,24 +310,20 @@ export default class XConnector extends BasePlatformConnector {
       if (unsupported) {
         return connectorResult({ code: 'VALIDATION_FAILED', message: 'X media upload currently accepts image assets only.' });
       }
-      const oversized = mediaAssets.find(asset => {
-        const limit = asset.mimeType === 'image/gif' ? MAX_X_GIF_BYTES : MAX_X_IMAGE_BYTES;
-        return asset.size > limit;
-      });
-      if (oversized) {
-        const limitMb = oversized.mimeType === 'image/gif' ? 15 : 5;
-        return connectorResult({ code: 'VALIDATION_FAILED', message: `X image upload limit exceeded for ${oversized.originalName}. Limit is ${limitMb} MB.` });
-      }
     }
     return okResult({}, 'X payload is publishable.');
   }
 
-  async uploadImageMedia(asset, token) {
+  async uploadImageMedia(asset, token, payload) {
     if (!asset.localPath) {
       return connectorResult({ code: 'VALIDATION_FAILED', message: 'X media upload requires the stored local image file.' });
     }
 
+    const controlBeforeRead = await this.checkPublishControl(payload);
+    if (controlBeforeRead) return controlBeforeRead;
     const fileBuffer = await fs.readFile(asset.localPath);
+    const controlBeforeUpload = await this.checkPublishControl(payload);
+    if (controlBeforeUpload) return controlBeforeUpload;
     const mediaCategory = asset.mimeType === 'image/gif' ? 'tweet_gif' : 'tweet_image';
     const result = await this.requestJson('https://api.x.com/2/media/upload', {
       method: 'POST',
@@ -160,10 +335,18 @@ export default class XConnector extends BasePlatformConnector {
         media: fileBuffer.toString('base64'),
         media_category: mediaCategory,
         media_type: asset.mimeType
-      })
+      }),
+      signal: payload.abortSignal
     });
 
     const normalized = normalizeXResult(result);
+    if (!normalized.ok && this.isFileTooLargeResult(normalized)) {
+      return connectorResult({
+        code: 'FILE_TOO_LARGE',
+        message: `X rejected ${asset.originalName || 'media'} because the provider API says the file is too large.`,
+        data: normalized.data
+      });
+    }
     if (!normalized.ok) return normalized;
     const mediaId = normalized.data?.data?.id || normalized.data?.data?.media_id || '';
     if (!mediaId) {
@@ -181,7 +364,7 @@ export default class XConnector extends BasePlatformConnector {
     const mediaUploadResponses = [];
 
     for (const asset of payload.mediaAssets || []) {
-      const uploadResult = await this.uploadImageMedia(asset, token);
+      const uploadResult = await this.uploadImageMedia(asset, token, payload);
       if (!uploadResult.ok) return uploadResult;
       mediaIds.push(uploadResult.data.mediaId);
       mediaUploadResponses.push(uploadResult.data.rawResponse);
@@ -192,13 +375,16 @@ export default class XConnector extends BasePlatformConnector {
       tweetPayload.media = { media_ids: mediaIds };
     }
 
+    const controlBeforeTweet = await this.checkPublishControl(payload);
+    if (controlBeforeTweet) return controlBeforeTweet;
     const result = await this.requestJson('https://api.x.com/2/tweets', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(tweetPayload)
+      body: JSON.stringify(tweetPayload),
+      signal: payload.abortSignal
     });
     const normalized = normalizeXResult(result);
     if (!normalized.ok) return normalized;

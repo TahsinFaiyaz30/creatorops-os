@@ -46,9 +46,13 @@ export default class InstagramConnector extends BasePlatformConnector {
     url.searchParams.set('code', code);
     const result = await this.requestJson(url);
     if (!result.ok) return result;
+    const longLived = await this.requestJson(
+      `https://graph.facebook.com/${GRAPH_VERSION}/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(env.oauth.instagram.appId)}&client_secret=${encodeURIComponent(env.oauth.instagram.appSecret)}&fb_exchange_token=${encodeURIComponent(result.data.access_token)}`
+    );
+    const tokenData = longLived.ok ? longLived.data : result.data;
     return okResult({
-      accessToken: result.data.access_token,
-      expiresIn: result.data.expires_in,
+      accessToken: tokenData.access_token,
+      expiresIn: tokenData.expires_in,
       scopes: this.getRequiredScopes()
     });
   }
@@ -90,6 +94,22 @@ export default class InstagramConnector extends BasePlatformConnector {
     return okResult({}, 'Instagram payload is publishable.');
   }
 
+  async healthCheck(connection) {
+    const base = await super.healthCheck(connection);
+    if (base.code !== 'CAPABILITY_UNAVAILABLE') return base;
+
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored Instagram access token was found. Reconnect this account.' });
+    }
+
+    const result = await this.requestJson(
+      `https://graph.facebook.com/${GRAPH_VERSION}/${connection.externalAccountId}?fields=id,username,name&access_token=${encodeURIComponent(token)}`
+    );
+    if (!result.ok) return result;
+    return okResult({ account: result.data }, 'Instagram token verified through the Graph API.');
+  }
+
   async publish(payload, connection) {
     const validation = this.validatePublishPayload(payload, connection);
     if (!validation.ok) return validation;
@@ -101,18 +121,24 @@ export default class InstagramConnector extends BasePlatformConnector {
     });
     createBody.set(media.mediaType === 'video' ? 'video_url' : 'image_url', media.publicUrl);
     if (media.mediaType === 'video') createBody.set('media_type', 'REELS');
+    const controlBeforeContainer = await this.checkPublishControl(payload);
+    if (controlBeforeContainer) return controlBeforeContainer;
     const container = await this.requestJson(`https://graph.facebook.com/${GRAPH_VERSION}/${connection.externalAccountId}/media`, {
       method: 'POST',
-      body: createBody
+      body: createBody,
+      signal: payload.abortSignal
     });
     if (!container.ok) return container;
+    const controlBeforePublish = await this.checkPublishControl(payload);
+    if (controlBeforePublish) return controlBeforePublish;
     const publishBody = new URLSearchParams({
       access_token: token,
       creation_id: container.data.id
     });
     const published = await this.requestJson(`https://graph.facebook.com/${GRAPH_VERSION}/${connection.externalAccountId}/media_publish`, {
       method: 'POST',
-      body: publishBody
+      body: publishBody,
+      signal: payload.abortSignal
     });
     if (!published.ok) return published;
     return okResult({

@@ -4,6 +4,7 @@ const { Schema } = mongoose;
 
 export const MEDIA_TYPES = ['image', 'video'];
 export const MEDIA_STATUSES = ['uploaded', 'ready', 'failed'];
+export const MEDIA_STORAGE_INTENTS = ['library', 'temporary_publish'];
 
 const mediaAssetSchema = new Schema(
   {
@@ -85,6 +86,21 @@ const mediaAssetSchema = new Schema(
       type: String,
       enum: MEDIA_STATUSES,
       default: 'ready'
+    },
+    storageIntent: {
+      type: String,
+      enum: MEDIA_STORAGE_INTENTS,
+      default: 'library',
+      index: true
+    },
+    cleanupGroupId: {
+      type: String,
+      default: '',
+      index: true
+    },
+    cleanupAt: {
+      type: Date,
+      default: null
     }
   },
   {

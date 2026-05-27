@@ -58,6 +58,31 @@ export default class PinterestConnector extends BasePlatformConnector {
     });
   }
 
+  async refreshToken(connection) {
+    const refreshToken = this.getRefreshToken(connection);
+    if (!refreshToken) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored Pinterest refresh token was found. Reconnect this account.' });
+    }
+
+    const basic = Buffer.from(`${env.oauth.pinterest.clientId}:${env.oauth.pinterest.clientSecret}`).toString('base64');
+    const body = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken
+    });
+    const result = await this.requestJson('https://api.pinterest.com/v5/oauth/token', {
+      method: 'POST',
+      headers: { Authorization: `Basic ${basic}` },
+      body
+    });
+    if (!result.ok) return result;
+    return okResult({
+      accessToken: result.data.access_token,
+      refreshToken: result.data.refresh_token || refreshToken,
+      expiresIn: result.data.expires_in,
+      scopes: String(result.data.scope || connection.scopes?.join(',') || '').split(',').filter(Boolean)
+    }, 'Pinterest access token refreshed.');
+  }
+
   async fetchAccountProfileFromToken(tokenData) {
     const result = await this.requestJson('https://api.pinterest.com/v5/user_account', {
       headers: { Authorization: `Bearer ${tokenData.accessToken}` }
@@ -71,6 +96,22 @@ export default class PinterestConnector extends BasePlatformConnector {
       scopes: tokenData.scopes,
       platformMetadata: result.data
     });
+  }
+
+  async healthCheck(connection) {
+    const base = await super.healthCheck(connection);
+    if (base.code !== 'CAPABILITY_UNAVAILABLE') return base;
+
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored Pinterest access token was found. Reconnect this account.' });
+    }
+
+    const result = await this.requestJson('https://api.pinterest.com/v5/user_account', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!result.ok) return result;
+    return okResult({ account: result.data }, 'Pinterest token verified through the Pinterest API.');
   }
 
   validatePublishPayload(payload, connection) {
@@ -88,6 +129,8 @@ export default class PinterestConnector extends BasePlatformConnector {
     const validation = this.validatePublishPayload(payload, connection);
     if (!validation.ok) return validation;
     const image = payload.mediaAssets.find(asset => asset.mediaType === 'image' && asset.publicUrl);
+    const control = await this.checkPublishControl(payload);
+    if (control) return control;
     const result = await this.requestJson('https://api.pinterest.com/v5/pins', {
       method: 'POST',
       headers: {
@@ -102,7 +145,8 @@ export default class PinterestConnector extends BasePlatformConnector {
           source_type: 'image_url',
           url: image.publicUrl
         }
-      })
+      }),
+      signal: payload.abortSignal
     });
     if (!result.ok) return result;
     return okResult({

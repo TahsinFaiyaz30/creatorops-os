@@ -4,6 +4,7 @@ import path from 'path';
 import express from 'express';
 import multer from 'multer';
 
+import env from '../config/env.js';
 import { getMedia, listMedia, removeMedia, updateMedia, uploadMedia } from '../controllers/media.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { UPLOAD_ROOT, detectMediaType } from '../services/media.service.js';
@@ -28,7 +29,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 250 * 1024 * 1024 },
+  ...(Number.isFinite(env.mediaUploadLimitBytes) ? { limits: { fileSize: env.mediaUploadLimitBytes } } : {}),
   fileFilter: (_req, file, callback) => {
     if (!detectMediaType(file.mimetype)) {
       callback(new Error('Only image and video uploads are supported.'));

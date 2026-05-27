@@ -55,6 +55,28 @@ export default class TikTokConnector extends BasePlatformConnector {
     });
   }
 
+  async refreshToken(connection) {
+    const refreshToken = this.getRefreshToken(connection);
+    if (!refreshToken) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored TikTok refresh token was found. Reconnect this account.' });
+    }
+
+    const body = new URLSearchParams({
+      client_key: env.oauth.tiktok.clientKey,
+      client_secret: env.oauth.tiktok.clientSecret,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken
+    });
+    const result = await this.requestJson('https://open.tiktokapis.com/v2/oauth/token/', { method: 'POST', body });
+    if (!result.ok) return result;
+    return okResult({
+      accessToken: result.data.access_token,
+      refreshToken: result.data.refresh_token || refreshToken,
+      expiresIn: result.data.expires_in,
+      scopes: String(result.data.scope || connection.scopes?.join(',') || '').split(',').filter(Boolean)
+    }, 'TikTok access token refreshed.');
+  }
+
   async fetchAccountProfileFromToken(tokenData) {
     const result = await this.requestJson('https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,username', {
       headers: { Authorization: `Bearer ${tokenData.accessToken}` }
@@ -69,6 +91,22 @@ export default class TikTokConnector extends BasePlatformConnector {
       scopes: tokenData.scopes,
       platformMetadata: { unionId: user?.union_id, avatarUrl: user?.avatar_url }
     });
+  }
+
+  async healthCheck(connection) {
+    const base = await super.healthCheck(connection);
+    if (base.code !== 'CAPABILITY_UNAVAILABLE') return base;
+
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored TikTok access token was found. Reconnect this account.' });
+    }
+
+    const result = await this.requestJson('https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,username', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!result.ok) return result;
+    return okResult({ account: result.data?.data?.user || null }, 'TikTok token verified through the TikTok API.');
   }
 
   validatePublishPayload(payload, connection) {
@@ -93,6 +131,8 @@ export default class TikTokConnector extends BasePlatformConnector {
   async publish(payload, connection) {
     const validation = this.validatePublishPayload(payload, connection);
     if (!validation.ok) return validation;
+    const control = await this.checkPublishControl(payload);
+    if (control) return control;
     return connectorResult({
       code: 'PLATFORM_REVIEW_REQUIRED',
       message: 'TikTok publishing requires approved Content Posting API product access. The connector will not fake a publish.'

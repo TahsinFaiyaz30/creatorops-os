@@ -46,9 +46,13 @@ export default class FacebookConnector extends BasePlatformConnector {
     url.searchParams.set('code', code);
     const result = await this.requestJson(url);
     if (!result.ok) return result;
+    const longLived = await this.requestJson(
+      `https://graph.facebook.com/${GRAPH_VERSION}/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(env.oauth.facebook.appId)}&client_secret=${encodeURIComponent(env.oauth.facebook.appSecret)}&fb_exchange_token=${encodeURIComponent(result.data.access_token)}`
+    );
+    const tokenData = longLived.ok ? longLived.data : result.data;
     return okResult({
-      accessToken: result.data.access_token,
-      expiresIn: result.data.expires_in,
+      accessToken: tokenData.access_token,
+      expiresIn: tokenData.expires_in,
       scopes: this.getRequiredScopes()
     });
   }
@@ -85,6 +89,22 @@ export default class FacebookConnector extends BasePlatformConnector {
     return okResult({}, 'Facebook payload is publishable.');
   }
 
+  async healthCheck(connection) {
+    const base = await super.healthCheck(connection);
+    if (base.code !== 'CAPABILITY_UNAVAILABLE') return base;
+
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored Facebook access token was found. Reconnect this account.' });
+    }
+
+    const result = await this.requestJson(
+      `https://graph.facebook.com/${GRAPH_VERSION}/${connection.externalAccountId}?fields=id,name&access_token=${encodeURIComponent(token)}`
+    );
+    if (!result.ok) return result;
+    return okResult({ account: result.data }, 'Facebook token verified through the Graph API.');
+  }
+
   async publish(payload, connection) {
     const validation = this.validatePublishPayload(payload, connection);
     if (!validation.ok) return validation;
@@ -98,7 +118,9 @@ export default class FacebookConnector extends BasePlatformConnector {
     body.set('access_token', token);
     if (image) body.set('url', image.publicUrl);
     body.set(image ? 'caption' : 'message', payload.caption || '');
-    const result = await this.requestJson(endpoint, { method: 'POST', body });
+    const control = await this.checkPublishControl(payload);
+    if (control) return control;
+    const result = await this.requestJson(endpoint, { method: 'POST', body, signal: payload.abortSignal });
     if (!result.ok) return result;
     const postId = result.data.post_id || result.data.id;
     return okResult({

@@ -68,6 +68,22 @@ export default class LinkedInConnector extends BasePlatformConnector {
     });
   }
 
+  async healthCheck(connection) {
+    const base = await super.healthCheck(connection);
+    if (base.code !== 'CAPABILITY_UNAVAILABLE') return base;
+
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored LinkedIn access token was found. Reconnect this account.' });
+    }
+
+    const result = await this.requestJson('https://api.linkedin.com/v2/userinfo', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!result.ok) return result;
+    return okResult({ account: result.data }, 'LinkedIn token verified through the LinkedIn API.');
+  }
+
   validatePublishPayload(payload, connection) {
     const base = super.validatePublishPayload(payload, connection);
     if (!base.ok) return base;
@@ -96,6 +112,8 @@ export default class LinkedInConnector extends BasePlatformConnector {
       },
       visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' }
     };
+    const control = await this.checkPublishControl(payload);
+    if (control) return control;
     const result = await this.requestJson('https://api.linkedin.com/v2/ugcPosts', {
       method: 'POST',
       headers: {
@@ -104,7 +122,8 @@ export default class LinkedInConnector extends BasePlatformConnector {
         'X-Restli-Protocol-Version': '2.0.0',
         'LinkedIn-Version': env.oauth.linkedin.apiVersion
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: payload.abortSignal
     });
     if (!result.ok) return result;
     const id = result.data.id || result.data.value || '';

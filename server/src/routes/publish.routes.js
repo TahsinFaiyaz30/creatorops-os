@@ -4,7 +4,11 @@ import {
   cancelJob,
   getJob,
   getJobs,
+  getPublishSettings,
+  mediaPlan,
+  pauseJob,
   publishNow,
+  resumeJob,
   retryJob,
   schedulePublish,
   validatePublish
@@ -18,11 +22,15 @@ const publishRoles = [CONTENT_CREATOR_ROLE, BRAND_REP_ROLE];
 
 router.use(authenticate);
 
+router.get('/settings', getPublishSettings);
+router.post('/media-plan', requireRole(publishRoles), mediaPlan);
 router.post('/validate', requireRole(publishRoles), validatePublish);
 router.post('/now', requireRole(publishRoles), publishNow);
 router.post('/schedule', requireRole(publishRoles), schedulePublish);
 router.get('/jobs', getJobs);
 router.get('/jobs/:id', getJob);
+router.post('/jobs/:id/pause', requireRole(publishRoles), pauseJob);
+router.post('/jobs/:id/resume', requireRole(publishRoles), resumeJob);
 router.post('/jobs/:id/cancel', requireRole(publishRoles), cancelJob);
 router.post('/jobs/:id/retry', requireRole(publishRoles), retryJob);
 

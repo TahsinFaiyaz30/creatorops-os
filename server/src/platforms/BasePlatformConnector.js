@@ -46,6 +46,14 @@ const parseJsonSafe = async response => {
   }
 };
 
+const getApiHost = url => {
+  try {
+    return new URL(String(url)).hostname;
+  } catch (_error) {
+    return 'provider API';
+  }
+};
+
 export default class BasePlatformConnector {
   constructor(platform, displayName) {
     this.platform = platform;
@@ -83,6 +91,36 @@ export default class BasePlatformConnector {
     return `Connect ${this.displayName}.`;
   }
 
+  async getMediaUploadPolicy() {
+    return okResult({
+      platform: this.platform,
+      displayName: this.displayName,
+      source: 'provider_api_unavailable',
+      policyAvailable: false,
+      compressionSupported: false,
+      promptForCompression: false,
+      mediaChecks: [],
+      oversizedMedia: [],
+      prompts: []
+    }, `${this.displayName} does not expose a provider API for media size preflight in this connector.`);
+  }
+
+  isFileTooLargeResult(result) {
+    const text = [
+      result?.code,
+      result?.message,
+      result?.data?.payload?.error?.message,
+      result?.data?.payload?.message,
+      result?.data?.payload?.title,
+      result?.data?.payload?.detail
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return /file|media|image|video|attachment/.test(text) && /too large|exceeds|size|limit|maximum|max/.test(text);
+  }
+
   isConfigured() {
     return this.getRequiredEnv().every(key => Boolean(process.env[key]));
   }
@@ -111,7 +149,7 @@ export default class BasePlatformConnector {
         message: `Connection is ${connection.status || 'not connected'}.`
       });
     }
-    return okResult({ status: connection.status }, 'Connection metadata is present.');
+    return unavailableResult(`${this.displayName} does not have a deep credential health check implemented yet.`);
   }
 
   validatePublishPayload(_payload, connection) {
@@ -123,6 +161,10 @@ export default class BasePlatformConnector {
       });
     }
     return okResult({}, 'Publish payload accepted.');
+  }
+
+  async validateTargetMedia() {
+    return okResult({}, 'Target media accepted.');
   }
 
   async publish() {
@@ -161,14 +203,54 @@ export default class BasePlatformConnector {
     return env.publicBaseUrl;
   }
 
+  async checkPublishControl(payload) {
+    if (typeof payload?.checkPublishControl !== 'function') return null;
+    return payload.checkPublishControl();
+  }
+
   async requestJson(url, options = {}) {
-    const response = await fetch(url, options);
+    const { retryNetworkErrors, ...fetchOptions } = options;
+    const method = String(fetchOptions.method || 'GET').toUpperCase();
+    const safeToRetry = ['GET', 'HEAD'].includes(method);
+    const retries = safeToRetry
+      ? Math.max(0, Number.isFinite(Number(retryNetworkErrors)) ? Number(retryNetworkErrors) : 1)
+      : 0;
+    let response;
+
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      try {
+        response = await fetch(url, fetchOptions);
+        break;
+      } catch (error) {
+        if (attempt < retries) continue;
+        const host = getApiHost(url);
+        return connectorResult({
+          code: 'NETWORK_ERROR',
+          message: `${this.displayName} API could not be reached from the CreatorOps server (${host}). Retry the action after checking server network access.`,
+          data: {
+            host,
+            method,
+            networkError: error.message || 'fetch failed',
+            networkCauseCode: error.cause?.code || ''
+          }
+        });
+      }
+    }
+
     const payload = await parseJsonSafe(response);
 
     if (!response.ok) {
       const firstProviderError = Array.isArray(payload?.errors) ? payload.errors[0] : null;
+      const statusCode = `HTTP_${response.status}`;
+      const providerCode =
+        firstProviderError?.code ||
+        firstProviderError?.title ||
+        payload?.error?.code ||
+        payload?.error ||
+        statusCode;
+
       return connectorResult({
-        code: firstProviderError?.code || firstProviderError?.title || payload?.error?.code || payload?.error || `HTTP_${response.status}`,
+        code: String(providerCode),
         message:
           firstProviderError?.detail ||
           firstProviderError?.message ||

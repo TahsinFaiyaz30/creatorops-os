@@ -70,7 +70,7 @@ export const DEFAULT_PLATFORM_FORMAT_RULES = [
     supportsLinks: false,
     contentStyle: 'short title or hook plus script-style caption',
     ctaStyle: 'subscribe, watch next',
-    requirements: ['Short hook', 'Script cue', 'Replayable idea']
+    requirements: ['Square or vertical video', '3 minutes or less', 'Short hook']
   },
   {
     platform: 'threads',

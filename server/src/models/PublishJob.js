@@ -4,7 +4,7 @@ import { SUPPORTED_PLATFORMS } from '../constants/platforms.js';
 
 const { Schema } = mongoose;
 
-export const PUBLISH_JOB_STATUSES = ['queued', 'publishing', 'published', 'failed', 'blocked', 'cancelled'];
+export const PUBLISH_JOB_STATUSES = ['queued', 'publishing', 'paused', 'published', 'failed', 'blocked', 'cancelled'];
 export const PUBLISH_VISIBILITIES = ['public', 'private', 'friends_only'];
 
 const accountSnapshotSchema = new Schema(
@@ -30,6 +30,11 @@ const publishJobSchema = new Schema(
       type: String,
       default: '',
       index: true
+    },
+    groupTargetCount: {
+      type: Number,
+      default: 1,
+      min: 1
     },
     campaignId: {
       type: Schema.Types.ObjectId,
@@ -111,11 +116,58 @@ const publishJobSchema = new Schema(
       type: Number,
       default: 0
     },
+    processingStage: {
+      type: String,
+      default: 'queued'
+    },
+    processingMessage: {
+      type: String,
+      default: ''
+    },
+    processingStageUpdatedAt: {
+      type: Date,
+      default: null
+    },
+    publishControl: {
+      action: {
+        type: String,
+        enum: ['', 'pause_requested', 'cancel_requested'],
+        default: ''
+      },
+      requestedAt: {
+        type: Date,
+        default: null
+      },
+      requestedBy: {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+      },
+      message: {
+        type: String,
+        default: ''
+      }
+    },
+    mediaProcessing: {
+      compressOnOversize: { type: Boolean, default: false },
+      compressBeforeUpload: { type: Boolean, default: false },
+      lastCompressionStatus: { type: String, default: '' },
+      lastCompressionMessage: { type: String, default: '' },
+      lastCompressedAt: { type: Date, default: null }
+    },
     lastAttemptAt: {
       type: Date,
       default: null
     },
     publishedAt: {
+      type: Date,
+      default: null
+    },
+    temporaryMediaExpiresAt: {
+      type: Date,
+      default: null
+    },
+    temporaryMediaExpiredAt: {
       type: Date,
       default: null
     },

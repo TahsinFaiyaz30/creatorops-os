@@ -68,7 +68,7 @@ export const platformDetails = {
   youtube_shorts: {
     contentStyle: 'Short title or hook plus script-style caption.',
     ctaStyle: 'Subscribe or watch next.',
-    requirements: ['Short video', 'Short hook', 'Replayable idea']
+    requirements: ['Square or vertical video', '3 minutes or less', 'Short hook']
   },
   threads: {
     contentStyle: 'Conversational short text.',

@@ -8,7 +8,7 @@ import {
 
 export const uploadMedia = async (req, res, next) => {
   try {
-    const mediaAsset = await createMediaAssetFromUpload({ user: req.user, file: req.file });
+    const mediaAsset = await createMediaAssetFromUpload({ user: req.user, file: req.file, input: req.body });
     res.status(201).json({ data: { mediaAsset } });
   } catch (error) {
     next(error);

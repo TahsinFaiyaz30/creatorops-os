@@ -23,10 +23,19 @@ Publishing uses:
 - `POST /api/publish/now`
 - `POST /api/publish/schedule`
 - `GET /api/publish/jobs`
+- `POST /api/publish/jobs/:id/pause`
+- `POST /api/publish/jobs/:id/resume`
+- `POST /api/publish/jobs/:id/cancel`
 
-Jobs are processed by the backend worker. They can be queued, publishing, published, failed, blocked, or cancelled.
+Cross-platform posts are linked by `postGroupId`. Compose creates one group id when the user clicks publish or schedule, uploads temporary media with that cleanup group id, then creates one `PublishJob` per selected platform using the same `postGroupId` and `groupTargetCount`. Successful `PublishedPost` records copy the same id, so Dispatch, Analytics, Social, Calendar, and cleanup can all identify which platform records belong to the same original post.
+
+`postGroupId` is only the grouping key. Dispatch summaries should not present one caption or media preview as shared content for the whole group; captions, media references, processing decisions, live status, errors, and actions are per `PublishJob` so platform-specific optimizations remain visible.
+
+Jobs are processed by the backend worker. They can be queued, publishing, paused, published, failed, blocked, or cancelled.
 
 `published` is only set after an official connector returns success.
+
+Pause and cancel controls are per publish job. Queued jobs change immediately. Publishing jobs receive a control request and stop at the next safe checkpoint; resumable YouTube uploads check between chunks. Provider requests already accepted by an external API cannot be undone, so cancelled in-flight jobs should be checked on the platform before creating a replacement post.
 
 Visibility is saved on `PublishJob` and `PublishedPost`. Unsupported visibility values are blocked before publishing. The current YouTube connector maps `public` and `private` to official YouTube privacy status values; unsupported `friends_only` is not pretended.
 

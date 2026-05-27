@@ -73,7 +73,7 @@ Original uploaded image/video metadata. Stores local path privately, public URL,
 
 ### PublishJob
 
-Queued/scheduled publishing work. Tracks connection, media, caption, status, scheduledAt, provider post id/url, errors, retry count, and attempts.
+Queued/scheduled publishing work. Tracks connection, media, caption, status, scheduledAt, provider post id/url, errors, retry count, attempts, live processing stage, and per-job pause/cancel control requests.
 
 Stores requested post visibility. Unsupported visibility settings are blocked before connector publish calls.
 

@@ -17,6 +17,8 @@ If `ENCRYPTION_KEY` is missing:
 - OAuth callback fails safely.
 - API/app-password connection creation fails safely.
 
+Connected platform accounts are persisted server-side as encrypted delegated credentials. Tokens are never sent to the frontend. This is required for the same CreatorOps account to keep using a connected platform account from another browser or device without re-authorizing every time.
+
 ## OAuth State
 
 OAuth state is:

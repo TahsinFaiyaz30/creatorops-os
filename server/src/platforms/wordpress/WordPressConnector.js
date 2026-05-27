@@ -55,12 +55,34 @@ export default class WordPressConnector extends BasePlatformConnector {
     return okResult({}, 'WordPress payload is publishable.');
   }
 
+  async healthCheck(connection) {
+    const base = await super.healthCheck(connection);
+    if (base.code !== 'CAPABILITY_UNAVAILABLE') return base;
+
+    const username = connection.platformMetadata?.username;
+    const baseUrl = connection.platformMetadata?.baseUrl;
+    const appPassword = this.getAppPassword(connection);
+
+    if (!username || !baseUrl || !appPassword) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'Stored WordPress credentials are incomplete. Reconnect this site.' });
+    }
+
+    const auth = Buffer.from(`${username}:${appPassword}`).toString('base64');
+    const result = await this.requestJson(`${baseUrl}/wp-json/wp/v2/users/me`, {
+      headers: { Authorization: `Basic ${auth}` }
+    });
+    if (!result.ok) return result;
+    return okResult({ account: result.data }, 'WordPress application password verified through the REST API.');
+  }
+
   async publish(payload, connection) {
     const validation = this.validatePublishPayload(payload, connection);
     if (!validation.ok) return validation;
     const auth = Buffer.from(`${connection.platformMetadata.username}:${this.getAppPassword(connection)}`).toString('base64');
     const baseUrl = connection.platformMetadata.baseUrl;
     const title = payload.caption.split('\n')[0].slice(0, 120) || 'CreatorOps post';
+    const control = await this.checkPublishControl(payload);
+    if (control) return control;
     const result = await this.requestJson(`${baseUrl}/wp-json/wp/v2/posts`, {
       method: 'POST',
       headers: {
@@ -71,7 +93,8 @@ export default class WordPressConnector extends BasePlatformConnector {
         title,
         content: payload.caption,
         status: 'draft'
-      })
+      }),
+      signal: payload.abortSignal
     });
     if (!result.ok) return result;
     return okResult({

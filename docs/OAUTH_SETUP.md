@@ -46,6 +46,8 @@ Google testing-mode apps show "Access blocked" unless the signed-in Google accou
 
 One Google OAuth connection is stored as platform `youtube` and is reused by the YouTube Shorts card. YouTube Shorts does not require a second Google OAuth connection.
 
+YouTube Studio has a Shorts upload experience, but the YouTube Data API publishes through the shared `videos.insert` video upload method. For the `youtube_shorts` target, CreatorOps verifies that selected video is square or vertical and no longer than 3 minutes; otherwise it blocks the job because YouTube would classify a new upload as a standard video rather than a Short.
+
 YouTube metrics sync uses the YouTube Data API `videos.list` statistics part for real counts. It can populate views, likes/reactions, and comment count after a real provider video id exists. Shares and saves are not exposed by that endpoint, so CreatorOps leaves them at zero/unavailable instead of faking them.
 
 For YouTube comments and replies, add these OAuth scopes in Google Auth Platform -> Data Access and reconnect the YouTube account from CreatorOps:

@@ -9,6 +9,7 @@ import { BRAND_REP_ROLE, CONTENT_CREATOR_ROLE, roleMatches } from '../constants/
 import { getConnector } from '../platforms/connectorRegistry.js';
 import { emitRealtimeEvent } from '../sockets/socket.js';
 import { createWorkflowEvent } from './event.service.js';
+import { refreshStoredConnectionIfNeeded } from './platformConnection.service.js';
 
 const createHttpError = (message, statusCode, code = '') => {
   const error = new Error(message);
@@ -357,6 +358,10 @@ export const syncPublishedPost = async ({ user, postId }) => {
   const connection = await getConnectionWithSecrets(post);
   const connector = getConnector(post.platform);
   if (!connection || !connector) throw createHttpError('Platform connection is unavailable.', 404);
+  const refreshAttempt = await refreshStoredConnectionIfNeeded({ connection, connector });
+  if (refreshAttempt.result && !refreshAttempt.result.ok && refreshAttempt.result.code !== 'CAPABILITY_UNAVAILABLE') {
+    throw createHttpError(refreshAttempt.result.message, 400, refreshAttempt.result.code);
+  }
 
   const analyticsResult = await connector.fetchAnalytics(connection, post.providerPostId);
   const commentsResult = await connector.fetchComments(connection, post.providerPostId);
@@ -465,6 +470,10 @@ export const replyToSocialComment = async ({ user, commentId, replyText }) => {
   const connection = await getConnectionWithSecrets(post);
   const connector = getConnector(comment.platform);
   if (!connector) throw createHttpError('Platform connector is unavailable.', 404);
+  const refreshAttempt = await refreshStoredConnectionIfNeeded({ connection, connector });
+  if (refreshAttempt.result && !refreshAttempt.result.ok && refreshAttempt.result.code !== 'CAPABILITY_UNAVAILABLE') {
+    throw createHttpError(refreshAttempt.result.message, 400, refreshAttempt.result.code);
+  }
   const providerTargetId = getCommentReplyTargetId(comment);
   if (!providerTargetId) throw createHttpError('The selected comment does not have a provider reply target id.', 400, 'CAPABILITY_UNAVAILABLE');
   const result = await connector.replyToComment(connection, providerTargetId, trimmedReplyText);
@@ -530,6 +539,10 @@ export const replyToSocialReply = async ({ user, replyId, replyText }) => {
   const connection = await getConnectionWithSecrets(post);
   const connector = getConnector(parentReply.platform);
   if (!connector) throw createHttpError('Platform connector is unavailable.', 404);
+  const refreshAttempt = await refreshStoredConnectionIfNeeded({ connection, connector });
+  if (refreshAttempt.result && !refreshAttempt.result.ok && refreshAttempt.result.code !== 'CAPABILITY_UNAVAILABLE') {
+    throw createHttpError(refreshAttempt.result.message, 400, refreshAttempt.result.code);
+  }
 
   const providerTargetId = getReplyReplyTargetId({ comment, parentReply });
   if (!providerTargetId) throw createHttpError('The selected reply does not have a provider reply target id.', 400, 'CAPABILITY_UNAVAILABLE');

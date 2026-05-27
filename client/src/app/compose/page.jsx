@@ -7,6 +7,7 @@ import AppShell from '../../components/layout/AppShell';
 import VisibilitySelector from '../../components/publish/VisibilitySelector';
 import { api } from '../../lib/api';
 import { getUser } from '../../lib/auth';
+import { formatDuration } from '../../lib/duration';
 import { formatPlatform, getPlatformCaptionLimit, getPlatformDetails, platformCapabilities } from '../../lib/platforms';
 import { canPublish } from '../../lib/roles';
 import Cropper from 'react-easy-crop';
@@ -24,6 +25,19 @@ const createPostGroupId = () => {
     return crypto.randomUUID();
   }
   return `post_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const formatBytes = bytes => {
+  const value = Number(bytes || 0);
+  if (!Number.isFinite(value) || value <= 0) return 'unknown size';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size >= 10 || unitIndex === 0 ? Math.round(size) : size.toFixed(1)} ${units[unitIndex]}`;
 };
 
 const createConnectionTarget = (connection, platform = connection.platform) => ({
@@ -53,6 +67,49 @@ const createDefaultMediaSettings = asset => ({
   croppedAreaPixels: asset?.cropMetadata?.croppedAreaPixels || null,
   croppedAreaPercentages: asset?.cropMetadata?.croppedAreaPercentages || null
 });
+
+const detectMediaType = file => {
+  if (file.type?.startsWith('image/')) return 'image';
+  if (file.type?.startsWith('video/')) return 'video';
+  return '';
+};
+
+const createLocalMediaAsset = file => {
+  const mediaType = detectMediaType(file);
+  return {
+    _id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    file,
+    originalName: file.name,
+    mimeType: file.type,
+    size: file.size,
+    mediaType,
+    width: null,
+    height: null,
+    durationSeconds: null,
+    publicUrl: URL.createObjectURL(file),
+    status: 'local_preview',
+    isLocalPreview: true
+  };
+};
+
+const loadLocalVideoMetadata = asset => {
+  if (asset.mediaType !== 'video') return Promise.resolve(asset);
+
+  return new Promise(resolve => {
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.onloadedmetadata = () => {
+      resolve({
+        ...asset,
+        width: video.videoWidth,
+        height: video.videoHeight,
+        durationSeconds: video.duration
+      });
+    };
+    video.onerror = () => resolve(asset);
+    video.src = asset.publicUrl;
+  });
+};
 
 const getAspectRatioValue = aspectRatio => {
   if (aspectRatio === '9:16') return 9 / 16;
@@ -98,10 +155,24 @@ export default function ComposePage() {
   const [message, setMessage] = useState('');
   const [publishResults, setPublishResults] = useState([]);
   const [busy, setBusy] = useState('');
+  const [publishSettings, setPublishSettings] = useState({ temporaryMediaRetentionSeconds: 7 * 24 * 60 * 60 });
 
   const load = async () => {
-    const payload = await api.get('/api/platform-connections');
+    const [connectionsResult, settingsResult] = await Promise.allSettled([
+      api.get('/api/platform-connections'),
+      api.get('/api/publish/settings')
+    ]);
+
+    if (connectionsResult.status === 'rejected') {
+      throw connectionsResult.reason;
+    }
+
+    const payload = connectionsResult.value;
     setConnections(expandConnectionTargets((payload.data.connections || []).filter(c => c.status === 'connected')));
+
+    if (settingsResult.status === 'fulfilled') {
+      setPublishSettings(settingsResult.value.data.settings);
+    }
   };
 
   useEffect(() => {
@@ -111,12 +182,12 @@ export default function ComposePage() {
 
   const activeAsset = mediaAssets[activeMediaIndex];
   const activeSettings = activeAsset ? mediaSettings[activeAsset._id] || createDefaultMediaSettings(activeAsset) : null;
-  const mediaIds = mediaAssets.map(a => a._id);
 
   const selectedConnections = useMemo(
     () => connections.filter(connection => selectedIds.includes(connection.targetKey)),
     [connections, selectedIds]
   );
+  const temporaryMediaRetentionLabel = formatDuration(publishSettings.temporaryMediaRetentionSeconds);
 
   const updateActiveSettings = (updates) => {
     if (!activeAsset) return;
@@ -126,29 +197,14 @@ export default function ComposePage() {
     }));
   };
 
-  const saveCropMetadata = async () => {
-    if (mediaAssets.length === 0) return;
+  const getCropMetadataForUpload = asset => {
+    if (asset.mediaType !== 'image') return null;
 
-    const imageAssets = mediaAssets.filter(asset => asset.mediaType === 'image');
-    if (imageAssets.length === 0) return;
-
-    const updates = await Promise.all(
-      imageAssets.map(asset => {
-        const cropMetadata = buildCropMetadata({
-          asset,
-          settings: mediaSettings[asset._id] || createDefaultMediaSettings(asset),
-          aspectRatio: globalAspect
-        });
-        return api.patch(`/api/media/${asset._id}`, { cropMetadata });
-      })
-    );
-
-    setMediaAssets(current =>
-      current.map(asset => {
-        const updated = updates.find(payload => payload.data.mediaAsset._id === asset._id)?.data.mediaAsset;
-        return updated || asset;
-      })
-    );
+    return buildCropMetadata({
+      asset,
+      settings: mediaSettings[asset._id] || createDefaultMediaSettings(asset),
+      aspectRatio: globalAspect
+    });
   };
 
   // Eligibility Check
@@ -165,6 +221,19 @@ export default function ComposePage() {
     for (const asset of mediaAssets) {
       if (!caps.types.includes(asset.mediaType)) {
          return { eligible: false, reason: `Does not support ${asset.mediaType}.` };
+      }
+    }
+    if (platform === 'youtube_shorts') {
+      const video = mediaAssets.find(asset => asset.mediaType === 'video');
+      const issues = [];
+      if (video?.width && video?.height && video.width > video.height) {
+        issues.push('square or vertical video');
+      }
+      if (video?.durationSeconds && video.durationSeconds > 3 * 60) {
+        issues.push('a duration of 3 minutes or less');
+      }
+      if (issues.length) {
+        return { eligible: false, reason: `YouTube Shorts requires ${issues.join(' and ')}.` };
       }
     }
     return { eligible: true };
@@ -202,13 +271,13 @@ export default function ComposePage() {
     setBusy('upload');
     setMessage('');
     try {
-      const newAssets = [];
-      for (const file of files) {
-        const formData = new FormData();
-        formData.append('media', file);
-        const payload = await api.upload('/api/media/upload', formData);
-        newAssets.push(payload.data.mediaAsset);
+      const newAssets = (await Promise.all(files.map(file => loadLocalVideoMetadata(createLocalMediaAsset(file)))))
+        .filter(asset => asset.mediaType);
+
+      if (newAssets.length !== files.length) {
+        setMessage('Only image and video files can be selected.');
       }
+
       setMediaSettings(prev => {
         const next = { ...prev };
         newAssets.forEach(asset => {
@@ -221,7 +290,9 @@ export default function ComposePage() {
         if (prev.length === 0) setActiveMediaIndex(0);
         return combined;
       });
-      setMessage(`Successfully uploaded ${newAssets.length} file(s).`);
+      if (newAssets.length) {
+        setMessage(`${newAssets.length} file(s) selected for temporary upload when you publish or schedule.`);
+      }
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -234,6 +305,9 @@ export default function ComposePage() {
     setMediaAssets(prev => {
       const next = [...prev];
       const removed = next.splice(index, 1)[0];
+      if (removed?.isLocalPreview && removed.publicUrl) {
+        URL.revokeObjectURL(removed.publicUrl);
+      }
       setMediaSettings(s => {
         const newS = { ...s };
         delete newS[removed._id];
@@ -269,7 +343,7 @@ export default function ComposePage() {
           connectionId: connection.platformConnectionId,
           platform: connection.platform
         })),
-        mediaAssetIds: mediaIds
+        mediaAssetIds: []
       });
       setCaptions(payload.data.results || []);
       setMessage('Captions customized per selected platform/account.');
@@ -325,6 +399,90 @@ export default function ComposePage() {
     return `Job ${publishJob.status}.`;
   };
 
+  const deleteUploadedMedia = async mediaAssetIds => {
+    await Promise.allSettled(mediaAssetIds.map(mediaAssetId => api.delete(`/api/media/${mediaAssetId}`)));
+  };
+
+  const getMediaProcessingDecisions = async () => {
+    if (mediaAssets.length === 0 || selectedConnections.length === 0) return {};
+
+    const payload = await api.post('/api/publish/media-plan', {
+      mediaItems: mediaAssets.map(asset => ({
+        originalName: asset.originalName,
+        mimeType: asset.mimeType,
+        size: asset.size,
+        mediaType: asset.mediaType
+      })),
+      connectionTargets: selectedConnections.map(connection => ({
+        connectionId: connection.platformConnectionId,
+        platform: connection.platform
+      }))
+    });
+
+    const decisions = {};
+    for (const target of payload.data.plan.targets || []) {
+      const exactOversizedMedia = (target.oversizedMedia || []).filter(item => item.compressionAvailable && item.maxBytes);
+      const unknownLimitMedia = (target.oversizedMedia || []).filter(item => item.compressionAvailable && !item.maxBytes);
+      if (unknownLimitMedia.length > 0) {
+        window.alert([
+          `${formatPlatform(target.platform)} ${target.accountHandle ? `(${target.accountHandle}) ` : ''}reported media is too large, but its provider API did not return an exact max byte limit.`,
+          'CreatorOps will not compress to a guessed size. Publish may fail until the media is reduced manually or the provider returns an exact max.'
+        ].join('\n\n'));
+      }
+
+      if (!target.promptForCompression || !target.compressionSupported || exactOversizedMedia.length === 0) continue;
+
+      const promptText = [
+        `${formatPlatform(target.platform)} ${target.accountHandle ? `(${target.accountHandle}) ` : ''}provider API says these media files exceed its supported upload size:`,
+        exactOversizedMedia
+          .map(item => `${item.originalName || 'media'}: selected ${formatBytes(item.size)}, provider max ${formatBytes(item.maxBytes)}`)
+          .join('\n'),
+        'Allow CreatorOps to create a temporary compressed copy for this platform only, keep it under that provider max size, upload it, and delete that compressed copy after the attempt?'
+      ].filter(Boolean).join('\n\n');
+      const accepted = window.confirm(promptText);
+      decisions[target.targetKey] = {
+        compressOnOversize: accepted,
+        compressBeforeUpload: accepted
+      };
+    }
+
+    return decisions;
+  };
+
+  const uploadMediaForPublish = async postGroupId => {
+    const mediaAssetIds = [];
+    const uploadedMediaIds = [];
+
+    try {
+      for (const asset of mediaAssets) {
+        if (!asset.file) {
+          mediaAssetIds.push(asset._id);
+          continue;
+        }
+
+        const formData = new FormData();
+        formData.append('media', asset.file);
+        formData.append('storageIntent', 'temporary_publish');
+        formData.append('cleanupGroupId', postGroupId);
+
+        const cropMetadata = getCropMetadataForUpload(asset);
+        if (cropMetadata) {
+          formData.append('cropMetadata', JSON.stringify(cropMetadata));
+        }
+
+        const payload = await api.upload('/api/media/upload', formData);
+        const mediaAssetId = payload.data.mediaAsset._id;
+        mediaAssetIds.push(mediaAssetId);
+        uploadedMediaIds.push(mediaAssetId);
+      }
+    } catch (error) {
+      await deleteUploadedMedia(uploadedMediaIds);
+      throw error;
+    }
+
+    return { mediaAssetIds, uploadedMediaIds };
+  };
+
   const publish = async ({ mode }) => {
     if (!canPublish(user)) {
       setMessage('Your current roles cannot publish from this workspace.');
@@ -335,13 +493,12 @@ export default function ComposePage() {
     setPublishResults([]);
     try {
       const endpoint = mode === 'now' ? '/api/publish/now' : '/api/publish/schedule';
-      const results = [];
       const postGroupId = createPostGroupId();
+      const mediaProcessingDecisions = await getMediaProcessingDecisions();
+      const { mediaAssetIds, uploadedMediaIds } = await uploadMediaForPublish(postGroupId);
+      const groupTargetCount = selectedConnections.length;
 
-      await saveCropMetadata();
-      
-      // We pass the mediaIds. The backend logic will associate the media with the job.
-      for (const connection of selectedConnections) {
+      const results = await Promise.all(selectedConnections.map(async connection => {
         const platformConnectionId = connection.platformConnectionId || connection._id;
         const customizedForTarget = captions.find(
           item => item.connectionId === platformConnectionId && item.platform === connection.platform
@@ -349,31 +506,38 @@ export default function ComposePage() {
         try {
           const payload = await api.post(endpoint, {
             postGroupId,
+            groupTargetCount,
             platformConnectionId,
             targetPlatform: connection.platform,
-            mediaAssetIds: mediaIds,
+            mediaAssetIds,
+            mediaProcessing: mediaProcessingDecisions[connection.targetKey] || { compressOnOversize: false, compressBeforeUpload: false },
             coverIndex: coverIndex,
             caption: customizedForTarget?.caption || baseCaption,
             visibility,
             scheduledAt: new Date(scheduledAt).toISOString()
           });
           const publishJob = payload.data.publishJob;
-          results.push({
+          return {
             ok: !['blocked', 'failed'].includes(publishJob?.status),
             platform: connection.platform,
             accountHandle: connection.accountHandle,
             status: publishJob?.status || 'queued',
+            jobId: publishJob?._id,
             detail: describePublishJob(publishJob)
-          });
+          };
         } catch (err) {
-          results.push({
+          return {
             ok: false,
             platform: connection.platform,
             accountHandle: connection.accountHandle,
             status: 'blocked',
             detail: err.message
-          });
+          };
         }
+      }));
+      const acceptedCount = results.filter(result => result.jobId).length;
+      if (acceptedCount === 0) {
+        await deleteUploadedMedia(uploadedMediaIds);
       }
       setPublishResults(results);
       const successCount = results.filter(result => result.ok).length;
@@ -393,7 +557,10 @@ export default function ComposePage() {
           <p className="text-sm uppercase tracking-[0.18em] text-mint">Advanced Compose</p>
           <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Compose & Publish</h1>
           <p className="mt-2 max-w-4xl text-sm text-[var(--muted)]">
-            Upload multiple media files, manage cover and aspect ratios, customize captions with AI, and intelligently deploy to supported platforms. Platforms lacking multi-media capabilities will be gracefully greyed out.
+            Select multiple media files, manage cover and aspect ratios, customize captions with AI, and intelligently deploy to supported platforms. Media uploads only start when you publish or schedule.
+          </p>
+          <p className="mt-3 max-w-4xl rounded-xl border border-gold/30 bg-gold/10 p-3 text-sm text-gold">
+            Temporary publish media is auto-deleted after {temporaryMediaRetentionLabel} once every platform in the post group is no longer queued or publishing. Retry is unavailable after the media expires.
           </p>
         </header>
 
@@ -430,7 +597,7 @@ export default function ComposePage() {
                 <h2 className="text-base font-semibold text-[var(--text)]">Media Gallery</h2>
                 <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-4 py-2 text-sm text-[var(--text)] hover:border-mint transition">
                   <ImagePlus size={16} />
-                  {busy === 'upload' ? 'Uploading...' : 'Add Media'}
+                  {busy === 'upload' ? 'Selecting...' : 'Add Media'}
                   <input type="file" accept="image/*,video/*" multiple onChange={upload} className="hidden" />
                 </label>
               </div>

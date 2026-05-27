@@ -1,4 +1,4 @@
-import { processDuePublishJobs } from '../services/publish.service.js';
+import { processDuePublishJobs, processTemporaryPublishMediaCleanup } from '../services/publish.service.js';
 
 let intervalId = null;
 
@@ -10,6 +10,7 @@ export const startPublishingWorker = ({ intervalMs = 10000 } = {}) => {
   const tick = async () => {
     try {
       await processDuePublishJobs();
+      await processTemporaryPublishMediaCleanup();
     } catch (error) {
       console.error('Publishing worker tick failed:', error.message);
     }

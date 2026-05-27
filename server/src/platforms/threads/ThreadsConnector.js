@@ -68,6 +68,22 @@ export default class ThreadsConnector extends BasePlatformConnector {
     });
   }
 
+  async healthCheck(connection) {
+    const base = await super.healthCheck(connection);
+    if (base.code !== 'CAPABILITY_UNAVAILABLE') return base;
+
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored Threads access token was found. Reconnect this account.' });
+    }
+
+    const result = await this.requestJson(
+      `https://graph.threads.net/v1.0/me?fields=id,username,name&access_token=${encodeURIComponent(token)}`
+    );
+    if (!result.ok) return result;
+    return okResult({ account: result.data }, 'Threads token verified through the Threads API.');
+  }
+
   validatePublishPayload(payload, connection) {
     const base = super.validatePublishPayload(payload, connection);
     if (!base.ok) return base;
@@ -86,15 +102,21 @@ export default class ThreadsConnector extends BasePlatformConnector {
       media_type: 'TEXT',
       text: payload.caption
     });
+    const controlBeforeContainer = await this.checkPublishControl(payload);
+    if (controlBeforeContainer) return controlBeforeContainer;
     const container = await this.requestJson(`https://graph.threads.net/v1.0/${connection.externalAccountId}/threads`, {
       method: 'POST',
-      body: createBody
+      body: createBody,
+      signal: payload.abortSignal
     });
     if (!container.ok) return container;
+    const controlBeforePublish = await this.checkPublishControl(payload);
+    if (controlBeforePublish) return controlBeforePublish;
     const publishBody = new URLSearchParams({ access_token: token, creation_id: container.data.id });
     const published = await this.requestJson(`https://graph.threads.net/v1.0/${connection.externalAccountId}/threads_publish`, {
       method: 'POST',
-      body: publishBody
+      body: publishBody,
+      signal: payload.abortSignal
     });
     if (!published.ok) return published;
     return okResult({

@@ -124,7 +124,9 @@ Original files are stored without recompression. Crop settings are preview metad
 | POST | `/api/publish/schedule` | includes `content_creator` or `brand_rep` | Queue a scheduled real publish job |
 | GET | `/api/publish/jobs` | Auth | List publish jobs |
 | GET | `/api/publish/jobs/:id` | Auth | Get one publish job |
-| POST | `/api/publish/jobs/:id/cancel` | includes `content_creator` or `brand_rep` | Cancel allowed job |
+| POST | `/api/publish/jobs/:id/pause` | includes `content_creator` or `brand_rep` | Pause queued job immediately or request pause for an active publishing job |
+| POST | `/api/publish/jobs/:id/resume` | includes `content_creator` or `brand_rep` | Resume a paused publish job |
+| POST | `/api/publish/jobs/:id/cancel` | includes `content_creator` or `brand_rep` | Cancel queued/paused/failed/blocked job immediately or request cancel for an active publishing job |
 | POST | `/api/publish/jobs/:id/retry` | includes `content_creator` or `brand_rep` | Retry failed/blocked job |
 
 Publish body:

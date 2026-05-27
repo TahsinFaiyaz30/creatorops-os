@@ -19,6 +19,15 @@ const createHttpError = (message, statusCode, code = '') => {
 };
 
 const GOOGLE_POWERED_PLATFORMS = ['youtube', 'youtube_shorts'];
+const CREDENTIAL_ERROR_CODES = new Set([
+  '401',
+  'HTTP_401',
+  'UNAUTHORIZED',
+  'INVALID_CREDENTIALS',
+  'INVALID_GRANT',
+  'INVALID_TOKEN',
+  'EXPIRED'
+]);
 
 const resolveRequestedPlatform = rawPlatform => {
   const platform = normalizePlatform(rawPlatform);
@@ -68,6 +77,72 @@ const getSafeReturnUrl = returnUrl => {
 };
 
 const getSafeErrorMessage = result => result?.message || 'Platform request failed.';
+
+const isCredentialError = result => {
+  const code = String(result?.code || '').toUpperCase();
+  const message = String(result?.message || '').toLowerCase();
+
+  return (
+    CREDENTIAL_ERROR_CODES.has(code) ||
+    code.includes('401') ||
+    code.includes('INVALID_TOKEN') ||
+    code.includes('INVALID_GRANT') ||
+    message.includes('invalid authentication') ||
+    message.includes('access token') ||
+    message.includes('expired token') ||
+    message.includes('invalid token') ||
+    message.includes('oauth')
+  );
+};
+
+const statusFromHealthResult = (result, currentStatus) => {
+  if (result.ok) return 'connected';
+  if (result.code === 'MISSING_PERMISSIONS') return 'missing_permissions';
+  if (isCredentialError(result)) return 'expired';
+  if (currentStatus === 'disconnected') return 'disconnected';
+  return 'error';
+};
+
+const applyTokenRefresh = (connection, result) => {
+  if (result.data.accessToken) connection.encryptedAccessToken = encryptSecret(result.data.accessToken);
+  if (result.data.refreshToken) connection.encryptedRefreshToken = encryptSecret(result.data.refreshToken);
+  if (result.data.apiSecret) connection.encryptedApiSecret = encryptSecret(result.data.apiSecret);
+  if (result.data.appPassword) connection.encryptedAppPassword = encryptSecret(result.data.appPassword);
+  if (result.data.expiresIn) connection.tokenExpiresAt = new Date(Date.now() + Number(result.data.expiresIn) * 1000);
+  if (Array.isArray(result.data.scopes) && result.data.scopes.length > 0) connection.scopes = result.data.scopes;
+};
+
+export const refreshStoredConnectionIfNeeded = async ({ connection, connector, force = false }) => {
+  if (!connection || !connector || connection.status !== 'connected') return { refreshed: false };
+
+  const expiresAt = connection.tokenExpiresAt ? new Date(connection.tokenExpiresAt).getTime() : 0;
+  const shouldRefresh = force || (expiresAt > 0 && expiresAt <= Date.now() + 60_000);
+  if (!shouldRefresh) return { refreshed: false };
+
+  const result = await connector.refreshToken(connection);
+  if (!result.ok) {
+    if (result.code === 'CAPABILITY_UNAVAILABLE' && expiresAt > 0 && expiresAt <= Date.now()) {
+      return {
+        refreshed: false,
+        result: {
+          ok: false,
+          code: 'EXPIRED',
+          message: `${connector.getDisplayName()} credentials are expired and cannot be refreshed automatically. Reconnect this account.`,
+          data: {}
+        }
+      };
+    }
+
+    return { refreshed: false, result };
+  }
+
+  applyTokenRefresh(connection, result);
+  connection.status = 'connected';
+  connection.lastErrorCode = '';
+  connection.lastErrorMessage = '';
+  await connection.save();
+  return { refreshed: true, result };
+};
 
 const logOAuthCallback = state => {
   console.info(
@@ -301,15 +376,34 @@ export const deleteConnection = async ({ user, connectionId }) => {
 export const healthCheckConnection = async ({ user, connectionId }) => {
   const connection = await getPlatformConnectionById({ user, connectionId, includeSecrets: true });
   const connector = getConnector(connection.platform);
-  const result = await connector.healthCheck(connection);
+  let result = await connector.healthCheck(connection);
+  let refreshed = false;
+
+  if (!result.ok && isCredentialError(result)) {
+    const refreshAttempt = await refreshStoredConnectionIfNeeded({ connection, connector, force: true });
+    if (refreshAttempt.result?.ok) {
+      refreshed = true;
+      result = await connector.healthCheck(connection);
+    } else if (refreshAttempt.result?.code !== 'CAPABILITY_UNAVAILABLE') {
+      result = refreshAttempt.result;
+    }
+  }
+
   connection.lastHealthCheckAt = new Date();
   connection.lastErrorCode = result.ok ? '' : result.code;
   connection.lastErrorMessage = result.ok ? '' : result.message;
-  if (!result.ok && ['MISSING_PERMISSIONS', 'EXPIRED', 'BLOCKED'].includes(result.code)) {
-    connection.status = result.code.toLowerCase();
-  }
+  connection.status = statusFromHealthResult(result, connection.status);
   await connection.save();
-  return { connection: sanitizeConnection(connection), result };
+  return {
+    connection: sanitizeConnection(connection),
+    result: {
+      ...result,
+      data: {
+        ...(result.data || {}),
+        refreshed
+      }
+    }
+  };
 };
 
 export const refreshConnection = async ({ user, connectionId }) => {
@@ -323,9 +417,7 @@ export const refreshConnection = async ({ user, connectionId }) => {
     await connection.save();
     throw createHttpError(result.message, 400, result.code);
   }
-  if (result.data.accessToken) connection.encryptedAccessToken = encryptSecret(result.data.accessToken);
-  if (result.data.refreshToken) connection.encryptedRefreshToken = encryptSecret(result.data.refreshToken);
-  if (result.data.expiresIn) connection.tokenExpiresAt = new Date(Date.now() + Number(result.data.expiresIn) * 1000);
+  applyTokenRefresh(connection, result);
   connection.status = 'connected';
   connection.updatedBy = user._id;
   await connection.save();

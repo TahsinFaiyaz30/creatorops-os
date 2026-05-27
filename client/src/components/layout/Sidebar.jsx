@@ -35,7 +35,7 @@ const NAV_GROUPS = [
     items: [
       { href: '/review',     label: 'Creator Review',  icon: ShieldCheck, roles: [ROLES.CONTENT_CREATOR] },
       { href: '/accounts',   label: 'Accounts',   icon: RadioTower,  roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-      { href: '/publishing', label: 'Publishing',  icon: Send,        roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/publishing', label: 'Dispatch',  icon: Send,        roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
       { href: '/analytics',  label: 'Analytics',  icon: BarChart3,   roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
     ],
   },

@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Database, ExternalLink, Loader2, Save, Server, Shield, Users } from 'lucide-react';
+import { Clock, Database, ExternalLink, Loader2, Save, Server, Shield, Users } from 'lucide-react';
 import AppShell from '../../components/layout/AppShell';
 import RoleBadge from '../../components/layout/RoleBadge';
 import { api } from '../../lib/api';
 import { getToken, saveSession } from '../../lib/auth';
+import { formatDuration } from '../../lib/duration';
 import { ROLES, getRoleLabel, hasAdminRole, normalizeRoles } from '../../lib/roles';
 
 const ROLE_OPTIONS = [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP, ROLES.ADMIN];
@@ -19,6 +20,10 @@ export default function AdminPanelPage() {
   const [draftRoles, setDraftRoles] = useState({});
   const [roleBusy, setRoleBusy] = useState('');
   const [roleMessage, setRoleMessage] = useState('');
+  const [settings, setSettings] = useState(null);
+  const [settingsDraft, setSettingsDraft] = useState({ temporaryMediaRetentionSeconds: 7 * 24 * 60 * 60 });
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState('');
 
   useEffect(() => {
     const token = getToken();
@@ -38,13 +43,15 @@ export default function AdminPanelPage() {
           api.get('/api/platform-connections'),
           api.get('/api/publish/jobs'),
           api.get('/api/events?limit=5'),
-          api.get('/api/admin/users')
+          api.get('/api/admin/users'),
+          api.get('/api/admin/settings')
         ]);
       })
       .then(results => {
         if (!results) return;
-        const [campaigns, connections, jobs, events, adminUsers] = results;
+        const [campaigns, connections, jobs, events, adminUsers, adminSettings] = results;
         const users = adminUsers.value?.data?.users || [];
+        const loadedSettings = adminSettings.value?.data?.settings || { temporaryMediaRetentionSeconds: 7 * 24 * 60 * 60 };
 
         setStats({
           campaigns: campaigns.value?.data?.campaigns?.length ?? 'N/A',
@@ -54,6 +61,8 @@ export default function AdminPanelPage() {
         });
         setAccounts(users);
         setDraftRoles(Object.fromEntries(users.map(account => [account.id, normalizeRoles(account)])));
+        setSettings(loadedSettings);
+        setSettingsDraft({ temporaryMediaRetentionSeconds: loadedSettings.temporaryMediaRetentionSeconds });
       })
       .catch(() => {
         router.replace('/dashboard');
@@ -94,6 +103,24 @@ export default function AdminPanelPage() {
       setRoleMessage(err.message || 'Could not update roles.');
     } finally {
       setRoleBusy('');
+    }
+  };
+
+  const saveSettings = async () => {
+    setSettingsBusy(true);
+    setSettingsMessage('');
+    try {
+      const payload = await api.patch('/api/admin/settings', {
+        temporaryMediaRetentionSeconds: settingsDraft.temporaryMediaRetentionSeconds
+      });
+      const updatedSettings = payload.data.settings;
+      setSettings(updatedSettings);
+      setSettingsDraft({ temporaryMediaRetentionSeconds: updatedSettings.temporaryMediaRetentionSeconds });
+      setSettingsMessage('Temporary media expiry updated.');
+    } catch (err) {
+      setSettingsMessage(err.message || 'Could not update settings.');
+    } finally {
+      setSettingsBusy(false);
     }
   };
 
@@ -149,6 +176,45 @@ export default function AdminPanelPage() {
                 </div>
               ))}
             </div>
+          </section>
+        )}
+
+        {settings && (
+          <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Clock size={17} className="text-mint" />
+                <h2 className="text-base font-semibold text-[var(--text)]">Temporary Media Expiry</h2>
+              </div>
+              {settingsMessage && <div className="text-sm text-[var(--muted)]">{settingsMessage}</div>}
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
+              <label className="block">
+                <span className="mb-1.5 block text-xs uppercase tracking-wide text-[var(--muted)]">Expiry seconds</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={settingsDraft.temporaryMediaRetentionSeconds}
+                  onChange={event => setSettingsDraft({ temporaryMediaRetentionSeconds: event.target.value })}
+                  className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={saveSettings}
+                disabled={settingsBusy}
+                className="focus-ring self-end inline-flex items-center justify-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50"
+              >
+                {settingsBusy ? <Loader2 size={15} className="animate-spin-slow" /> : <Save size={15} />}
+                Save
+              </button>
+            </div>
+
+            <p className="mt-3 text-sm text-[var(--muted)]">
+              Current expiry: {formatDuration(settings.temporaryMediaRetentionSeconds)}. Use 0 for immediate deletion after a post group has no queued or publishing jobs. Scheduled queued jobs keep their media until they run.
+            </p>
           </section>
         )}
 

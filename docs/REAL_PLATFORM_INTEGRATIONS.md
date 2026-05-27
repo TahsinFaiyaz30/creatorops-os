@@ -7,7 +7,7 @@ CreatorOps OS uses official OAuth/API connector classes. Connectors expose requi
 - Facebook Page: OAuth, Page profile, Page feed/photo publish, comments/reactions where permissions allow
 - Instagram: Meta OAuth, professional account profile, media container publish, insights/comments where permissions allow
 - TikTok: OAuth/profile, blocks publishing unless Content Posting API access is approved
-- YouTube/Shorts: Google OAuth, channel profile, video upload, comments/replies where scopes allow
+- YouTube/Shorts: Google OAuth, channel profile, resumable `videos.insert` upload, comments/replies where scopes allow. YouTube Studio exposes a Shorts-focused upload experience, but the Data API uploads both targets as videos; CreatorOps validates square/vertical video up to 3 minutes before a `youtube_shorts` job can upload.
 - Threads: OAuth/profile, text publish flow where API access allows
 - LinkedIn: OAuth/profile, member text post with `w_member_social`
 - X: OAuth 2.0 PKCE, user profile, post creation when API access allows

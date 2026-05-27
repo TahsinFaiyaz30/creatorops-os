@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, RefreshCw, ShieldAlert, Unplug, Plus, Settings2, ChevronDown, ChevronUp } from 'lucide-react';
+import { ExternalLink, RefreshCw, ShieldAlert, Unplug, Plus, Settings2, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import AppShell from '../../components/layout/AppShell';
 import { api } from '../../lib/api';
 import { getUser } from '../../lib/auth';
@@ -90,6 +90,24 @@ export default function AccountsPage() {
     } finally {
       setBusyConnection('');
     }
+  };
+
+  const deleteConnection = async connection => {
+    setBusyConnection(connection._id);
+    setMessage('');
+    try {
+      await api.delete(`/api/platform-connections/${connection._id}`);
+      setMessage('Connection deleted.');
+      await load();
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setBusyConnection('');
+    }
+  };
+
+  const reconnect = async connection => {
+    await connect({ platform: connection.platformData.platform || connection.platform, configured: true });
   };
 
   const healthCheck = async connection => {
@@ -215,7 +233,7 @@ export default function AccountsPage() {
         {/* Active Connections Cards */}
         <section>
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-[var(--text)]">Active Connections</h2>
+            <h2 className="text-xl font-bold text-[var(--text)]">Saved Connections</h2>
             <span className="bg-[var(--surface2)] px-3 py-1 rounded-full text-xs font-semibold text-[var(--muted)] border border-[var(--border)]">
               {connectedAccounts.length} Total
             </span>
@@ -279,22 +297,45 @@ export default function AccountsPage() {
                   )}
 
                   <div className="flex gap-2 pt-4 border-t border-[var(--border)]">
-                    <button 
-                      type="button" 
-                      disabled={busyConnection === connection._id} 
-                      onClick={() => healthCheck(connection)} 
-                      className="flex-1 flex justify-center items-center gap-1.5 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface2)] text-xs font-semibold text-[var(--text)] hover:border-mint hover:text-mint transition-colors"
-                    >
-                      <RefreshCw size={14} /> Check
-                    </button>
-                    <button 
-                      type="button" 
-                      disabled={busyConnection === connection._id} 
-                      onClick={() => disconnect(connection)} 
-                      className="flex-1 flex justify-center items-center gap-1.5 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface2)] text-xs font-semibold text-[var(--text)] hover:border-rose hover:text-rose hover:bg-rose/5 transition-colors"
-                    >
-                      <Unplug size={14} /> Disconnect
-                    </button>
+                    {connection.status === 'connected' ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={busyConnection === connection._id}
+                          onClick={() => healthCheck(connection)}
+                          className="flex-1 flex justify-center items-center gap-1.5 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface2)] text-xs font-semibold text-[var(--text)] hover:border-mint hover:text-mint transition-colors"
+                        >
+                          <RefreshCw size={14} /> Check
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyConnection === connection._id}
+                          onClick={() => disconnect(connection)}
+                          className="flex-1 flex justify-center items-center gap-1.5 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface2)] text-xs font-semibold text-[var(--text)] hover:border-rose hover:text-rose hover:bg-rose/5 transition-colors"
+                        >
+                          <Unplug size={14} /> Disconnect
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          disabled={busyConnection === connection._id || busyPlatform === connection.platformData.platform}
+                          onClick={() => reconnect(connection)}
+                          className="flex-1 flex justify-center items-center gap-1.5 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface2)] text-xs font-semibold text-[var(--text)] hover:border-mint hover:text-mint transition-colors"
+                        >
+                          <RefreshCw size={14} /> Reconnect
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyConnection === connection._id}
+                          onClick={() => deleteConnection(connection)}
+                          className="flex-1 flex justify-center items-center gap-1.5 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface2)] text-xs font-semibold text-[var(--text)] hover:border-rose hover:text-rose hover:bg-rose/5 transition-colors"
+                        >
+                          <Trash2 size={14} /> Delete
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
