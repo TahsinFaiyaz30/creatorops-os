@@ -9,16 +9,18 @@ import {
 } from '../controllers/platformAccount.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requireRole } from '../middleware/role.middleware.js';
-import { CONTENT_CREATOR_ROLE } from '../constants/roles.js';
+import { BRAND_REP_ROLE, CONTENT_CREATOR_ROLE } from '../constants/roles.js';
 
 const router = Router();
 
 router.use(authenticate);
 
-router.post('/', requireRole([CONTENT_CREATOR_ROLE]), createPlatformAccountHandler);
+const accountManagerRoles = [CONTENT_CREATOR_ROLE, BRAND_REP_ROLE];
+
+router.post('/', requireRole(accountManagerRoles), createPlatformAccountHandler);
 router.get('/', listPlatformAccountsHandler);
 router.get('/:id', getPlatformAccountHandler);
-router.patch('/:id', requireRole([CONTENT_CREATOR_ROLE]), updatePlatformAccountHandler);
-router.delete('/:id', requireRole([CONTENT_CREATOR_ROLE]), deletePlatformAccountHandler);
+router.patch('/:id', requireRole(accountManagerRoles), updatePlatformAccountHandler);
+router.delete('/:id', requireRole(accountManagerRoles), deletePlatformAccountHandler);
 
 export default router;

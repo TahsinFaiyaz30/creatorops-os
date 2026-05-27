@@ -11,9 +11,9 @@ const createHttpError = (message, statusCode) => {
   return error;
 };
 
-const requireCreatorAdmin = user => {
-  if (!isContentCreatorRole(user.role)) {
-    throw createHttpError('Forbidden: Content Creator role is required for this approval action.', 403);
+const requireContentCreator = user => {
+  if (!isContentCreatorRole(user)) {
+    throw createHttpError('Forbidden: Content Creator role is required for this review action.', 403);
   }
 };
 
@@ -51,7 +51,7 @@ const findPendingApproval = async (user, approvalId) => {
   });
 
   if (!approval) {
-    throw createHttpError('Pending approval request not found.', 404);
+    throw createHttpError('Pending review request not found.', 404);
   }
 
   return approval;
@@ -87,8 +87,8 @@ const createApprovalEvent = async ({
     eventType,
     message:
       eventType === 'approval.requested'
-        ? `Approval requested for ${variant.platform} variant.`
-        : `Approval ${newStatus} for ${variant.platform} variant.`,
+        ? `Creator review requested for ${variant.platform} variant.`
+        : `Creator review ${newStatus} for ${variant.platform} variant.`,
     entityType: 'ApprovalRequest',
     entityId: approval._id,
     metadata: {
@@ -117,11 +117,11 @@ export const requestApproval = async ({ variantId, comment = '', user }) => {
   });
 
   if (duplicatePending) {
-    throw createHttpError('A pending approval request already exists for this variant.', 409);
+    throw createHttpError('A pending review request already exists for this variant.', 409);
   }
 
   if (variant.status !== 'draft') {
-    throw createHttpError('Only draft variants can be submitted for approval.', 400);
+    throw createHttpError('Only draft variants can be queued for creator review.', 400);
   }
 
   const previousStatus = variant.status;
@@ -148,7 +148,7 @@ export const requestApproval = async ({ variantId, comment = '', user }) => {
     contentItem,
     variant,
     approval,
-    changeNote: comment || 'Approval requested'
+    changeNote: comment || 'Creator review requested'
   });
 
   await createApprovalEvent({
@@ -169,7 +169,7 @@ export const requestApproval = async ({ variantId, comment = '', user }) => {
 };
 
 export const getPendingApprovals = async ({ user }) => {
-  requireCreatorAdmin(user);
+  requireContentCreator(user);
 
   return ApprovalRequest.find({
     workspaceId: user.workspaceId,
@@ -183,7 +183,7 @@ export const getPendingApprovals = async ({ user }) => {
 };
 
 const completeApprovalDecision = async ({ approvalId, user, comment = '', decisionStatus, eventType }) => {
-  requireCreatorAdmin(user);
+  requireContentCreator(user);
 
   const approval = await findPendingApproval(user, approvalId);
   const variant = await findScopedVariant(user, approval.variantId);
@@ -191,7 +191,7 @@ const completeApprovalDecision = async ({ approvalId, user, comment = '', decisi
   const previousStatus = variant.status;
 
   if (variant.status !== 'in_review') {
-    throw createHttpError('Only in_review variants can receive an approval decision.', 400);
+    throw createHttpError('Only in_review variants can receive a creator review decision.', 400);
   }
 
   approval.status = decisionStatus;
@@ -212,7 +212,7 @@ const completeApprovalDecision = async ({ approvalId, user, comment = '', decisi
     contentItem,
     variant,
     approval,
-    changeNote: comment || `Approval ${decisionStatus}`
+    changeNote: comment || `Creator review ${decisionStatus}`
   });
 
   await createApprovalEvent({

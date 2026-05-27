@@ -35,8 +35,12 @@ CreatorOps OS never asks for real social platform passwords and never stores the
 
 The frontend receives only safe connection metadata: platform, account name/handle, status, scopes, expiry, health check fields, and capabilities. It never receives raw or encrypted credentials.
 
+## Account Roles
+
+Account capabilities come from the `roles` array. An account can have any combination of `content_creator`, `brand_rep`, and `admin`. Public signup can create one normal public role; later role changes require the `admin` role and go through admin-protected API routes.
+
 ## Brand Circulars And Statistics
 
-Brand representative routes are backend-enforced with the `brand_rep` role. Brand representatives can manage only circulars in their workspace and only review applications for circulars they own.
+Brand representative routes are backend-enforced by requiring `brand_rep` in the account roles. Brand representatives can manage only circulars in their workspace and only review applications for circulars they own.
 
 Creator statistics are computed from stored real social metric snapshots. Missing followers, reach, impressions, growth, comments, or platform profile data remain unavailable instead of being fabricated. Application snapshots preserve their source so reviewers can tell whether data came from real sync or is unavailable.

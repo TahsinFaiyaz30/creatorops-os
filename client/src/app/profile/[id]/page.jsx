@@ -6,7 +6,7 @@ import { UserCircle, Briefcase, MapPin, Link as LinkIcon, Star, MessageSquare, S
 import AppShell from '../../../components/layout/AppShell';
 import { api } from '../../../lib/api';
 import { getUser } from '../../../lib/auth';
-import { getRoleLabel, isBrandRep, normalizeRole } from '../../../lib/roles';
+import { getRoleLabels, isBrandRep } from '../../../lib/roles';
 
 export default function ProfilePage() {
   const params = useParams();
@@ -98,7 +98,6 @@ export default function ProfilePage() {
   }
 
   const { user, brandProfile, reviews } = profileData;
-  const profileRole = normalizeRole(user.role);
   const isOwnProfile = currentUser?.id === user._id || currentUser?._id === user._id || params.id === 'me';
 
   return (
@@ -138,11 +137,11 @@ export default function ProfilePage() {
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
                   <h1 className="text-3xl font-extrabold text-[var(--text)]">{user.name}</h1>
-                  {isBrandRep(profileRole) && <ShieldCheck size={20} className="text-gold" title="Verified Brand Representative" />}
+                  {isBrandRep(user) && <ShieldCheck size={20} className="text-gold" title="Verified Brand Representative" />}
                 </div>
                 <div className="flex flex-wrap gap-4 text-sm font-medium text-[var(--muted)]">
                   <span className="uppercase tracking-wider text-xs border border-[var(--border)] px-2 py-0.5 rounded-md bg-[var(--surface2)]">
-                    {getRoleLabel(profileRole)}
+                    {getRoleLabels(user).join(' + ')}
                   </span>
                   {user.profile?.location && (
                     <span className="flex items-center gap-1"><MapPin size={14} /> {user.profile.location}</span>
@@ -179,7 +178,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Brand Details (If Brand Rep) */}
-        {isBrandRep(profileRole) && brandProfile && (
+        {isBrandRep(user) && brandProfile && (
           <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-8">
             <h2 className="text-xl font-bold flex items-center gap-2 mb-6 text-[var(--text)]">
               <Briefcase className="text-gold" /> Brand Representation

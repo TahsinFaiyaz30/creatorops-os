@@ -2,7 +2,7 @@
 
 ## Project Summary
 
-CreatorOps OS is a creator-team operations system for campaign planning, AI repurposing, approval, real platform connections, account-targeted publishing, synced social data, and realtime workflow accountability.
+CreatorOps OS is a creator-team operations system for campaign planning, AI repurposing, creator review, real platform connections, account-targeted publishing, synced social data, and realtime workflow accountability.
 
 ## Problem Solved
 
@@ -21,8 +21,9 @@ Creator teams often lose context between ideation, platform adaptation, brand re
 - Multi-platform campaigns
 - AI platform variants and caption customization
 - Brand scoring and readiness checks
-- Editor/Admin RBAC
-- Approval queue
+- Multi-role RBAC for creator, brand, and admin capabilities
+- Admin Panel for workspace/server control visibility and account role management
+- Creator review queue
 - Version history
 - Encrypted real platform connections
 - Media upload and 9:16 preview
@@ -57,4 +58,4 @@ Next.js, React, Tailwind CSS, Express, MongoDB, Mongoose, Socket.IO, JWT, bcrypt
 
 ## Why Should We Choose This Project?
 
-CreatorOps OS is not just another content dashboard. It solves the real operational problem behind creator teams: moving content from idea to platform-ready execution with approval, brand consistency, scheduling, and accountability. Most tools focus on either AI generation or publishing. Our system connects the entire workflow. One raw idea becomes multiple platform-specific variants, each checked against brand rules, routed through backend-enforced role-based approval, scheduled through a publishing pipeline, and tracked through realtime workflow events. The project demonstrates backend depth through custom authentication, RBAC middleware, modular service architecture, database versioning, workflow events, Socket.IO realtime updates, encrypted OAuth/API platform connections, media upload, real connector validation, and a publishing worker. It is built as an infrastructure layer that can connect to real Instagram, TikTok, YouTube, LinkedIn, Facebook, Threads, X, Pinterest, WordPress, and Shopify adapters without faking external outcomes.
+CreatorOps OS is not just another content dashboard. It solves the real operational problem behind creator teams: moving content from idea to platform-ready execution with creator review, brand consistency, scheduling, and accountability. Most tools focus on either AI generation or publishing. Our system connects the entire workflow. One raw idea becomes multiple platform-specific variants, each checked against brand rules, routed through backend-enforced creator review, scheduled through a publishing pipeline, and tracked through realtime workflow events. The project demonstrates backend depth through custom authentication, RBAC middleware, modular service architecture, database versioning, workflow events, Socket.IO realtime updates, encrypted OAuth/API platform connections, media upload, real connector validation, and a publishing worker. It is built as an infrastructure layer that can connect to real Instagram, TikTok, YouTube, LinkedIn, Facebook, Threads, X, Pinterest, WordPress, and Shopify adapters without faking external outcomes.

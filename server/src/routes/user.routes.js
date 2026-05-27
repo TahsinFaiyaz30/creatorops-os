@@ -1,7 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { authenticate } from '../middleware/auth.middleware.js';
-import { isBrandRepRole, normalizeRole } from '../constants/roles.js';
+import { isBrandRepRole, normalizeRoles, primaryRole } from '../constants/roles.js';
 import User from '../models/User.js';
 import BrandProfile from '../models/BrandProfile.js';
 import Review from '../models/Review.js';
@@ -24,9 +24,10 @@ router.get('/profile/:id', async (req, res, next) => {
     }
 
     let brandProfile = null;
-    user.role = normalizeRole(user.role);
+    user.roles = normalizeRoles(user.roles, user.role);
+    user.role = primaryRole(user.roles);
 
-    if (isBrandRepRole(user.role)) {
+    if (isBrandRepRole(user)) {
       brandProfile = await BrandProfile.findOne({ workspaceId: user.workspaceId });
     }
 
@@ -65,7 +66,7 @@ router.put('/profile', async (req, res, next) => {
     await user.save();
 
     let brandProfile = null;
-    if (isBrandRepRole(user.role) && brandDetails) {
+    if (isBrandRepRole(user) && brandDetails) {
       brandProfile = await BrandProfile.findOne({ workspaceId: user.workspaceId });
       if (brandProfile) {
         brandProfile.brandName = brandDetails.brandName || brandProfile.brandName;

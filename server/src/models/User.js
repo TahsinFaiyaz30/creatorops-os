@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 
-import { CONTENT_CREATOR_ROLE, USER_ROLES } from '../constants/roles.js';
+import { CONTENT_CREATOR_ROLE, USER_ROLES, normalizeRoles, primaryRole } from '../constants/roles.js';
 
 const { Schema } = mongoose;
 
@@ -30,6 +30,14 @@ const userSchema = new Schema(
       default: CONTENT_CREATOR_ROLE,
       required: true
     },
+    roles: {
+      type: [{ type: String, enum: USER_ROLES }],
+      default: undefined,
+      validate: {
+        validator: roles => roles === undefined || (Array.isArray(roles) && roles.length > 0),
+        message: 'At least one role is required.'
+      }
+    },
     workspaceId: {
       type: Schema.Types.ObjectId,
       ref: 'Workspace',
@@ -52,6 +60,13 @@ const userSchema = new Schema(
   },
   { timestamps: true }
 );
+
+userSchema.pre('validate', function normalizeUserRoles(next) {
+  const roles = normalizeRoles(this.roles, this.role);
+  this.roles = roles;
+  this.role = primaryRole(roles);
+  return next();
+});
 
 userSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('passwordHash')) {

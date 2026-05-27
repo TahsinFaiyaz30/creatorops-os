@@ -4,28 +4,40 @@ import { connectDb, disconnectDb } from '../config/db.js';
 import { validateEnv } from '../config/env.js';
 import User from '../models/User.js';
 import Workspace from '../models/Workspace.js';
-import { CONTENT_CREATOR_ROLE } from '../constants/roles.js';
+import { ADMIN_ROLE, BRAND_REP_ROLE, CONTENT_CREATOR_ROLE, primaryRole } from '../constants/roles.js';
 import { DEFAULT_PLATFORM_FORMAT_RULES, ensureDefaultPlatformRules } from '../services/platformFormat.service.js';
 
 const DEMO_WORKSPACE_NAME = 'CreatorOps Demo Workspace';
 const DEMO_USERS = [
   {
     name: 'Demo Content Creator',
-    email: 'editor@creatorops.dev',
+    email: 'creator@creatorops.dev',
     password: 'password123',
-    role: CONTENT_CREATOR_ROLE
-  },
-  {
-    name: 'Demo Server Manager',
-    email: 'admin@creatorops.dev',
-    password: 'password123',
-    role: CONTENT_CREATOR_ROLE
+    roles: [CONTENT_CREATOR_ROLE]
   },
   {
     name: 'Demo Brand Rep',
     email: 'brand@creatorops.dev',
     password: 'password123',
-    role: 'brand_rep'
+    roles: [BRAND_REP_ROLE]
+  },
+  {
+    name: 'Demo Admin',
+    email: 'admin@creatorops.dev',
+    password: 'password123',
+    roles: [ADMIN_ROLE]
+  },
+  {
+    name: 'Demo Creator Admin',
+    email: 'creator.admin@creatorops.dev',
+    password: 'password123',
+    roles: [CONTENT_CREATOR_ROLE, ADMIN_ROLE]
+  },
+  {
+    name: 'Demo Brand Admin',
+    email: 'brand.admin@creatorops.dev',
+    password: 'password123',
+    roles: [BRAND_REP_ROLE, ADMIN_ROLE]
   }
 ];
 
@@ -53,7 +65,8 @@ const seed = async () => {
     user.name = demoUser.name;
     user.email = demoUser.email;
     user.passwordHash = demoUser.password;
-    user.role = demoUser.role;
+    user.roles = demoUser.roles;
+    user.role = primaryRole(demoUser.roles);
     user.workspaceId = workspace._id;
     await user.save();
     if (demoUser.email === 'admin@creatorops.dev') {
@@ -70,7 +83,7 @@ const seed = async () => {
   console.log('Demo platform connections: seed does not create or delete real connections.');
   console.log('Demo users:');
   DEMO_USERS.forEach(user => {
-    console.log(`- ${user.email} / ${user.password} / ${user.role}`);
+    console.log(`- ${user.email} / ${user.password} / roles=${user.roles.join(',')}`);
   });
 };
 

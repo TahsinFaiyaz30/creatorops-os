@@ -17,7 +17,7 @@ const createHttpError = (message, statusCode, code = '') => {
 };
 
 const requireBrandRep = user => {
-  if (!isBrandRepRole(user.role)) {
+  if (!isBrandRepRole(user)) {
     throw createHttpError('Forbidden: brand representative role is required.', 403);
   }
 };
@@ -118,7 +118,7 @@ export const createBrandCircular = async ({ user, input }) => {
 
 export const listBrandCirculars = async ({ user, query = {} }) => {
   const filter = {};
-  const wantsOwnCirculars = isBrandRepRole(user.role) && query.mine !== 'false';
+  const wantsOwnCirculars = isBrandRepRole(user) && query.mine !== 'false';
 
   if (wantsOwnCirculars) {
     filter.workspaceId = user.workspaceId;
@@ -176,7 +176,7 @@ export const archiveBrandCircular = ({ user, circularId }) =>
   transitionCircular({ user, circularId, status: 'archived' });
 
 export const applyToCircular = async ({ user, circularId, input }) => {
-  if (isBrandRepRole(user.role)) {
+  if (isBrandRepRole(user)) {
     throw createHttpError('Brand representatives cannot apply to circulars.', 403);
   }
   const circular = await BrandCircular.findOne({ _id: circularId, status: 'published' });
@@ -242,7 +242,7 @@ export const listCircularApplications = async ({ user, circularId }) => {
 
 export const listApplicationsForUser = async ({ user }) => {
   const filter = {};
-  if (isBrandRepRole(user.role)) {
+  if (isBrandRepRole(user)) {
     filter.workspaceId = user.workspaceId;
     const circulars = await BrandCircular.find({ workspaceId: user.workspaceId, brandRepId: user._id }).select('_id');
     filter.circularId = { $in: circulars.map(circular => circular._id) };

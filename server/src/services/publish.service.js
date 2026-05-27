@@ -5,7 +5,7 @@ import PlatformVariant from '../models/PlatformVariant.js';
 import PublishedPost from '../models/PublishedPost.js';
 import PublishJob from '../models/PublishJob.js';
 import { normalizePlatform } from '../constants/platforms.js';
-import { BRAND_REP_ROLE, CONTENT_CREATOR_ROLE } from '../constants/roles.js';
+import { BRAND_REP_ROLE, CONTENT_CREATOR_ROLE, roleMatches } from '../constants/roles.js';
 import { getConnector } from '../platforms/connectorRegistry.js';
 import { emitRealtimeEvent } from '../sockets/socket.js';
 import { createWorkflowEvent } from './event.service.js';
@@ -29,8 +29,8 @@ const createHttpError = (message, statusCode, code = '') => {
 const PUBLISH_ROLES = [CONTENT_CREATOR_ROLE, BRAND_REP_ROLE];
 
 const requirePublishPermission = user => {
-  if (!PUBLISH_ROLES.includes(user.role)) {
-    throw createHttpError('Forbidden: publishing is not allowed for this role.', 403);
+  if (!roleMatches(user, PUBLISH_ROLES)) {
+    throw createHttpError('Forbidden: publishing is not allowed for these roles.', 403);
   }
 };
 

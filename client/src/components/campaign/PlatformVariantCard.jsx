@@ -45,10 +45,10 @@ export default function PlatformVariantCard({ variant, user, onRefresh }) {
     try {
       await api.post('/api/approvals/request', {
         variantId: localVariant._id,
-        comment: 'Ready for review'
+        comment: 'Ready for final creator review'
       });
       setLocalVariant({ ...localVariant, status: 'in_review' });
-      setMessage('Submitted for review.');
+      setMessage('Queued for creator review.');
       onRefresh?.();
     } catch (err) {
       setMessage(err.status === 409 ? 'A pending review request already exists for this variant.' : err.message);
@@ -129,7 +129,7 @@ export default function PlatformVariantCard({ variant, user, onRefresh }) {
           className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]"
         >
           <Send size={15} />
-          Submit for review
+          Queue for review
         </button>
         <button
           type="button"
@@ -167,7 +167,7 @@ function FormatChecklist({ variant, rule, accountAvailable }) {
     ['Hashtags within limit', hashtagCount <= rule.maxHashtags],
     ['Caption within limit', captionLength <= rule.maxCaptionLength],
     ['Real connected account available', accountAvailable],
-    ['Approved before publishing', ['approved', 'scheduled', 'published'].includes(variant.status)]
+    ['Creator reviewed before publishing', ['approved', 'scheduled', 'published'].includes(variant.status)]
   ];
 
   return (

@@ -51,7 +51,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
       onDone?.();
     } catch (err) {
       if (err.status === 403) {
-        setMessage('Backend blocked scheduling for this role.');
+        setMessage('Backend blocked scheduling for these roles.');
       } else if (err.status === 400 && err.message.includes('approved')) {
         setMessage('Only approved variants can be scheduled.');
       } else {
@@ -75,7 +75,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
       setMessage(payload.data.publishJob.errorMessage || `Job status: ${payload.data.publishJob.status}`);
       onDone?.();
     } catch (err) {
-      setMessage(err.status === 403 ? 'Backend blocked publishing for this role.' : err.message);
+      setMessage(err.status === 403 ? 'Backend blocked publishing for these roles.' : err.message);
     } finally {
       setBusy(false);
     }
@@ -113,7 +113,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
         <button
           type="button"
           onClick={schedule}
-          disabled={busy || !canPublish(user?.role) || variant.status !== 'approved' || !platformConnectionId}
+          disabled={busy || !canPublish(user) || variant.status !== 'approved' || !platformConnectionId}
           className="focus-ring inline-flex items-center gap-2 rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50"
         >
           <CalendarClock size={15} />
@@ -122,7 +122,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
         <button
           type="button"
           onClick={publishNow}
-          disabled={busy || !canPublish(user?.role) || variant.status !== 'approved' || !platformConnectionId}
+          disabled={busy || !canPublish(user) || variant.status !== 'approved' || !platformConnectionId}
           className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50"
         >
           <Send size={15} />

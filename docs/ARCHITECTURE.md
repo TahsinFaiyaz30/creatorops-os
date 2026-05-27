@@ -9,8 +9,9 @@ CreatorOps OS is a modular monolith. That choice is intentional: the hackathon M
 - MongoDB/Mongoose persistence
 - JWT authentication
 - RBAC middleware
+- Admin Panel and account role management
 - AI service with Gemini/Groq/template fallback
-- Approval service
+- Creator review service
 - Platform connector registry
 - OAuth state service
 - AES-256-GCM encryption service
@@ -28,17 +29,19 @@ CreatorOps OS is a modular monolith. That choice is intentional: the hackathon M
 ## Workflow
 
 ```text
-Editor
+Content creator
   -> campaign + content idea
   -> AI platform variants
-  -> submit variant for review
-
-Creator/Admin
-  -> approve variant
+  -> queue variant for creator review
+  -> approve variant for publishing
   -> connect real platform account
   -> upload/select media
   -> validate publish payload
   -> queue publish job
+
+Admin
+  -> inspect Admin Panel control overview
+  -> assign account roles: content_creator, brand_rep, admin
 
 Publishing worker
   -> connectorRegistry
@@ -53,6 +56,7 @@ Social sync
 
 Brand circulars
   -> brand_rep creates/publishes opportunity
+  -> brand_rep connects brand-owned platform accounts
   -> creator applies with real statistics snapshot
   -> brand_rep reviews/shortlists/accepts/rejects
   -> notifications + workflow events + calendar feed
@@ -89,6 +93,8 @@ Common codes:
 ## Security Shape
 
 - CreatorOps login is separate from social login.
+- Account capabilities come from the `roles` array. Admin is a role, not a separate flag.
+- Only admin can change account roles.
 - Users are redirected to official platform OAuth pages.
 - Social platform passwords are never requested or stored.
 - Access tokens, refresh tokens, API secrets, and app passwords are encrypted at rest.

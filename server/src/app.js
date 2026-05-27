@@ -5,6 +5,7 @@ import path from 'path';
 import env from './config/env.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 import aiRoutes from './routes/ai.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 import approvalRoutes from './routes/approval.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import brandCircularRoutes from './routes/brandCircular.routes.js';
@@ -59,6 +60,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/approvals', approvalRoutes);
 app.use('/api', brandCircularRoutes);

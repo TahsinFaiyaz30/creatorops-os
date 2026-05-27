@@ -326,8 +326,8 @@ export default function ComposePage() {
   };
 
   const publish = async ({ mode }) => {
-    if (!canPublish(user?.role)) {
-      setMessage('Your current role cannot publish from this workspace.');
+    if (!canPublish(user)) {
+      setMessage('Your current roles cannot publish from this workspace.');
       return;
     }
     setBusy(mode);
@@ -463,7 +463,7 @@ export default function ComposePage() {
                     ))}
                   </div>
 
-                  {/* Active Editor */}
+                  {/* Active media controls */}
                   <div className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="text-sm font-semibold text-[var(--text)]">Edit {activeMediaIndex + 1} of {mediaAssets.length}</div>

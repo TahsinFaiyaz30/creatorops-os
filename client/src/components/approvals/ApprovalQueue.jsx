@@ -17,7 +17,7 @@ export default function ApprovalQueue({ user }) {
       const payload = await api.get('/api/approvals/pending');
       setApprovals(payload.data.approvals || []);
     } catch (err) {
-      setMessage(err.status === 403 ? 'Editors cannot access the approval queue. This is backend-enforced RBAC.' : err.message);
+      setMessage(err.status === 403 ? 'Your current roles cannot access creator review. This is backend-enforced RBAC.' : err.message);
     }
   };
 
@@ -29,7 +29,7 @@ export default function ApprovalQueue({ user }) {
     setBusyId(approval._id);
     setMessage('');
     const commentMap = {
-      approve: 'Approved from frontend',
+      approve: 'Approved for publishing',
       reject: 'CTA is weak',
       'request-changes': 'Make the hook stronger'
     };
@@ -50,7 +50,7 @@ export default function ApprovalQueue({ user }) {
   return (
     <section className="space-y-4">
       {message && <div className="rounded-xl border border-gold/30 bg-gold/10 p-3 text-sm text-gold">{message}</div>}
-      {approvals.length === 0 && !message && <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 text-sm text-[var(--muted)]">No pending approvals.</div>}
+      {approvals.length === 0 && !message && <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 text-sm text-[var(--muted)]">No variants waiting for creator review.</div>}
 
       {approvals.map(approval => {
         const variant = approval.variantId;
@@ -68,12 +68,12 @@ export default function ApprovalQueue({ user }) {
               <p><span className="text-[var(--muted)]">Hook:</span> {variant?.hook}</p>
               <p><span className="text-[var(--muted)]">Caption:</span> {variant?.caption}</p>
               <p><span className="text-[var(--muted)]">CTA:</span> {variant?.cta}</p>
-              <p><span className="text-[var(--muted)]">Requested by:</span> {approval.requestedBy?.email}</p>
+              <p><span className="text-[var(--muted)]">Submitted by:</span> {approval.requestedBy?.email}</p>
               <p><span className="text-[var(--muted)]">Scores:</span> Brand {variant?.brandScore} / Readiness {variant?.readinessScore}</p>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               <button onClick={() => decide(approval, 'approve')} disabled={busyId === approval._id} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]">
-                <Check size={15} /> Approve
+                <Check size={15} /> Approve for publishing
               </button>
               <button onClick={() => decide(approval, 'reject')} disabled={busyId === approval._id} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-rose px-3 py-2 text-sm font-semibold text-[var(--text)]">
                 <X size={15} /> Reject
@@ -88,7 +88,7 @@ export default function ApprovalQueue({ user }) {
 
       {decisions.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-base font-semibold text-[var(--text)]">Recent decisions</h3>
+          <h3 className="text-base font-semibold text-[var(--text)]">Recent review decisions</h3>
           {decisions.map(decision => (
             <article key={decision.approval._id} className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">

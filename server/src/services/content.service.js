@@ -160,7 +160,7 @@ export const updateContentStatus = async (user, contentItemId, input) => {
   const previousStatus = contentItem.status;
 
   validateStatusTransition({
-    role: user.role,
+    user,
     fromStatus: previousStatus,
     toStatus: nextStatus
   });

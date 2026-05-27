@@ -18,10 +18,6 @@ const createHttpError = (message, statusCode, code = '') => {
   return error;
 };
 
-const requireCreatorAdmin = user => {
-  // Allowed for all roles now per requirements
-};
-
 const GOOGLE_POWERED_PLATFORMS = ['youtube', 'youtube_shorts'];
 
 const resolveRequestedPlatform = rawPlatform => {
@@ -228,8 +224,6 @@ export const upsertConnectionFromProfile = async ({ user, platform, connector, p
 };
 
 export const startPlatformOAuth = async ({ user, platform: rawPlatform, returnUrl = '' }) => {
-  requireCreatorAdmin(user);
-
   const platform = resolveRequestedPlatform(rawPlatform);
   if (!SUPPORTED_PLATFORMS.includes(platform)) {
     throw createHttpError('Unsupported platform.', 404);
@@ -291,7 +285,6 @@ export const startPlatformOAuth = async ({ user, platform: rawPlatform, returnUr
 };
 
 export const disconnectConnection = async ({ user, connectionId }) => {
-  requireCreatorAdmin(user);
   const connection = await getPlatformConnectionById({ user, connectionId });
   connection.status = 'disconnected';
   connection.updatedBy = user._id;
@@ -300,14 +293,12 @@ export const disconnectConnection = async ({ user, connectionId }) => {
 };
 
 export const deleteConnection = async ({ user, connectionId }) => {
-  requireCreatorAdmin(user);
   const connection = await getPlatformConnectionById({ user, connectionId });
   await connection.deleteOne();
   return sanitizeConnection(connection);
 };
 
 export const healthCheckConnection = async ({ user, connectionId }) => {
-  requireCreatorAdmin(user);
   const connection = await getPlatformConnectionById({ user, connectionId, includeSecrets: true });
   const connector = getConnector(connection.platform);
   const result = await connector.healthCheck(connection);
@@ -322,7 +313,6 @@ export const healthCheckConnection = async ({ user, connectionId }) => {
 };
 
 export const refreshConnection = async ({ user, connectionId }) => {
-  requireCreatorAdmin(user);
   assertEncryptionConfigured();
   const connection = await getPlatformConnectionById({ user, connectionId, includeSecrets: true });
   const connector = getConnector(connection.platform);

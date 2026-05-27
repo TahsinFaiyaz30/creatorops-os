@@ -1,6 +1,6 @@
 import PlatformAccount from '../models/PlatformAccount.js';
 import { SUPPORTED_PLATFORMS } from '../constants/platforms.js';
-import { isContentCreatorRole } from '../constants/roles.js';
+import { BRAND_REP_ROLE, CONTENT_CREATOR_ROLE, roleMatches } from '../constants/roles.js';
 
 const createHttpError = (message, statusCode) => {
   const error = new Error(message);
@@ -8,9 +8,11 @@ const createHttpError = (message, statusCode) => {
   return error;
 };
 
-const requireCreatorAdmin = user => {
-  if (!isContentCreatorRole(user.role)) {
-    throw createHttpError('Forbidden: Content Creator role is required for platform account management.', 403);
+const accountManagerRoles = [CONTENT_CREATOR_ROLE, BRAND_REP_ROLE];
+
+const requireAccountManager = user => {
+  if (!roleMatches(user, accountManagerRoles)) {
+    throw createHttpError('Forbidden: Creator or Brand role is required for platform account management.', 403);
   }
 };
 
@@ -63,7 +65,7 @@ export const getPlatformAccountById = async ({ user, accountId }) => {
 };
 
 export const createPlatformAccount = async ({ user, input }) => {
-  requireCreatorAdmin(user);
+  requireAccountManager(user);
 
   const data = pickFields(input);
   validateAccountInput({ platform: data.platform, accountName: data.accountName, accountHandle: data.accountHandle });
@@ -87,7 +89,7 @@ export const createPlatformAccount = async ({ user, input }) => {
 };
 
 export const updatePlatformAccount = async ({ user, accountId, input }) => {
-  requireCreatorAdmin(user);
+  requireAccountManager(user);
 
   const account = await getPlatformAccountById({ user, accountId });
   const updates = pickFields(input);
@@ -108,7 +110,7 @@ export const updatePlatformAccount = async ({ user, accountId, input }) => {
 };
 
 export const deletePlatformAccount = async ({ user, accountId }) => {
-  requireCreatorAdmin(user);
+  requireAccountManager(user);
 
   const account = await getPlatformAccountById({ user, accountId });
   account.isActive = false;

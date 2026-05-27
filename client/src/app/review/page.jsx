@@ -6,7 +6,7 @@ import ApprovalQueue from '../../components/approvals/ApprovalQueue';
 import LiveEventFeed from '../../components/events/LiveEventFeed';
 import { getUser } from '../../lib/auth';
 
-export default function ApprovalsPage() {
+export default function CreatorReviewPage() {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
@@ -18,9 +18,9 @@ export default function ApprovalsPage() {
       <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
         <div>
           <header className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
-            <p className="text-sm uppercase tracking-[0.18em] text-mint">Review queue</p>
-            <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Approvals</h1>
-            <p className="mt-2 text-sm text-[var(--muted)]">Content Creator review decisions are enforced by backend RBAC.</p>
+            <p className="text-sm uppercase tracking-[0.18em] text-mint">Final review</p>
+            <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Creator Review</h1>
+            <p className="mt-2 text-sm text-[var(--muted)]">Creator decisions before publishing are enforced by backend RBAC.</p>
           </header>
           <ApprovalQueue user={user} />
         </div>

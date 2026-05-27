@@ -11,7 +11,6 @@ import {
   remove
 } from '../controllers/platformConnection.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
-import { requireRole } from '../middleware/role.middleware.js';
 
 const router = express.Router();
 

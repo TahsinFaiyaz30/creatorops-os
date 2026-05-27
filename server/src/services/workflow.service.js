@@ -17,7 +17,7 @@ const createHttpError = (message, statusCode) => {
   return error;
 };
 
-export const validateStatusTransition = ({ role, fromStatus, toStatus }) => {
+export const validateStatusTransition = ({ user, role, fromStatus, toStatus }) => {
   if (!CONTENT_STATUSES.includes(toStatus)) {
     throw createHttpError('Invalid content status.', 400);
   }
@@ -28,7 +28,7 @@ export const validateStatusTransition = ({ role, fromStatus, toStatus }) => {
 
   const transition = `${fromStatus}->${toStatus}`;
 
-  if (isContentCreatorRole(role)) {
+  if (isContentCreatorRole(user || role)) {
     if (draftTransitions.has(transition) || reviewAndPublishTransitions.has(transition)) {
       return true;
     }

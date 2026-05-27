@@ -67,7 +67,7 @@ export default function AppShell({ children }) {
       <FloatingCalendarDrawer />
 
       {/* Mobile bottom navigation */}
-      <BottomNav role={user?.role} onMenuOpen={() => setMobileOpen(true)} />
+      <BottomNav user={user} onMenuOpen={() => setMobileOpen(true)} />
     </div>
   );
 }

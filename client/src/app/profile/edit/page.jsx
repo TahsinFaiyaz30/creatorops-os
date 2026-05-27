@@ -79,7 +79,7 @@ export default function EditProfilePage() {
         location,
         avatarUrl,
         socialLinks: socialLinks.split(',').map(s => s.trim()).filter(Boolean),
-        brandDetails: isBrandRep(user?.role) ? {
+        brandDetails: isBrandRep(user) ? {
           brandName,
           description: brandDescription,
           industry,
@@ -177,7 +177,7 @@ export default function EditProfilePage() {
             </div>
           </section>
 
-          {isBrandRep(user?.role) && (
+          {isBrandRep(user) && (
             <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
               <h2 className="text-xl font-bold flex items-center gap-2 mb-6 text-[var(--text)]">
                 <Briefcase className="text-gold" /> Brand Details

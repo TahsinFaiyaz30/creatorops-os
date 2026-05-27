@@ -8,7 +8,7 @@ Core Problem Area 1 is now implemented as a production-shaped real integration s
 | Cross-platform scheduling | Implemented through `/api/publish/schedule` with connected PlatformConnection targets |
 | Platform-specific optimization | Implemented through platform rules, AI generation, scores, warnings, and readiness UI |
 | Draft versioning | Implemented through ContentVersion snapshots |
-| Team approval workflow | Implemented with backend RBAC approval queue |
+| Creator review workflow | Implemented with backend RBAC creator review queue |
 | AI-assisted repurposing | Implemented for all supported platforms |
 | Auto-format adaptation | Implemented through platform-specific fallback/provider prompts |
 | Multi-account management | Implemented through encrypted PlatformConnection records |

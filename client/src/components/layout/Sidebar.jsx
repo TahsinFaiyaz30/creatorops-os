@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3, Bot, BriefcaseBusiness, ChevronLeft, ChevronRight,
-  ClipboardList, Edit3, GitBranch, LayoutDashboard,
+  ClipboardList, Edit3, GitBranch, LayoutDashboard, ServerCog,
   LogOut, RadioTower, Send, ShieldCheck, UserCircle, X
 } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
@@ -12,9 +12,9 @@ import RoleBadge from './RoleBadge';
 import SiteLogo from './SiteLogo';
 import NotificationBell from '../notifications/NotificationBell';
 import { clearSession } from '../../lib/auth';
-import { ROLES, normalizeRole } from '../../lib/roles';
+import { ROLES, hasRole } from '../../lib/roles';
 
-// ── Nav groups by role ────────────────────────────────────────────────────────
+// ── Nav groups by account roles ───────────────────────────────────────────────
 const NAV_GROUPS = [
   {
     label: 'Workspace',
@@ -33,10 +33,10 @@ const NAV_GROUPS = [
   {
     label: 'Review & Publish',
     items: [
-      { href: '/approvals',  label: 'Approvals',  icon: ShieldCheck, roles: [ROLES.CONTENT_CREATOR] },
-      { href: '/accounts',   label: 'Accounts',   icon: RadioTower,  roles: [ROLES.CONTENT_CREATOR] },
+      { href: '/review',     label: 'Creator Review',  icon: ShieldCheck, roles: [ROLES.CONTENT_CREATOR] },
+      { href: '/accounts',   label: 'Accounts',   icon: RadioTower,  roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
       { href: '/publishing', label: 'Publishing',  icon: Send,        roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-      { href: '/analytics',  label: 'Analytics',  icon: BarChart3,   roles: [ROLES.CONTENT_CREATOR] },
+      { href: '/analytics',  label: 'Analytics',  icon: BarChart3,   roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
     ],
   },
   {
@@ -49,6 +49,7 @@ const NAV_GROUPS = [
   {
     label: 'System',
     items: [
+      { href: '/admin', label: 'Admin Panel', icon: ServerCog, roles: [ROLES.ADMIN] },
       { href: '/architecture', label: 'Architecture',  icon: BarChart3, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
     ],
   },
@@ -58,7 +59,6 @@ export default function Sidebar({ user, collapsed, onCollapse, mobileOpen, onMob
   const pathname = usePathname();
   const router   = useRouter();
   const { theme, toggle } = useTheme();
-  const role = normalizeRole(user?.role);
 
   const logout = () => { clearSession(); router.push('/login'); };
 
@@ -66,10 +66,12 @@ export default function Sidebar({ user, collapsed, onCollapse, mobileOpen, onMob
     ? user.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
     : '??';
 
-  // Filter groups/items for this role
+  // Filter groups/items for this account's roles
   const visibleGroups = NAV_GROUPS.map(g => ({
     ...g,
-    items: g.items.filter(item => item.roles.includes(role)),
+    items: g.items.filter(item => {
+      return !item.roles || item.roles.some(role => hasRole(user, role));
+    }),
   })).filter(g => g.items.length > 0);
 
   const NavItem = ({ href, label, icon: Icon }) => {
@@ -165,7 +167,7 @@ export default function Sidebar({ user, collapsed, onCollapse, mobileOpen, onMob
                 <div className="truncate text-xs text-[var(--muted)]">{user?.email}</div>
               </div>
             </div>
-            <RoleBadge role={role} />
+            <RoleBadge user={user} />
           </div>
         )}
         

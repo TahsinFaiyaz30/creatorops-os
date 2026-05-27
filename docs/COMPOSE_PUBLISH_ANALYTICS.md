@@ -48,4 +48,4 @@ Replies use the same `PlatformConnection` that published the post:
 
 - `POST /api/social/comments/:id/reply`
 
-Editors cannot reply; Creator/Admin is required.
+Content Creator and Brand Representative users can reply through connected accounts they manage in the workspace.

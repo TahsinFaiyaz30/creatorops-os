@@ -67,7 +67,7 @@ export default function DashboardPage() {
                 Dashboard now includes the real creator statistics view. Only official synced platform metrics are counted.
               </p>
             </div>
-            <RoleBadge role={user?.role} />
+            <RoleBadge user={user} />
           </div>
         </header>
 

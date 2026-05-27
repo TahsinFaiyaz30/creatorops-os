@@ -7,14 +7,15 @@ import {
 } from '../controllers/schedule.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requireRole } from '../middleware/role.middleware.js';
-import { CONTENT_CREATOR_ROLE } from '../constants/roles.js';
+import { BRAND_REP_ROLE, CONTENT_CREATOR_ROLE } from '../constants/roles.js';
 
 const router = Router();
+const scheduleRoles = [CONTENT_CREATOR_ROLE, BRAND_REP_ROLE];
 
 router.use(authenticate);
 
-router.post('/', requireRole([CONTENT_CREATOR_ROLE]), createScheduleJobHandler);
+router.post('/', requireRole(scheduleRoles), createScheduleJobHandler);
 router.get('/', getScheduleJobsHandler);
-router.post('/:id/run-now', requireRole([CONTENT_CREATOR_ROLE]), runScheduleJobNowHandler);
+router.post('/:id/run-now', requireRole(scheduleRoles), runScheduleJobNowHandler);
 
 export default router;

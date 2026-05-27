@@ -14,7 +14,7 @@ const blocks = [
   ['AI service', 'Gemini/Groq optional with template-fallback guarantee'],
   ['Platform connections', 'Official OAuth/API connection records with encrypted tokens'],
   ['Format rules', 'Platform limits and readiness checklist'],
-  ['Approval service', 'Review queue with comments and audit events'],
+  ['Creator review service', 'Final review queue with comments and audit events'],
   ['Publishing worker', 'Queued real connector jobs that block when credentials/scopes are missing'],
   ['Campaign tracking', 'Stored counts by status, platform, connection, publish job, and synced metrics'],
   ['Socket.IO', 'workflow:event plus publishing/social realtime updates']
@@ -28,7 +28,7 @@ export default function ArchitecturePage() {
           <p className="text-sm uppercase tracking-[0.18em] text-mint">Judge briefing</p>
           <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Architecture</h1>
           <p className="mt-3 max-w-4xl text-sm leading-6 text-[var(--muted)]">
-            CreatorOps OS solves the operations gap between content ideas, AI repurposing, approval,
+            CreatorOps OS solves the operations gap between content ideas, AI repurposing, creator review,
             scheduling, and accountability for creator teams.
           </p>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--muted)]">

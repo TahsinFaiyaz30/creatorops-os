@@ -42,7 +42,7 @@ const platformRules = {
     style: 'professional, insight-driven, business-focused',
     hook: idea => `A practical content workflow lesson: ${idea}`,
     caption: ({ idea, brandName, tone, targetAudience }) =>
-      `${brandName || 'Your team'} can use this idea to create a repeatable workflow instead of another disconnected post. For ${targetAudience || 'creator teams'}, the advantage is simple: clearer ownership, sharper positioning, and fewer approval delays. ${tone ? `The tone should stay ${tone}.` : ''}`,
+      `${brandName || 'Your team'} can use this idea to create a repeatable workflow instead of another disconnected post. For ${targetAudience || 'creator teams'}, the advantage is simple: clearer ownership, sharper positioning, and fewer review delays. ${tone ? `The tone should stay ${tone}.` : ''}`,
     cta: 'What would you improve in your current content workflow?',
     hashtags: ['#CreatorEconomy', '#MarketingOps', '#Productivity'],
     fitWords: ['workflow', 'team', 'business', 'productivity']
@@ -62,7 +62,7 @@ const platformRules = {
     style: 'searchable title and description',
     hook: idea => `How to use ${idea.toLowerCase()} in a creator workflow`,
     caption: ({ idea, brandName, targetAudience }) =>
-      `Title idea: How Creator Teams Turn One Idea Into Multi-Platform Content\n\nDescription: In this video, ${brandName || 'the workflow'} shows how "${idea}" becomes platform-ready content with approvals, scheduling, and real account-targeted publishing checks. Built for ${targetAudience || 'creator teams'} who need a repeatable content system.`,
+      `Title idea: How Creator Teams Turn One Idea Into Multi-Platform Content\n\nDescription: In this video, ${brandName || 'the workflow'} shows how "${idea}" becomes platform-ready content with creator review, scheduling, and real account-targeted publishing checks. Built for ${targetAudience || 'creator teams'} who need a repeatable content system.`,
     cta: 'Subscribe for more creator workflow breakdowns and watch the next video.',
     hashtags: ['#CreatorWorkflow', '#ContentSystem', '#MarketingOps'],
     fitWords: ['how', 'video', 'subscribe', 'description']
@@ -83,7 +83,7 @@ const platformRules = {
     hook: idea => `A creator ops thought: ${idea}`,
     caption: ({ idea, brandName, targetAudience }) =>
       `${brandName || 'A creator team'} can turn "${idea}" into a full content workflow without losing the human review step. For ${targetAudience || 'teams'}, that matters more than just generating another caption.`,
-    cta: 'Would you use this workflow, or change the approval step?',
+    cta: 'Would you use this workflow, or change the review step?',
     hashtags: ['#CreatorOps'],
     fitWords: ['thought', 'workflow', 'would', 'discussion']
   },
@@ -92,17 +92,17 @@ const platformRules = {
     style: 'concise, punchy, max-short format',
     hook: idea => `One idea. Many platforms.`,
     caption: ({ idea }) =>
-      `One idea should not become scattered drafts. ${String(idea || '').slice(0, 95)} Turn it into variants, approvals, and real account checks before posting.`,
+      `One idea should not become scattered drafts. ${String(idea || '').slice(0, 95)} Turn it into variants, creator review, and real account checks before posting.`,
     cta: 'Reply with your biggest content bottleneck.',
     hashtags: ['#CreatorOps'],
-    fitWords: ['workflow', 'reply', 'idea', 'approval']
+    fitWords: ['workflow', 'reply', 'idea', 'review']
   },
   pinterest: {
     name: 'Pinterest',
     style: 'descriptive pin title and keyword-rich description',
     hook: idea => `Creator workflow template for ${idea.toLowerCase()}`,
     caption: ({ idea, brandName }) =>
-      `Pin title: Creator Content Workflow System\n\nDescription: Save this ${brandName || 'creator workflow'} idea for planning content across Instagram, TikTok, YouTube, LinkedIn, and more. Use "${idea}" as the starting point for platform-specific drafts, approvals, and scheduling.`,
+      `Pin title: Creator Content Workflow System\n\nDescription: Save this ${brandName || 'creator workflow'} idea for planning content across Instagram, TikTok, YouTube, LinkedIn, and more. Use "${idea}" as the starting point for platform-specific drafts, creator review, and scheduling.`,
     cta: 'Save this pin for your next content planning session.',
     hashtags: ['#ContentPlanning', '#CreatorTools', '#Workflow'],
     fitWords: ['pin', 'save', 'planning', 'template']

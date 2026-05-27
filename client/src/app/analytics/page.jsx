@@ -7,7 +7,7 @@ import { api } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { getUser } from '../../lib/auth';
 import { formatPlatform } from '../../lib/platforms';
-import { isContentCreator } from '../../lib/roles';
+import { canEngageWithSocial } from '../../lib/roles';
 
 const metricKeys = ['likes', 'reactions', 'comments', 'shares', 'views', 'saves'];
 
@@ -410,7 +410,7 @@ function MetricCard({ label, value }) {
 function CommentThreadNode({ comment, user, busy, replyText, setReplyText, onReply, onReplyToAccountReply, depth = 0 }) {
   const providerReplies = comment.providerReplies || [];
   const accountReplies = comment.accountReplies || [];
-  const canReply = isContentCreator(user?.role) && comment.source === 'real' && Boolean(comment.providerCommentId);
+  const canReply = canEngageWithSocial(user) && comment.source === 'real' && Boolean(comment.providerCommentId);
   const totalReplies = getReplyCount(comment);
   const commentKey = getId(comment);
 
@@ -499,7 +499,7 @@ function AccountReplyCard({ reply, user, busy, replyText, setReplyText, onReply,
   const account = reply.accountSnapshot || {};
   const nestedReplies = reply.accountReplies || [];
   const replyKey = `reply:${getId(reply)}`;
-  const canReply = isContentCreator(user?.role) && Boolean(reply.providerReplyId);
+  const canReply = canEngageWithSocial(user) && Boolean(reply.providerReplyId);
 
   return (
     <div className="rounded-xl border border-mint/20 bg-mint/10 p-3">
@@ -556,7 +556,7 @@ function AccountReplyCard({ reply, user, busy, replyText, setReplyText, onReply,
         </div>
       )}
 
-      {!canReply && isContentCreator(user?.role) && (
+      {!canReply && canEngageWithSocial(user) && (
         <p className="mt-2 text-xs text-[var(--muted)]">Sync comments after publishing the reply before replying deeper.</p>
       )}
     </div>

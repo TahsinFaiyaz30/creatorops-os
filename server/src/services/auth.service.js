@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 
 import env from '../config/env.js';
-import { CONTENT_CREATOR_ROLE, USER_ROLES, normalizeRole } from '../constants/roles.js';
+import { CONTENT_CREATOR_ROLE, PUBLIC_USER_ROLES, normalizeRoles, primaryRole } from '../constants/roles.js';
 import User from '../models/User.js';
 import Workspace from '../models/Workspace.js';
 
@@ -16,11 +16,13 @@ const normalizeEmail = email => String(email || '').trim().toLowerCase();
 
 const sanitizeUser = user => {
   const json = user.toJSON();
+  const roles = normalizeRoles(json.roles, json.role);
   return {
     id: json._id.toString(),
     name: json.name,
     email: json.email,
-    role: normalizeRole(json.role),
+    role: primaryRole(roles),
+    roles,
     workspaceId: json.workspaceId.toString(),
     createdAt: json.createdAt,
     updatedAt: json.updatedAt
@@ -35,7 +37,8 @@ const signToken = user => {
   return jwt.sign(
     {
       sub: user._id.toString(),
-      role: normalizeRole(user.role),
+      role: primaryRole(user.roles, user.role),
+      roles: normalizeRoles(user.roles, user.role),
       workspaceId: user.workspaceId.toString()
     },
     env.jwtSecret,
@@ -47,15 +50,18 @@ export const registerUser = async input => {
   const name = String(input.name || '').trim();
   const email = normalizeEmail(input.email);
   const password = String(input.password || '');
-  const role = normalizeRole(input.role || CONTENT_CREATOR_ROLE);
+  const requestedRoles = Array.isArray(input.roles) ? input.roles : [input.role || CONTENT_CREATOR_ROLE];
 
   if (!name || !email || !password) {
     throw createHttpError('Name, email, and password are required.', 400);
   }
 
-  if (!USER_ROLES.includes(role)) {
+  if (requestedRoles.length !== 1 || requestedRoles.some(role => !PUBLIC_USER_ROLES.includes(role))) {
     throw createHttpError('Invalid role.', 400);
   }
+
+  const roles = normalizeRoles(requestedRoles);
+  const role = primaryRole(roles);
 
   const existingUser = await User.findOne({ email });
   if (existingUser) {
@@ -77,6 +83,7 @@ export const registerUser = async input => {
     email,
     passwordHash: password,
     role,
+    roles,
     workspaceId
   });
 

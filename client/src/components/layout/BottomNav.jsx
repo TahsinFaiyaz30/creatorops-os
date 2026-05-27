@@ -3,35 +3,39 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Bot,
   BriefcaseBusiness,
   Edit3,
   GitBranch,
   LayoutDashboard,
   Menu,
-  Send
+  RadioTower,
+  ServerCog
 } from 'lucide-react';
-import { ROLES, normalizeRole } from '../../lib/roles';
+import { ROLES, hasRole } from '../../lib/roles';
 
-// 4 key links per role for the bottom bar (5th will be Menu)
-const BOTTOM_NAV = {
-  [ROLES.CONTENT_CREATOR]: [
-    { href: '/dashboard', icon: LayoutDashboard, label: 'Home' },
-    { href: '/campaigns', icon: GitBranch, label: 'Campaigns' },
-    { href: '/compose', icon: Edit3, label: 'Compose' },
-    { href: '/scripting', icon: Bot, label: 'Script AI' }
-  ],
-  [ROLES.BRAND_REP]: [
-    { href: '/dashboard', icon: LayoutDashboard, label: 'Home' },
-    { href: '/brand-circulars', icon: BriefcaseBusiness, label: 'Circulars' },
-    { href: '/compose', icon: Edit3, label: 'Compose' },
-    { href: '/publishing', icon: Send, label: 'Publish' }
-  ]
+const addUnique = (links, next) => {
+  if (!links.some(link => link.href === next.href)) links.push(next);
 };
 
-export default function BottomNav({ role, onMenuOpen }) {
+const linksForUser = user => {
+  const links = [];
+  const hasCreator = hasRole(user, ROLES.CONTENT_CREATOR);
+  const hasBrand = hasRole(user, ROLES.BRAND_REP);
+  const hasAdmin = hasRole(user, ROLES.ADMIN);
+
+  if (hasCreator || hasBrand) addUnique(links, { href: '/dashboard', icon: LayoutDashboard, label: 'Home' });
+  if (hasCreator) addUnique(links, { href: '/campaigns', icon: GitBranch, label: 'Campaigns' });
+  if (hasCreator || hasBrand) addUnique(links, { href: '/compose', icon: Edit3, label: 'Compose' });
+  if (hasAdmin) addUnique(links, { href: '/admin', icon: ServerCog, label: 'Admin' });
+  if (hasBrand) addUnique(links, { href: '/accounts', icon: RadioTower, label: 'Accounts' });
+  if (hasBrand && !hasCreator) addUnique(links, { href: '/brand-circulars', icon: BriefcaseBusiness, label: 'Circulars' });
+
+  return links.slice(0, 4);
+};
+
+export default function BottomNav({ user, onMenuOpen }) {
   const pathname = usePathname();
-  const links = BOTTOM_NAV[normalizeRole(role)] || BOTTOM_NAV[ROLES.CONTENT_CREATOR];
+  const links = linksForUser(user);
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 flex h-16 items-stretch border-t border-[var(--border)] bg-[var(--surface)] lg:hidden">

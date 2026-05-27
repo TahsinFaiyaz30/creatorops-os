@@ -5,7 +5,7 @@ import SocialComment from '../models/SocialComment.js';
 import SocialMetricSnapshot from '../models/SocialMetricSnapshot.js';
 import SocialReply from '../models/SocialReply.js';
 import { PLATFORM_LABELS } from '../constants/platforms.js';
-import { isContentCreatorRole } from '../constants/roles.js';
+import { BRAND_REP_ROLE, CONTENT_CREATOR_ROLE, roleMatches } from '../constants/roles.js';
 import { getConnector } from '../platforms/connectorRegistry.js';
 import { emitRealtimeEvent } from '../sockets/socket.js';
 import { createWorkflowEvent } from './event.service.js';
@@ -17,9 +17,11 @@ const createHttpError = (message, statusCode, code = '') => {
   return error;
 };
 
-const requireCreatorAdmin = user => {
-  if (!isContentCreatorRole(user.role)) {
-    throw createHttpError('Forbidden: Content Creator role is required for replies.', 403);
+const socialReplyRoles = [CONTENT_CREATOR_ROLE, BRAND_REP_ROLE];
+
+const requireSocialReplyPermission = user => {
+  if (!roleMatches(user, socialReplyRoles)) {
+    throw createHttpError('Forbidden: Creator or Brand role is required for replies.', 403);
   }
 };
 
@@ -453,7 +455,7 @@ export const listComments = async ({ user, postId }) => {
 };
 
 export const replyToSocialComment = async ({ user, commentId, replyText }) => {
-  requireCreatorAdmin(user);
+  requireSocialReplyPermission(user);
   const trimmedReplyText = String(replyText || '').trim();
   if (!trimmedReplyText) throw createHttpError('replyText is required.', 400);
   const comment = await SocialComment.findOne({ _id: commentId, workspaceId: user.workspaceId });
@@ -506,7 +508,7 @@ export const replyToSocialComment = async ({ user, commentId, replyText }) => {
 };
 
 export const replyToSocialReply = async ({ user, replyId, replyText }) => {
-  requireCreatorAdmin(user);
+  requireSocialReplyPermission(user);
   const trimmedReplyText = String(replyText || '').trim();
   if (!trimmedReplyText) throw createHttpError('replyText is required.', 400);
 

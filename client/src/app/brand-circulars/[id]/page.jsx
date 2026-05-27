@@ -27,7 +27,7 @@ export default function BrandCircularDetailPage() {
     setCircular(circularPayload.data.circular);
     setStatistics(statsPayload?.data?.statistics || null);
     const currentUser = getUser();
-    if (isBrandRep(currentUser?.role)) {
+    if (isBrandRep(currentUser)) {
       const appPayload = await api.get(`/api/brand-circulars/${params.id}/applications`);
       setApplications(appPayload.data.applications || []);
     }
@@ -98,7 +98,7 @@ export default function BrandCircularDetailPage() {
           <p className="mt-2">Judging criteria: {circular.judgingCriteria || 'n/a'}</p>
         </section>
 
-        {isBrandRep(user?.role) ? (
+        {isBrandRep(user) ? (
           <>
             <div className="flex flex-wrap gap-2">
               <button disabled={busy === 'publish'} onClick={() => transition('publish')} className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]">Publish</button>

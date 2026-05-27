@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 
 import env from '../config/env.js';
-import { normalizeRole } from '../constants/roles.js';
+import { normalizeRoles, primaryRole } from '../constants/roles.js';
 import User from '../models/User.js';
 
 export const authenticate = async (req, res, next) => {
@@ -21,12 +21,15 @@ export const authenticate = async (req, res, next) => {
       return res.status(401).json({ message: 'Authentication token is invalid.' });
     }
 
-    user.role = normalizeRole(user.role);
+    const roles = normalizeRoles(user.roles, user.role);
+    user.roles = roles;
+    user.role = primaryRole(roles);
     req.user = user;
     req.auth = {
       userId: user._id,
       workspaceId: user.workspaceId,
-      role: normalizeRole(user.role)
+      role: user.role,
+      roles
     };
 
     return next();

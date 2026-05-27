@@ -1,6 +1,10 @@
 # API
 
-All application routes except OAuth callbacks require CreatorOps JWT auth. Role rules are enforced by the backend.
+All application routes except OAuth callbacks require CreatorOps JWT auth. Role rules are enforced by the backend against the account's `roles` array.
+
+## Roles
+
+Accounts can have any combination of `content_creator`, `brand_rep`, and `admin`. Public signup creates one normal public role. Changing roles later is admin-only.
 
 ## Auth
 
@@ -9,6 +13,13 @@ All application routes except OAuth callbacks require CreatorOps JWT auth. Role 
 | POST | `/api/auth/register` | Public | Register a CreatorOps user |
 | POST | `/api/auth/login` | Public | Login and receive JWT |
 | GET | `/api/auth/me` | Auth | Return current user |
+
+## Admin
+
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/admin/users` | `admin` | List accounts and available roles |
+| PATCH | `/api/admin/users/:id/roles` | `admin` | Replace an account's roles |
 
 ## Brand Profile
 
@@ -60,15 +71,15 @@ Caption customization body:
 }
 ```
 
-## Approvals
+## Creator Review
 
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/approvals/request` | Auth | Request review for a variant |
-| GET | `/api/approvals/pending` | `creator_admin` | Pending queue |
-| POST | `/api/approvals/:id/approve` | `creator_admin` | Approve |
-| POST | `/api/approvals/:id/reject` | `creator_admin` | Reject |
-| POST | `/api/approvals/:id/request-changes` | `creator_admin` | Request changes |
+| POST | `/api/approvals/request` | Auth | Queue a variant for creator review |
+| GET | `/api/approvals/pending` | includes `content_creator` | Pending creator review queue |
+| POST | `/api/approvals/:id/approve` | includes `content_creator` | Approve for publishing |
+| POST | `/api/approvals/:id/reject` | includes `content_creator` | Reject from publishing |
+| POST | `/api/approvals/:id/request-changes` | includes `content_creator` | Request changes before publishing |
 
 ## Platform Connections
 
@@ -78,16 +89,16 @@ Caption customization body:
 | GET | `/api/platform-connections/:id` | Auth | Safe connection metadata |
 | GET | `/api/platform-connections/status` | Auth | Platform cards, configuration, capabilities, connections |
 | GET | `/api/platform-connections/capabilities` | Auth | Connector requirements/capabilities |
-| POST | `/api/platform-connections/:id/disconnect` | `creator_admin` | Mark disconnected |
-| POST | `/api/platform-connections/:id/refresh` | `creator_admin` | Refresh token if connector supports it |
-| POST | `/api/platform-connections/:id/health-check` | `creator_admin` | Connector health check |
-| DELETE | `/api/platform-connections/:id` | `creator_admin` | Delete connection |
+| POST | `/api/platform-connections/:id/disconnect` | Auth | Mark disconnected |
+| POST | `/api/platform-connections/:id/refresh` | Auth | Refresh token if connector supports it |
+| POST | `/api/platform-connections/:id/health-check` | Auth | Connector health check |
+| DELETE | `/api/platform-connections/:id` | Auth | Delete connection |
 
 ## OAuth
 
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
-| GET | `/api/oauth/:platform/start` | `creator_admin` | Create secure state and return official auth URL |
+| GET | `/api/oauth/:platform/start` | Auth | Create secure state and return official auth URL |
 | GET | `/api/oauth/:platform/callback` | OAuth state | Exchange callback code and store encrypted tokens |
 
 Callbacks do not require JWT because secure state restores user/workspace/platform context.
@@ -108,13 +119,13 @@ Original files are stored without recompression. Crop settings are preview metad
 
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/publish/validate` | `creator_admin` | Validate connection, media, caption, scope, and connector capability |
-| POST | `/api/publish/now` | `creator_admin` | Queue and immediately process a real publish job |
-| POST | `/api/publish/schedule` | `creator_admin` | Queue a scheduled real publish job |
+| POST | `/api/publish/validate` | includes `content_creator` or `brand_rep` | Validate connection, media, caption, scope, and connector capability |
+| POST | `/api/publish/now` | includes `content_creator` or `brand_rep` | Queue and immediately process a real publish job |
+| POST | `/api/publish/schedule` | includes `content_creator` or `brand_rep` | Queue a scheduled real publish job |
 | GET | `/api/publish/jobs` | Auth | List publish jobs |
 | GET | `/api/publish/jobs/:id` | Auth | Get one publish job |
-| POST | `/api/publish/jobs/:id/cancel` | `creator_admin` | Cancel allowed job |
-| POST | `/api/publish/jobs/:id/retry` | `creator_admin` | Retry failed/blocked job |
+| POST | `/api/publish/jobs/:id/cancel` | includes `content_creator` or `brand_rep` | Cancel allowed job |
+| POST | `/api/publish/jobs/:id/retry` | includes `content_creator` or `brand_rep` | Retry failed/blocked job |
 
 Publish body:
 
@@ -135,20 +146,20 @@ Visibility values are `public`, `private`, and `friends_only`. The backend valid
 
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/brand-circulars` | `brand_rep` | Create a brand representative circular |
+| POST | `/api/brand-circulars` | includes `brand_rep` | Create a brand representative circular |
 | GET | `/api/brand-circulars` | Auth | List own circulars for brand reps or published circulars for creators |
 | GET | `/api/brand-circulars/:id` | Auth | Get circular detail |
-| PATCH | `/api/brand-circulars/:id` | `brand_rep` | Update own draft/published circular |
-| POST | `/api/brand-circulars/:id/publish` | `brand_rep` | Publish own circular |
-| POST | `/api/brand-circulars/:id/close` | `brand_rep` | Close own circular |
-| POST | `/api/brand-circulars/:id/archive` | `brand_rep` | Archive own circular |
+| PATCH | `/api/brand-circulars/:id` | includes `brand_rep` | Update own draft/published circular |
+| POST | `/api/brand-circulars/:id/publish` | includes `brand_rep` | Publish own circular |
+| POST | `/api/brand-circulars/:id/close` | includes `brand_rep` | Close own circular |
+| POST | `/api/brand-circulars/:id/archive` | includes `brand_rep` | Archive own circular |
 | POST | `/api/brand-circulars/:id/apply` | Auth | Creator applies to an open circular with stats snapshot |
-| GET | `/api/brand-circulars/:id/applications` | `brand_rep` | List applications for own circular |
+| GET | `/api/brand-circulars/:id/applications` | includes `brand_rep` | List applications for own circular |
 | GET | `/api/applications` | Auth | List applications relevant to the current user |
-| POST | `/api/applications/:id/view-profile` | `brand_rep` | Mark profile viewed and notify creator |
-| POST | `/api/applications/:id/shortlist` | `brand_rep` | Shortlist creator and notify creator |
-| POST | `/api/applications/:id/reject` | `brand_rep` | Reject creator and notify creator |
-| POST | `/api/applications/:id/accept` | `brand_rep` | Accept creator and notify creator |
+| POST | `/api/applications/:id/view-profile` | includes `brand_rep` | Mark profile viewed and notify creator |
+| POST | `/api/applications/:id/shortlist` | includes `brand_rep` | Shortlist creator and notify creator |
+| POST | `/api/applications/:id/reject` | includes `brand_rep` | Reject creator and notify creator |
+| POST | `/api/applications/:id/accept` | includes `brand_rep` | Accept creator and notify creator |
 
 ## Statistics
 
@@ -179,13 +190,13 @@ Visibility values are `public`, `private`, and `friends_only`. The backend valid
 | --- | --- | --- | --- |
 | GET | `/api/social/post-groups` | Auth | Unified same-post groups across platform publish jobs/posts |
 | GET | `/api/social/post-groups/:id` | Auth | Unified post details with combined totals, per-platform breakdown, comments, and optional `?platform=x` filter |
-| POST | `/api/social/post-groups/:id/sync` | `creator_admin` | Sync real analytics/comments for every real published platform post in the group |
+| POST | `/api/social/post-groups/:id/sync` | Auth | Sync real analytics/comments for every real published platform post in the group |
 | GET | `/api/social/posts` | Auth | Real published posts |
 | GET | `/api/social/posts/:id` | Auth | One published post |
-| POST | `/api/social/posts/:id/sync` | `creator_admin` | Fetch analytics/comments via official connector |
+| POST | `/api/social/posts/:id/sync` | Auth | Fetch analytics/comments via official connector |
 | GET | `/api/social/posts/:id/metrics` | Auth | Stored real metric snapshots |
 | GET | `/api/social/posts/:id/comments` | Auth | Stored real comments |
-| POST | `/api/social/comments/:id/reply` | `creator_admin` | Reply using the same connected account |
+| POST | `/api/social/comments/:id/reply` | includes `content_creator` or `brand_rep` | Reply using the same connected account |
 | GET | `/api/social/analytics/summary` | Auth | Aggregate stored real data |
 
 ## Events

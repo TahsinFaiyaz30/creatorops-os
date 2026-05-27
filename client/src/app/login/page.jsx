@@ -6,16 +6,19 @@ import { Eye, EyeOff, Loader2, LogIn, UserPlus, Zap } from 'lucide-react';
 import SiteLogo from '../../components/layout/SiteLogo';
 import { api } from '../../lib/api';
 import { saveSession } from '../../lib/auth';
-import { ROLES } from '../../lib/roles';
+import { ROLES, homePathForUser } from '../../lib/roles';
 
 const DEMO_ACCOUNTS = [
-  { label: 'Content Creator', email: 'editor@creatorops.dev',  password: 'password123' },
+  { label: 'Content Creator', email: 'creator@creatorops.dev', password: 'password123' },
   { label: 'Brand Rep',      email: 'brand@creatorops.dev',   password: 'password123' },
+  { label: 'Admin',          email: 'admin@creatorops.dev',   password: 'password123' },
+  { label: 'Creator Admin',  email: 'creator.admin@creatorops.dev', password: 'password123' },
+  { label: 'Brand Admin',    email: 'brand.admin@creatorops.dev', password: 'password123' },
 ];
 
 const FEATURES = [
   'AI-powered multi-platform content generation',
-  'Role-based approval workflow (RBAC)',
+  'Creator review workflow (RBAC)',
   'Real OAuth platform connections',
   'Live publishing pipeline with validation',
   'Brand circulars & creator applications',
@@ -73,7 +76,7 @@ export default function LoginPage() {
     try {
       const payload = await api.post('/api/auth/login', creds);
       saveSession(payload);
-      router.push('/dashboard');
+      router.push(homePathForUser(payload.user));
     } catch (err) {
       setError(err.message || 'Login failed. Check your credentials.');
     } finally { setBusy(false); }
@@ -107,7 +110,7 @@ export default function LoginPage() {
             The Operating System<br />for Creator Teams
           </h1>
           <p className="mt-4 text-base text-slate-400 leading-relaxed max-w-sm">
-            One raw idea → platform-ready content → brand approval → live publishing. All in one workflow.
+            One raw idea → platform-ready content → creator review → live publishing. All in one workflow.
           </p>
           <ul className="mt-8 space-y-3">
             {FEATURES.map(f => (
@@ -264,7 +267,7 @@ export default function LoginPage() {
                     <option value={ROLES.CONTENT_CREATOR}>Content Creator</option>
                     <option value={ROLES.BRAND_REP}>Brand Representative</option>
                   </select>
-                  <p className="mt-1.5 text-xs text-[var(--muted)]">Content creators publish and manage creator workflows. Brand representatives manage circulars.</p>
+                  <p className="mt-1.5 text-xs text-[var(--muted)]">Content creators manage the full creator workflow. Brand representatives manage circulars, accounts, and publishing.</p>
                 </div>
                 <button
                   id="signup-submit"
@@ -286,7 +289,7 @@ export default function LoginPage() {
               <span className="text-xs text-[var(--muted)]">Demo accounts</span>
               <div className="h-px flex-1 bg-[var(--border)]" />
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
               {DEMO_ACCOUNTS.map(d => (
                 <button
                   key={d.email}

@@ -6,7 +6,7 @@ All operational records are workspace-scoped unless noted.
 
 ### User
 
-CreatorOps login identity. Stores name, email, password hash, role, and workspace.
+CreatorOps login identity. Stores name, email, password hash, `roles`, a primary compatibility `role`, and workspace. `roles` can contain any combination of `content_creator`, `brand_rep`, and `admin`.
 
 ### Workspace
 
@@ -26,17 +26,17 @@ Raw idea and workflow status. Related to campaign and variants.
 
 ### PlatformVariant
 
-Platform-specific caption, hook, CTA, hashtags, AI provider, brand/readiness scores, warnings, suggestions, and approval/publish status.
+Platform-specific caption, hook, CTA, hashtags, AI provider, brand/readiness scores, warnings, suggestions, and review/publish status.
 
 Also stores platform notes, allowed visibility options, and recommended visibility for platform-aware publishing UX.
 
 ### ContentVersion
 
-Audit snapshot for content/variant changes, approval decisions, publish state changes, and related metadata.
+Audit snapshot for content/variant changes, creator review decisions, publish state changes, and related metadata.
 
 ### ApprovalRequest
 
-Review request for a platform variant with requestedBy, reviewedBy, status, and comments.
+Creator review request for a platform variant with requestedBy, reviewedBy, status, and comments. The model keeps its original name for API/database stability.
 
 ### WorkflowEvent
 
