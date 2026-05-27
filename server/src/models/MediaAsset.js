@@ -31,6 +31,10 @@ const mediaAssetSchema = new Schema(
       type: Number,
       required: true
     },
+    sha256: {
+      type: String,
+      default: ''
+    },
     localPath: {
       type: String,
       required: true,

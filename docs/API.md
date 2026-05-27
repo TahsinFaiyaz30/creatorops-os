@@ -107,13 +107,18 @@ Callbacks do not require JWT because secure state restores user/workspace/platfo
 
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/media/upload` | Auth | Upload original image/video with multipart field `media` |
+| POST | `/api/media/resumable/start` | Auth | Start or resume a generic media upload session with original file SHA-256 |
+| GET | `/api/media/resumable/:sessionId` | Auth | Read resumable upload session status and verified media asset if completed |
+| POST | `/api/media/resumable/:sessionId/chunk` | Auth | Append the next binary chunk with `Content-Range` |
+| POST | `/api/media/resumable/:sessionId/pause` | Auth | Pause a media upload session |
+| POST | `/api/media/resumable/:sessionId/resume` | Auth | Resume a paused media upload session |
+| DELETE | `/api/media/resumable/:sessionId` | Auth | Cancel a media upload session and delete partial server bytes |
 | GET | `/api/media` | Auth | List media |
 | GET | `/api/media/:id` | Auth | Get media metadata |
 | PATCH | `/api/media/:id` | Auth | Update crop preview metadata |
 | DELETE | `/api/media/:id` | Auth | Delete media and local file |
 
-Original files are stored without recompression. Crop settings are preview metadata.
+All media uploads use resumable sessions. The old multipart `/api/media/upload` endpoint does not exist. The client sends the original file SHA-256 before chunks start; the server hashes the assembled file and creates `MediaAsset` only after the hashes match. Original files are stored without recompression. Crop settings are preview metadata.
 
 ## Publish
 

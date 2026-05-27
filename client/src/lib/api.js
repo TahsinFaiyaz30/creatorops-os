@@ -20,8 +20,9 @@ const normalizeError = async response => {
 export const apiFetch = async (path, options = {}) => {
   const token = getToken();
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const isRawBody = Boolean(options.rawBody);
   const headers = {
-    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(isFormData || isRawBody ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers || {})
   };
 
@@ -33,7 +34,7 @@ export const apiFetch = async (path, options = {}) => {
     ...options,
     headers,
     body:
-      options.body && !isFormData && typeof options.body !== 'string'
+      options.body && !isFormData && !isRawBody && typeof options.body !== 'string'
         ? JSON.stringify(options.body)
         : options.body
   });
@@ -56,6 +57,6 @@ export const api = {
   get: path => apiFetch(path),
   post: (path, body) => apiFetch(path, { method: 'POST', body }),
   patch: (path, body) => apiFetch(path, { method: 'PATCH', body }),
-  upload: (path, formData) => apiFetch(path, { method: 'POST', body: formData }),
+  raw: (path, body, options = {}) => apiFetch(path, { ...options, method: options.method || 'POST', body, rawBody: true }),
   delete: path => apiFetch(path, { method: 'DELETE' })
 };

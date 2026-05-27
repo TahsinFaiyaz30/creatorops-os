@@ -14,6 +14,7 @@ The Compose page supports:
 - video visibility selection: public, private, friends only
 
 Original media is not recompressed or reduced in quality.
+When media is uploaded to CreatorOps, it uses the generic resumable media API rather than a one-shot multipart upload. Each image/video has its own upload session, pause/resume/cancel controls, browser-local recovery state, and server-side SHA-256 verification before a `MediaAsset` is created. User-paused uploads stay paused across refresh/login until Resume is clicked; accidental browser, network, or temporary server interruptions auto-resume from the last verified byte when the client/server are available. If final SHA-256 does not match the original file, the server deletes the corrupted assembled upload immediately and the client asks whether to retry from the beginning.
 
 ## Publishing
 

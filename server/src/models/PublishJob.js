@@ -183,6 +183,7 @@ const publishJobSchema = new Schema(
 publishJobSchema.index({ workspaceId: 1, status: 1, scheduledAt: 1 });
 publishJobSchema.index({ workspaceId: 1, campaignId: 1 });
 publishJobSchema.index({ workspaceId: 1, postGroupId: 1 });
+publishJobSchema.index({ workspaceId: 1, postGroupId: 1, platformConnectionId: 1, platform: 1 });
 
 const PublishJob = mongoose.model('PublishJob', publishJobSchema);
 

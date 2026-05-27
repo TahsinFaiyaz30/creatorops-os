@@ -69,7 +69,11 @@ Platform-specific limits and content requirements: caption length, hashtag count
 
 ### MediaAsset
 
-Original uploaded image/video metadata. Stores local path privately, public URL, MIME type, size, media type, and crop preview metadata. Original files are not recompressed.
+Original uploaded image/video metadata. Stores local path privately, public URL, MIME type, size, SHA-256, media type, and crop preview metadata. Original files are not recompressed.
+
+### MediaUploadSession
+
+Generic resumable client-to-CreatorOps upload session. Tracks owner, upload key, original file metadata, expected SHA-256, received byte count, partial local path, pause/resume/cancel status, failure reason, and the finalized `MediaAsset`. A `MediaAsset` is created only after the assembled file matches the expected SHA-256.
 
 ### PublishJob
 

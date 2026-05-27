@@ -1,15 +1,70 @@
 import {
-  createMediaAssetFromUpload,
+  cancelResumableMediaUpload,
   deleteMediaAsset,
   getMediaAssetById,
+  getResumableMediaUpload,
   listMediaAssets,
+  pauseResumableMediaUpload,
+  resumeResumableMediaUpload,
+  startResumableMediaUpload,
+  uploadResumableMediaChunk,
   updateMediaAsset
 } from '../services/media.service.js';
 
-export const uploadMedia = async (req, res, next) => {
+export const startResumableUpload = async (req, res, next) => {
   try {
-    const mediaAsset = await createMediaAssetFromUpload({ user: req.user, file: req.file, input: req.body });
-    res.status(201).json({ data: { mediaAsset } });
+    const uploadSession = await startResumableMediaUpload({ user: req.user, input: req.body });
+    res.status(201).json({ data: { uploadSession } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getResumableUpload = async (req, res, next) => {
+  try {
+    const uploadSession = await getResumableMediaUpload({ user: req.user, sessionId: req.params.sessionId });
+    res.json({ data: { uploadSession } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const uploadResumableChunk = async (req, res, next) => {
+  try {
+    const uploadSession = await uploadResumableMediaChunk({
+      user: req.user,
+      sessionId: req.params.sessionId,
+      contentRange: req.get('content-range'),
+      chunk: req.body
+    });
+    res.json({ data: { uploadSession } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const pauseResumableUpload = async (req, res, next) => {
+  try {
+    const uploadSession = await pauseResumableMediaUpload({ user: req.user, sessionId: req.params.sessionId });
+    res.json({ data: { uploadSession } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const resumeResumableUpload = async (req, res, next) => {
+  try {
+    const uploadSession = await resumeResumableMediaUpload({ user: req.user, sessionId: req.params.sessionId });
+    res.json({ data: { uploadSession } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const cancelResumableUpload = async (req, res, next) => {
+  try {
+    const uploadSession = await cancelResumableMediaUpload({ user: req.user, sessionId: req.params.sessionId });
+    res.json({ data: { uploadSession } });
   } catch (error) {
     next(error);
   }

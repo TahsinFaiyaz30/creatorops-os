@@ -747,6 +747,20 @@ export const createPublishJob = async ({ user, input, publishNow = false }) => {
   requirePublishPermission(user);
   const normalized = normalizePublishInput(input);
   if (!normalized.postGroupId) normalized.postGroupId = createPostGroupId();
+
+  if (normalized.postGroupId && normalized.platformConnectionId && normalized.targetPlatform) {
+    const existingJob = await PublishJob.findOne({
+      workspaceId: user.workspaceId,
+      postGroupId: normalized.postGroupId,
+      platformConnectionId: normalized.platformConnectionId,
+      platform: normalized.targetPlatform
+    }).sort({ createdAt: -1 });
+
+    if (existingJob) {
+      return getPublishJobById({ user, jobId: existingJob._id });
+    }
+  }
+
   const validation = await validatePublishPayload({ user, input: normalized });
 
   if (!validation.ok) {
@@ -774,15 +788,15 @@ export const createPublishJob = async ({ user, input, publishNow = false }) => {
     mediaAssetIds: validation.mediaAssets.map(asset => asset._id),
     platformConnectionId: connection._id,
     platform: publishPlatform,
-      accountSnapshot: buildAccountSnapshot(connection, publishPlatform),
-      caption: normalized.caption || variant?.caption || '',
-      visibility: normalized.visibility,
-      scheduledAt,
-      status: 'queued',
-      processingStage: publishNow ? 'queued_now' : 'scheduled',
-      processingMessage: publishNow ? 'Queued for immediate publishing.' : 'Scheduled and waiting for its publish time.',
-      processingStageUpdatedAt: new Date(),
-      mediaProcessing: normalized.mediaProcessing,
+    accountSnapshot: buildAccountSnapshot(connection, publishPlatform),
+    caption: normalized.caption || variant?.caption || '',
+    visibility: normalized.visibility,
+    scheduledAt,
+    status: 'queued',
+    processingStage: publishNow ? 'queued_now' : 'scheduled',
+    processingMessage: publishNow ? 'Queued for immediate publishing.' : 'Scheduled and waiting for its publish time.',
+    processingStageUpdatedAt: new Date(),
+    mediaProcessing: normalized.mediaProcessing,
     createdBy: user._id
   });
 

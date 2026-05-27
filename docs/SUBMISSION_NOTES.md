@@ -37,7 +37,7 @@ Creator teams often lose context between ideation, platform adaptation, brand re
 
 ## Tech Stack
 
-Next.js, React, Tailwind CSS, Express, MongoDB, Mongoose, Socket.IO, JWT, bcrypt, multer, Gemini/Groq optional AI, AES-256-GCM encryption.
+Next.js, React, Tailwind CSS, Express, MongoDB, Mongoose, Socket.IO, JWT, bcrypt, resumable media upload sessions, Gemini/Groq optional AI, AES-256-GCM encryption.
 
 ## Challenges
 
