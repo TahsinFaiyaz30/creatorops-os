@@ -31,6 +31,21 @@ const providerUploadSchema = new Schema(
   { _id: false }
 );
 
+const providerUploadSessionSchema = new Schema(
+  {
+    platform: { type: String, default: '' },
+    sessionType: { type: String, default: '' },
+    uploadUrl: { type: String, default: '' },
+    mediaFingerprint: { type: String, default: '' },
+    totalBytes: { type: Number, default: 0, min: 0 },
+    bytesUploaded: { type: Number, default: 0, min: 0 },
+    data: { type: Schema.Types.Mixed, default: () => ({}) },
+    startedAt: { type: Date, default: null },
+    updatedAt: { type: Date, default: null }
+  },
+  { _id: false }
+);
+
 const publishJobSchema = new Schema(
   {
     workspaceId: {
@@ -145,6 +160,11 @@ const publishJobSchema = new Schema(
       type: providerUploadSchema,
       default: () => ({})
     },
+    providerUploadSession: {
+      type: providerUploadSessionSchema,
+      default: () => ({}),
+      select: false
+    },
     publishControl: {
       action: {
         type: String,
@@ -201,6 +221,18 @@ publishJobSchema.index({ workspaceId: 1, status: 1, scheduledAt: 1 });
 publishJobSchema.index({ workspaceId: 1, campaignId: 1 });
 publishJobSchema.index({ workspaceId: 1, postGroupId: 1 });
 publishJobSchema.index({ workspaceId: 1, postGroupId: 1, platformConnectionId: 1, platform: 1 });
+publishJobSchema.set('toJSON', {
+  transform: (_doc, ret) => {
+    delete ret.providerUploadSession;
+    return ret;
+  }
+});
+publishJobSchema.set('toObject', {
+  transform: (_doc, ret) => {
+    delete ret.providerUploadSession;
+    return ret;
+  }
+});
 
 const PublishJob = mongoose.model('PublishJob', publishJobSchema);
 

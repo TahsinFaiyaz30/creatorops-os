@@ -397,8 +397,104 @@ export default class YouTubeConnector extends BasePlatformConnector {
     return okResult({ completed: true, payload }, `${this.displayName} upload already completed.`);
   }
 
-  async uploadVideoChunks({ uploadUrl, token, video, totalBytes, onUploadProgress, checkPublishControl, signal }) {
-    let offset = 0;
+  getMediaFingerprint(video, totalBytes) {
+    return [this.platform, video.objectKey, video.mimeType || '', totalBytes].join(':');
+  }
+
+  isReusableUploadSession(session, mediaFingerprint, totalBytes) {
+    return Boolean(
+      session?.uploadUrl &&
+        session.mediaFingerprint === mediaFingerprint &&
+        Number(session.totalBytes || 0) === totalBytes
+    );
+  }
+
+  async saveProviderUploadSession(payload, updates = {}) {
+    if (typeof payload?.saveProviderUploadSession !== 'function') return;
+    await payload.saveProviderUploadSession({
+      platform: this.platform,
+      sessionType: 'youtube_resumable',
+      ...updates
+    });
+  }
+
+  async resolveResumableUploadSession({ payload, token, metadata, video, totalBytes, mediaFingerprint, signal }) {
+    const existingSession = payload.providerUploadSession || {};
+
+    if (this.isReusableUploadSession(existingSession, mediaFingerprint, totalBytes)) {
+      await this.reportUploadProgress(payload, {
+        phase: 'initializing',
+        bytesUploaded: Number(existingSession.bytesUploaded || 0),
+        totalBytes,
+        message: `Checking saved ${this.displayName} resumable upload session before resuming.`
+      });
+      const checkedSession = await this.queryUploadOffset({
+        uploadUrl: existingSession.uploadUrl,
+        token,
+        totalBytes,
+        signal
+      });
+      if (!checkedSession.ok) return checkedSession;
+      if (checkedSession.data.completed) return { ...checkedSession, resumed: true };
+
+      const nextOffset = Math.max(0, Number(checkedSession.data.nextOffset || 0));
+      await this.saveProviderUploadSession(payload, {
+        uploadUrl: existingSession.uploadUrl,
+        mediaFingerprint,
+        totalBytes,
+        bytesUploaded: nextOffset
+      });
+      return okResult(
+        {
+          uploadUrl: existingSession.uploadUrl,
+          initialOffset: nextOffset
+        },
+        `${this.displayName} resumable upload session resumed from byte ${nextOffset}.`
+      );
+    }
+
+    await this.reportUploadProgress(payload, {
+      phase: 'initializing',
+      bytesUploaded: 0,
+      totalBytes,
+      message: `Starting ${this.displayName} resumable media upload.`
+    });
+    const session = await this.startResumableUpload({
+      token,
+      metadata,
+      video,
+      totalBytes,
+      signal
+    });
+    if (!session.ok) return session;
+    await this.saveProviderUploadSession(payload, {
+      uploadUrl: session.data.uploadUrl,
+      mediaFingerprint,
+      totalBytes,
+      bytesUploaded: 0,
+      startedAt: new Date()
+    });
+    return {
+      ...session,
+      data: {
+        ...session.data,
+        initialOffset: 0
+      }
+    };
+  }
+
+  async uploadVideoChunks({
+    uploadUrl,
+    token,
+    video,
+    totalBytes,
+    initialOffset = 0,
+    onUploadProgress,
+    onProviderSessionProgress,
+    checkPublishControl,
+    signal
+  }) {
+    let offset = Math.max(0, Number(initialOffset || 0));
 
     while (offset < totalBytes) {
       if (typeof checkPublishControl === 'function') {
@@ -432,11 +528,17 @@ export default class YouTubeConnector extends BasePlatformConnector {
         if (!session.ok) return session;
         if (session.data.completed) return session;
         offset = session.data.nextOffset;
+        if (typeof onProviderSessionProgress === 'function') {
+          await onProviderSessionProgress({ bytesUploaded: offset, totalBytes });
+        }
         continue;
       }
 
       if (response.status === 308) {
         offset = parseUploadedRangeEnd(response.headers.get('range')) + 1;
+        if (typeof onProviderSessionProgress === 'function') {
+          await onProviderSessionProgress({ bytesUploaded: offset, totalBytes });
+        }
         if (typeof onUploadProgress === 'function') {
           await onUploadProgress({ phase: 'uploading', bytesUploaded: offset, totalBytes });
         }
@@ -445,6 +547,9 @@ export default class YouTubeConnector extends BasePlatformConnector {
 
       const payload = await parseResponseJsonSafe(response);
       if (!response.ok) return this.providerErrorResult(payload, response.status);
+      if (typeof onProviderSessionProgress === 'function') {
+        await onProviderSessionProgress({ bytesUploaded: totalBytes, totalBytes });
+      }
       if (typeof onUploadProgress === 'function') {
         await onUploadProgress({ phase: 'uploaded', bytesUploaded: totalBytes, totalBytes });
       }
@@ -468,6 +573,7 @@ export default class YouTubeConnector extends BasePlatformConnector {
     }
     const token = this.getAccessToken(connection);
     const totalBytes = Number(video.size || 0);
+    const mediaFingerprint = this.getMediaFingerprint(video, totalBytes);
     const privacyStatus = payload.visibility === 'public' ? 'public' : 'private';
     const metadata = {
       snippet: {
@@ -478,29 +584,45 @@ export default class YouTubeConnector extends BasePlatformConnector {
       status: { privacyStatus }
     };
 
-    if (typeof payload.onUploadProgress === 'function') {
-      await this.reportUploadProgress(payload, {
-        phase: 'initializing',
-        bytesUploaded: 0,
-        totalBytes,
-        message: `Starting ${this.displayName} resumable media upload.`
-      });
-    }
-    const session = await this.startResumableUpload({
+    const session = await this.resolveResumableUploadSession({
+      payload,
       token,
       metadata,
       video,
       totalBytes,
+      mediaFingerprint,
       signal: payload.abortSignal
     });
     if (!session.ok) return session;
+    if (session.data.completed) {
+      const completedPayload = session.data.payload || {};
+      await this.saveProviderUploadSession(payload, {
+        uploadUrl: '',
+        mediaFingerprint,
+        totalBytes,
+        bytesUploaded: totalBytes
+      });
+      return okResult({
+        providerPostId: completedPayload.id,
+        providerPostUrl: completedPayload.id ? `https://www.youtube.com/watch?v=${completedPayload.id}` : '',
+        rawResponse: completedPayload
+      }, `${this.displayName} upload had already completed on the provider.`);
+    }
 
     const upload = await this.uploadVideoChunks({
       uploadUrl: session.data.uploadUrl,
       token,
       video,
       totalBytes,
+      initialOffset: session.data.initialOffset || 0,
       onUploadProgress: payload.onUploadProgress,
+      onProviderSessionProgress: progress =>
+        this.saveProviderUploadSession(payload, {
+          uploadUrl: session.data.uploadUrl,
+          mediaFingerprint,
+          totalBytes,
+          ...progress
+        }),
       checkPublishControl: payload.checkPublishControl,
       signal: payload.abortSignal
     });

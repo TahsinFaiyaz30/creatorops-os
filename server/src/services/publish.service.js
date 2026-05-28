@@ -57,6 +57,18 @@ const emptyProviderUpload = () => ({
   updatedAt: null
 });
 
+const emptyProviderUploadSession = () => ({
+  platform: '',
+  sessionType: '',
+  uploadUrl: '',
+  mediaFingerprint: '',
+  totalBytes: 0,
+  bytesUploaded: 0,
+  data: {},
+  startedAt: null,
+  updatedAt: null
+});
+
 const requirePublishPermission = user => {
   if (!roleMatches(user, PUBLISH_ROLES)) {
     throw createHttpError('Forbidden: publishing is not allowed for these roles.', 403);
@@ -116,6 +128,22 @@ const clearPublishControl = job => {
     requestedBy: null,
     message: ''
   };
+};
+
+const saveProviderUploadSession = async (job, updates = {}) => {
+  job.providerUploadSession = {
+    ...(job.providerUploadSession || {}),
+    ...updates,
+    updatedAt: new Date()
+  };
+  if (!job.providerUploadSession.startedAt && (updates.uploadUrl || updates.sessionType || updates.data)) {
+    job.providerUploadSession.startedAt = new Date();
+  }
+  await job.save();
+};
+
+const clearProviderUploadSession = job => {
+  job.providerUploadSession = emptyProviderUploadSession();
 };
 
 const getExpectedTargetCount = groupJobs => Math.max(1, ...groupJobs.map(job => Number(job.groupTargetCount) || 1));
@@ -1395,6 +1423,7 @@ export const cancelPublishJob = async ({ user, jobId }) => {
 
   job.status = 'cancelled';
   clearPublishControl(job);
+  clearProviderUploadSession(job);
   job.processingStage = 'cancelled';
   job.processingMessage = 'Publish job cancelled.';
   job.processingStageUpdatedAt = new Date();
@@ -1484,7 +1513,6 @@ export const resumePublishJob = async ({ user, jobId }) => {
   job.processingStage = 'queued_resume';
   job.processingMessage = 'Paused publish job resumed and queued.';
   job.processingStageUpdatedAt = new Date();
-  job.providerUpload = emptyProviderUpload();
   job.temporaryMediaExpiresAt = null;
   await job.save();
   if (job.postGroupId) {
@@ -1524,7 +1552,6 @@ export const retryPublishJob = async ({ user, jobId, input = {} }) => {
   job.processingStage = 'queued_retry';
   job.processingMessage = 'Retry queued.';
   job.processingStageUpdatedAt = new Date();
-  job.providerUpload = emptyProviderUpload();
   if (Object.prototype.hasOwnProperty.call(input, 'mediaProcessing')) {
     job.mediaProcessing = {
       ...(job.mediaProcessing || {}),
@@ -1559,6 +1586,7 @@ const finalizeControlledPublishJob = async ({ job, result }) => {
   job.errorCode = '';
   job.errorMessage = '';
   clearPublishControl(job);
+  if (!isPaused) clearProviderUploadSession(job);
   job.processingStage = isPaused ? 'paused' : 'cancelled';
   job.processingMessage = result.message;
   job.processingStageUpdatedAt = new Date();
@@ -1592,7 +1620,6 @@ export const processPublishJob = async ({ jobId }) => {
       processingStage: 'starting',
       processingMessage: 'Starting publish job.',
       processingStageUpdatedAt: new Date(),
-      providerUpload: emptyProviderUpload(),
       publishControl: {
         action: '',
         requestedAt: null,
@@ -1601,7 +1628,7 @@ export const processPublishJob = async ({ jobId }) => {
       }
     },
     { new: true }
-  );
+  ).select('+providerUploadSession');
 
   if (!lockedJob) {
     return PublishJob.findById(jobId);
@@ -1668,6 +1695,8 @@ export const processPublishJob = async ({ jobId }) => {
       account: sanitizeConnection(connection),
       abortSignal: abortController.signal,
       checkPublishControl: () => checkPublishControl(lockedJob),
+      providerUploadSession: lockedJob.providerUploadSession || {},
+      saveProviderUploadSession: updates => saveProviderUploadSession(lockedJob, updates),
       onUploadProgress: async ({ phase, bytesUploaded = 0, totalBytes = 0, message = '' }) => {
         const normalizedBytesUploaded = Number(bytesUploaded || 0);
         const normalizedTotalBytes = Number(totalBytes || 0);
@@ -1770,6 +1799,7 @@ export const processPublishJob = async ({ jobId }) => {
     lockedJob.errorMessage = '';
     lockedJob.publishedAt = new Date();
     clearPublishControl(lockedJob);
+    clearProviderUploadSession(lockedJob);
     lockedJob.processingStage = 'published';
     lockedJob.processingMessage = result.message || 'Provider upload completed.';
     lockedJob.processingStageUpdatedAt = new Date();
@@ -1911,7 +1941,7 @@ export const processStalePublishingJobs = async ({ now = new Date() } = {}) => {
       { processingStageUpdatedAt: { $lte: cutoff } },
       { processingStageUpdatedAt: null, lastAttemptAt: { $lte: cutoff } }
     ]
-  });
+  }).select('+providerUploadSession');
 
   for (const job of staleJobs) {
     const controlResult = getControlResult(job.publishControl?.action);
@@ -1920,6 +1950,7 @@ export const processStalePublishingJobs = async ({ now = new Date() } = {}) => {
       job.errorCode = '';
       job.errorMessage = '';
       clearPublishControl(job);
+      if (job.status === 'cancelled') clearProviderUploadSession(job);
       job.processingStage = job.status;
       job.processingMessage = controlResult.message;
     } else {

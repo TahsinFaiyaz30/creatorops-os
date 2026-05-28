@@ -1,6 +1,12 @@
 import env from '../../config/env.js';
 import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
 
+const X_PROVIDER_SESSION_TYPE = 'x_chunked_media_v2';
+const X_MEDIA_UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
+const X_MEDIA_PROCESSING_MAX_POLLS = 30;
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 const normalizeXResult = result => {
   if (result.ok) return result;
 
@@ -61,6 +67,43 @@ export default class XConnector extends BasePlatformConnector {
     return 'tweet_image';
   }
 
+  getMediaAssetKey(asset) {
+    return String(asset?._id || asset?.mediaAssetId || asset?.objectKey || asset?.originalName || '');
+  }
+
+  getMediaFingerprint(asset) {
+    return [
+      this.platform,
+      this.getMediaAssetKey(asset),
+      asset?.objectKey || '',
+      asset?.mimeType || '',
+      asset?.sha256 || '',
+      Number(asset?.size || 0)
+    ].join(':');
+  }
+
+  getPostMediaFingerprint(assets = []) {
+    return assets.map(asset => this.getMediaFingerprint(asset)).join('|');
+  }
+
+  getChunkSize(totalBytes) {
+    const minimumChunkSize = Math.max(1, Number(X_MEDIA_UPLOAD_CHUNK_BYTES));
+    const chunkSizeForSegmentLimit = Math.ceil(Number(totalBytes || 0) / 1000);
+    return Math.max(minimumChunkSize, chunkSizeForSegmentLimit);
+  }
+
+  isProviderMediaReferenceInvalid(result) {
+    const text = [
+      result?.code,
+      result?.message,
+      result?.data?.payload?.title,
+      result?.data?.payload?.detail,
+      result?.data?.payload?.message,
+      ...(Array.isArray(result?.data?.payload?.errors) ? result.data.payload.errors.map(error => error.detail || error.title || '') : [])
+    ].filter(Boolean).join(' ').toLowerCase();
+    return /media/.test(text) && /invalid|expired|not found|not_found|missing/.test(text);
+  }
+
   async preflightMediaItem(item, connection) {
     if (!['image', 'video'].includes(item.mediaType)) {
       return {
@@ -72,19 +115,6 @@ export default class XConnector extends BasePlatformConnector {
         tooLarge: false,
         compressionAvailable: false,
         message: 'Unsupported media type for X.'
-      };
-    }
-
-    if (item.mediaType === 'video') {
-      return {
-        mediaAssetId: item.mediaAssetId,
-        originalName: item.originalName,
-        mediaType: item.mediaType,
-        size: item.size,
-        accepted: false,
-        tooLarge: false,
-        compressionAvailable: false,
-        message: 'X video upload is not enabled in this connector.'
       };
     }
 
@@ -297,25 +327,163 @@ export default class XConnector extends BasePlatformConnector {
           message: 'X image publishing requires the media.write OAuth scope. Reconnect the X account after adding media.write to the app permissions.'
         });
       }
+      const unsupported = mediaAssets.find(asset =>
+        !['image', 'video'].includes(asset.mediaType) || !asset.mimeType || !/^(image|video)\//.test(asset.mimeType)
+      );
+      if (unsupported) {
+        return connectorResult({ code: 'VALIDATION_FAILED', message: 'X media upload accepts image or video assets only.' });
+      }
+      const nonImageAssets = mediaAssets.filter(asset => asset.mediaType === 'video' || asset.mimeType === 'image/gif');
+      if (nonImageAssets.length > 0 && mediaAssets.length > 1) {
+        return connectorResult({
+          code: 'VALIDATION_FAILED',
+          message: 'X posts can attach one video or animated GIF, or up to 4 still images. Split mixed or multi-video media sets before publishing.'
+        });
+      }
       if (mediaAssets.length > 4) {
         return connectorResult({
           code: 'VALIDATION_FAILED',
           message: 'X image publishing supports up to 4 images per post. Split larger media sets before publishing.'
         });
       }
-      const videoAsset = mediaAssets.find(asset => asset.mediaType === 'video');
-      if (videoAsset) {
-        return connectorResult({
-          code: 'CAPABILITY_UNAVAILABLE',
-          message: 'X video upload requires chunked media upload and is not enabled in this connector yet. Use image or text-only posting.'
-        });
-      }
-      const unsupported = mediaAssets.find(asset => asset.mediaType !== 'image' || !asset.mimeType?.startsWith('image/'));
-      if (unsupported) {
-        return connectorResult({ code: 'VALIDATION_FAILED', message: 'X media upload currently accepts image assets only.' });
-      }
     }
     return okResult({}, 'X payload is publishable.');
+  }
+
+  async initializeChunkedMediaUpload(asset, token) {
+    const result = await this.requestJson('https://api.x.com/2/media/upload/initialize', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        media_category: this.getMediaCategory(asset),
+        media_type: asset.mimeType,
+        total_bytes: Number(asset.size || 0)
+      })
+    });
+    const normalized = normalizeXResult(result);
+    if (!normalized.ok) {
+      if (mediaIds.length > 0 && this.isProviderMediaReferenceInvalid(normalized)) {
+        await this.saveXUploadSession(payload, {
+          postFingerprint,
+          totalBytes: totalUploadBytes,
+          bytesUploaded: 0,
+          data: { uploads: {} }
+        });
+      }
+      return normalized;
+    }
+    const mediaId = normalized.data?.data?.id || normalized.data?.data?.media_id || '';
+    if (!mediaId) {
+      return connectorResult({
+        code: 'PROVIDER_RESPONSE_INVALID',
+        message: 'X media upload initialization succeeded but did not return a media id.',
+        data: normalized.data
+      });
+    }
+    return okResult({
+      providerMediaId: mediaId,
+      rawResponse: normalized.data,
+      processingInfo: normalized.data?.data?.processing_info || null,
+      expiresAfterSeconds: normalized.data?.data?.expires_after_secs || null
+    }, 'X chunked media upload initialized.');
+  }
+
+  async appendChunkedMediaUpload({ mediaId, token, chunk, segmentIndex }) {
+    const result = await this.requestJson(`https://api.x.com/2/media/upload/${encodeURIComponent(mediaId)}/append`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        media: chunk.toString('base64'),
+        segment_index: segmentIndex
+      })
+    });
+    return normalizeXResult(result);
+  }
+
+  async finalizeChunkedMediaUpload({ mediaId, token }) {
+    const result = await this.requestJson(`https://api.x.com/2/media/upload/${encodeURIComponent(mediaId)}/finalize`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const normalized = normalizeXResult(result);
+    if (!normalized.ok) return normalized;
+    return okResult({
+      rawResponse: normalized.data,
+      processingInfo: normalized.data?.data?.processing_info || null
+    }, 'X chunked media upload finalized.');
+  }
+
+  async getChunkedMediaUploadStatus({ mediaId, token }) {
+    const result = await this.requestJson(`https://api.x.com/2/media/upload?media_id=${encodeURIComponent(mediaId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      retryNetworkErrors: 1
+    });
+    const normalized = normalizeXResult(result);
+    if (!normalized.ok) return normalized;
+    return okResult({
+      rawResponse: normalized.data,
+      processingInfo: normalized.data?.data?.processing_info || null
+    }, 'X media processing status checked.');
+  }
+
+  async waitForChunkedMediaProcessing({ mediaId, token, processingInfo, payload, progressContext = {} }) {
+    let currentInfo = processingInfo;
+    for (let attempt = 0; attempt < X_MEDIA_PROCESSING_MAX_POLLS; attempt += 1) {
+      const state = currentInfo?.state;
+      if (!state || state === 'succeeded') {
+        return okResult({ processingInfo: currentInfo }, 'X media processing completed.');
+      }
+      if (state === 'failed') {
+        return connectorResult({
+          code: 'PROVIDER_MEDIA_PROCESSING_FAILED',
+          message: 'X media processing failed after upload.',
+          data: { processingInfo: currentInfo }
+        });
+      }
+
+      const control = await this.checkPublishControl(payload);
+      if (control) return control;
+      const waitSeconds = Math.min(10, Math.max(1, Number(currentInfo?.check_after_secs || 1)));
+      await this.reportUploadProgress(payload, {
+        phase: 'uploading',
+        bytesUploaded: Number(progressContext.bytesUploaded || 0),
+        totalBytes: Number(progressContext.totalBytes || 0),
+        message: `X is processing uploaded media (${currentInfo?.progress_percent || 0}%).`
+      });
+      await sleep(waitSeconds * 1000);
+
+      const status = await this.getChunkedMediaUploadStatus({ mediaId, token });
+      if (!status.ok) return status;
+      currentInfo = status.data.processingInfo;
+    }
+
+    return connectorResult({
+      code: 'PROVIDER_MEDIA_PROCESSING_TIMEOUT',
+      message: 'X media processing did not finish in time. Retry from Publishing to continue checking the saved media upload.',
+      data: { mediaId, processingInfo: currentInfo }
+    });
+  }
+
+  async saveXUploadSession(payload, { postFingerprint, totalBytes, bytesUploaded, data }) {
+    await this.saveProviderUploadSession(payload, {
+      sessionType: X_PROVIDER_SESSION_TYPE,
+      mediaFingerprint: postFingerprint,
+      totalBytes,
+      bytesUploaded,
+      data
+    });
+  }
+
+  getReusableXUploadData(payload, postFingerprint) {
+    const session = this.getProviderUploadSession(payload, X_PROVIDER_SESSION_TYPE);
+    if (session.mediaFingerprint !== postFingerprint) return { uploads: {} };
+    return session.data && typeof session.data === 'object' ? session.data : { uploads: {} };
   }
 
   async uploadImageMedia(asset, token, payload, progressContext = {}) {
@@ -323,62 +491,194 @@ export default class XConnector extends BasePlatformConnector {
       return connectorResult({ code: 'VALIDATION_FAILED', message: 'X media upload requires verified cloud media.' });
     }
 
-    const controlBeforeRead = await this.checkPublishControl(payload);
-    if (controlBeforeRead) return controlBeforeRead;
     const totalUploadBytes = Number(progressContext.totalBytes || asset.size || 0);
     const uploadedBefore = Number(progressContext.uploadedBefore || 0);
+    const postFingerprint = progressContext.postFingerprint || this.getPostMediaFingerprint(payload.mediaAssets || []);
+    const sessionData = progressContext.sessionData || { uploads: {} };
+    sessionData.uploads = sessionData.uploads || {};
+    const assetKey = this.getMediaAssetKey(asset);
+    const mediaFingerprint = this.getMediaFingerprint(asset);
+    const totalBytes = Number(asset.size || 0);
+    const chunkSize = this.getChunkSize(totalBytes);
+    let uploadState = sessionData.uploads[assetKey];
+
+    if (!uploadState || uploadState.mediaFingerprint !== mediaFingerprint || Number(uploadState.totalBytes || 0) !== totalBytes) {
+      uploadState = {
+        mediaAssetId: assetKey,
+        mediaFingerprint,
+        providerMediaId: '',
+        mediaCategory: this.getMediaCategory(asset),
+        mimeType: asset.mimeType || '',
+        totalBytes,
+        bytesUploaded: 0,
+        nextSegmentIndex: 0,
+        chunkSize,
+        finalized: false,
+        rawResponse: null,
+        processingInfo: null
+      };
+      sessionData.uploads[assetKey] = uploadState;
+    }
+
+    if (uploadState.finalized && uploadState.providerMediaId) {
+      if (!uploadState.processedAt) {
+        const processed = await this.waitForChunkedMediaProcessing({
+          mediaId: uploadState.providerMediaId,
+          token,
+          processingInfo: uploadState.processingInfo,
+          payload,
+          progressContext: {
+            bytesUploaded: uploadedBefore + totalBytes,
+            totalBytes: totalUploadBytes
+          }
+        });
+        if (!processed.ok) return processed;
+        uploadState.processingInfo = processed.data.processingInfo;
+        uploadState.processedAt = new Date();
+        await this.saveXUploadSession(payload, {
+          postFingerprint,
+          totalBytes: totalUploadBytes,
+          bytesUploaded: uploadedBefore + totalBytes,
+          data: sessionData
+        });
+      }
+      await this.reportUploadProgress(payload, {
+        phase: progressContext.isLastAsset ? 'uploaded' : 'uploading',
+        bytesUploaded: uploadedBefore + totalBytes,
+        totalBytes: totalUploadBytes,
+        message: `Reusing saved X media upload for ${asset.originalName || 'media'}.`
+      });
+      return okResult({ mediaId: uploadState.providerMediaId, rawResponse: uploadState.rawResponse }, 'Reused saved X media upload.');
+    }
+
+    const controlBeforeInitialize = await this.checkPublishControl(payload);
+    if (controlBeforeInitialize) return controlBeforeInitialize;
     await this.reportUploadProgress(payload, {
       phase: 'initializing',
-      bytesUploaded: uploadedBefore,
+      bytesUploaded: uploadedBefore + Number(uploadState.bytesUploaded || 0),
       totalBytes: totalUploadBytes,
-      message: `Starting ${this.displayName} media upload.`
-    });
-    const fileBuffer = await asset.readBuffer();
-    const controlBeforeUpload = await this.checkPublishControl(payload);
-    if (controlBeforeUpload) return controlBeforeUpload;
-    await this.reportUploadProgress(payload, {
-      phase: 'uploading',
-      bytesUploaded: uploadedBefore,
-      totalBytes: totalUploadBytes,
-      message: `Uploading ${asset.originalName || 'media'} to ${this.displayName}.`
-    });
-    const mediaCategory = asset.mimeType === 'image/gif' ? 'tweet_gif' : 'tweet_image';
-    const result = await this.requestJson('https://api.x.com/2/media/upload', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        media: fileBuffer.toString('base64'),
-        media_category: mediaCategory,
-        media_type: asset.mimeType
-      }),
-      signal: payload.abortSignal
+      message: uploadState.providerMediaId
+        ? `Resuming X media upload for ${asset.originalName || 'media'}.`
+        : `Starting X chunked media upload for ${asset.originalName || 'media'}.`
     });
 
-    const normalized = normalizeXResult(result);
-    if (!normalized.ok && this.isFileTooLargeResult(normalized)) {
-      return connectorResult({
-        code: 'FILE_TOO_LARGE',
-        message: `X rejected ${asset.originalName || 'media'} because the provider API says the file is too large.`,
-        data: normalized.data
+    if (!uploadState.providerMediaId) {
+      const initialized = await this.initializeChunkedMediaUpload(asset, token);
+      if (!initialized.ok && this.isFileTooLargeResult(initialized)) {
+        return connectorResult({
+          code: 'FILE_TOO_LARGE',
+          message: `X rejected ${asset.originalName || 'media'} because the provider API says the file is too large.`,
+          data: initialized.data
+        });
+      }
+      if (!initialized.ok) return initialized;
+      uploadState.providerMediaId = initialized.data.providerMediaId;
+      uploadState.rawResponse = initialized.data.rawResponse;
+      uploadState.processingInfo = initialized.data.processingInfo;
+      uploadState.expiresAfterSeconds = initialized.data.expiresAfterSeconds;
+      uploadState.startedAt = new Date();
+      await this.saveXUploadSession(payload, {
+        postFingerprint,
+        totalBytes: totalUploadBytes,
+        bytesUploaded: uploadedBefore,
+        data: sessionData
       });
     }
-    if (!normalized.ok) return normalized;
-    const mediaId = normalized.data?.data?.id || normalized.data?.data?.media_id || '';
-    if (!mediaId) {
-      return connectorResult({ code: 'PROVIDER_RESPONSE_INVALID', message: 'X media upload succeeded but did not return a media id.' });
+
+    let offset = Math.max(0, Number(uploadState.bytesUploaded || 0));
+    let segmentIndex = Math.max(0, Number(uploadState.nextSegmentIndex || Math.floor(offset / chunkSize)));
+
+    while (offset < totalBytes) {
+      const controlBeforeChunk = await this.checkPublishControl(payload);
+      if (controlBeforeChunk) return controlBeforeChunk;
+
+      const end = Math.min(offset + chunkSize, totalBytes) - 1;
+      const chunk = await asset.readBuffer({ start: offset, end });
+      await this.reportUploadProgress(payload, {
+        phase: 'uploading',
+        bytesUploaded: uploadedBefore + offset,
+        totalBytes: totalUploadBytes,
+        message: `Uploading ${asset.originalName || 'media'} to X from byte ${offset}.`
+      });
+      const appended = await this.appendChunkedMediaUpload({
+        mediaId: uploadState.providerMediaId,
+        token,
+        chunk,
+        segmentIndex
+      });
+      if (!appended.ok && this.isFileTooLargeResult(appended)) {
+        return connectorResult({
+          code: 'FILE_TOO_LARGE',
+          message: `X rejected ${asset.originalName || 'media'} because the provider API says the file is too large.`,
+          data: appended.data
+        });
+      }
+      if (!appended.ok) return appended;
+
+      offset = end + 1;
+      segmentIndex += 1;
+      uploadState.bytesUploaded = offset;
+      uploadState.nextSegmentIndex = segmentIndex;
+      uploadState.updatedAt = new Date();
+      await this.saveXUploadSession(payload, {
+        postFingerprint,
+        totalBytes: totalUploadBytes,
+        bytesUploaded: uploadedBefore + offset,
+        data: sessionData
+      });
+      await this.reportUploadProgress(payload, {
+        phase: 'uploading',
+        bytesUploaded: uploadedBefore + offset,
+        totalBytes: totalUploadBytes,
+        message: `Uploading ${asset.originalName || 'media'} to X: ${Math.floor((offset / totalBytes) * 100)}% complete.`
+      });
     }
 
-    await this.reportUploadProgress(payload, {
-      phase: 'uploaded',
-      bytesUploaded: uploadedBefore + (fileBuffer.length || Number(asset.size || 0)),
+    const controlBeforeFinalize = await this.checkPublishControl(payload);
+    if (controlBeforeFinalize) return controlBeforeFinalize;
+    const finalized = await this.finalizeChunkedMediaUpload({ mediaId: uploadState.providerMediaId, token });
+    if (!finalized.ok) return finalized;
+    uploadState.rawResponse = finalized.data.rawResponse;
+    uploadState.processingInfo = finalized.data.processingInfo;
+    uploadState.bytesUploaded = totalBytes;
+    uploadState.nextSegmentIndex = segmentIndex;
+    uploadState.finalized = true;
+    uploadState.finalizedAt = new Date();
+    await this.saveXUploadSession(payload, {
+      postFingerprint,
       totalBytes: totalUploadBytes,
-      message: `${this.displayName} accepted ${asset.originalName || 'media'}.`
+      bytesUploaded: uploadedBefore + totalBytes,
+      data: sessionData
     });
 
-    return okResult({ mediaId, rawResponse: normalized.data }, 'X image uploaded through the official media API.');
+    const processed = await this.waitForChunkedMediaProcessing({
+      mediaId: uploadState.providerMediaId,
+      token,
+      processingInfo: uploadState.processingInfo,
+      payload,
+      progressContext: {
+        bytesUploaded: uploadedBefore + totalBytes,
+        totalBytes: totalUploadBytes
+      }
+    });
+    if (!processed.ok) return processed;
+    uploadState.processingInfo = processed.data.processingInfo;
+    uploadState.processedAt = new Date();
+    await this.saveXUploadSession(payload, {
+      postFingerprint,
+      totalBytes: totalUploadBytes,
+      bytesUploaded: uploadedBefore + totalBytes,
+      data: sessionData
+    });
+
+    await this.reportUploadProgress(payload, {
+      phase: progressContext.isLastAsset ? 'uploaded' : 'uploading',
+      bytesUploaded: uploadedBefore + totalBytes,
+      totalBytes: totalUploadBytes,
+      message: `X accepted ${asset.originalName || 'media'}.`
+    });
+
+    return okResult({ mediaId: uploadState.providerMediaId, rawResponse: uploadState.rawResponse }, 'X media uploaded through the official chunked media API.');
   }
 
   async publish(payload, connection) {
@@ -389,10 +689,19 @@ export default class XConnector extends BasePlatformConnector {
     const mediaUploadResponses = [];
     const uploadAssets = payload.mediaAssets || [];
     const totalUploadBytes = uploadAssets.reduce((sum, asset) => sum + Number(asset.size || 0), 0);
+    const postFingerprint = this.getPostMediaFingerprint(uploadAssets);
+    const sessionData = this.getReusableXUploadData(payload, postFingerprint);
     let uploadedBefore = 0;
 
-    for (const asset of uploadAssets) {
-      const uploadResult = await this.uploadImageMedia(asset, token, payload, { uploadedBefore, totalBytes: totalUploadBytes });
+    for (let index = 0; index < uploadAssets.length; index += 1) {
+      const asset = uploadAssets[index];
+      const uploadResult = await this.uploadImageMedia(asset, token, payload, {
+        uploadedBefore,
+        totalBytes: totalUploadBytes,
+        postFingerprint,
+        sessionData,
+        isLastAsset: index === uploadAssets.length - 1
+      });
       if (!uploadResult.ok) return uploadResult;
       mediaIds.push(uploadResult.data.mediaId);
       mediaUploadResponses.push(uploadResult.data.rawResponse);
@@ -412,8 +721,7 @@ export default class XConnector extends BasePlatformConnector {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(tweetPayload),
-      signal: payload.abortSignal
+      body: JSON.stringify(tweetPayload)
     });
     const normalized = normalizeXResult(result);
     if (!normalized.ok) return normalized;

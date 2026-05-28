@@ -354,6 +354,16 @@ export const uploadResumableMediaChunk = async ({ user, sessionId, contentRange,
   if (session.storageProvider === 's3' && range.end < session.size - 1 && chunk.length < MIN_S3_MULTIPART_PART_BYTES) {
     throw createHttpError('Cloudflare R2 multipart uploads require every non-final chunk to be at least 5 MB.', 400);
   }
+  if (session.storageProvider === 's3' && session.multipartParts?.length > 0) {
+    const standardPartSize = Number(session.multipartParts[0].size || 0);
+    const isFinalPart = range.end === session.size - 1;
+    if (!isFinalPart && chunk.length !== standardPartSize) {
+      throw createHttpError(`Cloudflare R2 multipart uploads require every non-final chunk to match the first chunk size of ${standardPartSize} bytes.`, 400);
+    }
+    if (isFinalPart && chunk.length > standardPartSize) {
+      throw createHttpError(`Cloudflare R2 multipart uploads require the final chunk to be no larger than the first chunk size of ${standardPartSize} bytes.`, 400);
+    }
+  }
 
   if (range.end < session.bytesReceived) {
     return serializeUploadSession(session);

@@ -122,8 +122,7 @@ export default class LinkedInConnector extends BasePlatformConnector {
         'X-Restli-Protocol-Version': '2.0.0',
         'LinkedIn-Version': env.oauth.linkedin.apiVersion
       },
-      body: JSON.stringify(body),
-      signal: payload.abortSignal
+      body: JSON.stringify(body)
     });
     if (!result.ok) return result;
     const id = result.data.id || result.data.value || '';

@@ -93,8 +93,7 @@ export default class WordPressConnector extends BasePlatformConnector {
         title,
         content: payload.caption,
         status: 'draft'
-      }),
-      signal: payload.abortSignal
+      })
     });
     if (!result.ok) return result;
     return okResult({

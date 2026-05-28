@@ -114,8 +114,7 @@ export default class ShopifyConnector extends BasePlatformConnector {
           body_html: payload.caption,
           published: false
         }
-      }),
-      signal: payload.abortSignal
+      })
     });
     if (!result.ok) return result;
     return okResult({

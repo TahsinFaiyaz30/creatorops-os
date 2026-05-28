@@ -358,10 +358,13 @@ const getPendingProgress = pending => {
   const statuses = new Set(pendingItems.map(item => item.status || 'waiting'));
   const hasFullSizeUnverifiedItem = pendingItems.some(item => item.sessionId && isPendingItemAtCloudSize(item));
   const hasCreatedJobs = (pending.results || []).some(result => result.jobId);
+  const hasTargetFailure = (pending.results || []).some(result =>
+    !result.jobId && (result.ok === false || ['blocked', 'failed'].includes(result.status))
+  );
   const bytesPerSecond = pendingItems.reduce((sum, item) => sum + Number(item.uploadSpeedBytesPerSecond || 0), 0);
 
   let status = 'waiting_upload';
-  if (statuses.has('failed')) status = 'failed_upload';
+  if (statuses.has('failed') || hasTargetFailure) status = 'failed_upload';
   else if (hasFullSizeUnverifiedItem) status = 'verifying_upload';
   else if (pending.pauseReason === 'user' || statuses.has('paused')) status = 'paused_upload';
   else if (statuses.has('uploading')) status = 'uploading_client';
@@ -378,7 +381,7 @@ const getPendingProgress = pending => {
     status,
     hasCreatedJobs,
     active: ['waiting_upload', 'uploading_client', 'interrupted_upload', 'paused_upload', 'verifying_upload'].includes(status),
-    attention: ['failed_upload', 'interrupted_upload'].includes(status)
+    attention: ['failed_upload', 'interrupted_upload'].includes(status) || hasTargetFailure
   };
 };
 
@@ -1531,6 +1534,9 @@ function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onC
   const resumeBusy = busyKey === `resume-upload:${pending.id}`;
   const acceptedTargetCount = new Set((pending.results || []).filter(result => result.jobId).map(result => result.targetKey)).size;
   const hasUnfinishedTargets = targets.length > acceptedTargetCount;
+  const failedTargetResults = (pending.results || []).filter(result =>
+    !result.jobId && (result.ok === false || ['blocked', 'failed'].includes(result.status))
+  );
   const canResumeUpload = canManage && (
     ['paused_upload', 'interrupted_upload', 'failed_upload', 'waiting_upload'].includes(progress.status) ||
     (progress.status === 'verifying_upload' && hasUnfinishedTargets)
@@ -1540,6 +1546,7 @@ function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onC
   const fullSizeUnverifiedCount = items.filter(item => !item.mediaAssetId && item.sessionId && isPendingItemAtCloudSize(item)).length;
   const statusDescription = (() => {
     if (pending.pauseReason === 'user') return 'Paused by you. Resume from Dispatch when ready.';
+    if (failedTargetResults.length > 0) return 'One or more platform dispatches failed before a job was created. Retry from Dispatch or cancel it.';
     if (progress.status === 'failed_upload') return 'Cloud upload or verification failed. Retry from Dispatch or cancel it.';
     if (progress.status === 'interrupted_upload') return 'Interrupted upload is saved. Resume from the last verified chunk here.';
     if (progress.status === 'verifying_upload' && fullSizeUnverifiedCount > 0) return 'Upload reached cloud storage. CreatorOps is verifying SHA-256 and linking the cloud media asset.';

@@ -2,6 +2,19 @@ import env from '../../config/env.js';
 import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
 
 const GRAPH_VERSION = 'v20.0';
+const INSTAGRAM_PROVIDER_SESSION_TYPE = 'instagram_container_v1';
+
+const isCreationContainerInvalidResult = result => {
+  const text = [
+    result?.code,
+    result?.message,
+    result?.data?.payload?.error?.message,
+    result?.data?.payload?.message,
+    result?.data?.payload?.title,
+    result?.data?.payload?.detail
+  ].filter(Boolean).join(' ').toLowerCase();
+  return /creation|container|media/.test(text) && /invalid|expired|not found|missing/.test(text);
+};
 
 export default class InstagramConnector extends BasePlatformConnector {
   constructor() {
@@ -116,38 +129,77 @@ export default class InstagramConnector extends BasePlatformConnector {
     if (!validation.ok) return validation;
     const token = this.getAccessToken(connection);
     const media = payload.mediaAssets.find(asset => asset.publicUrl && ['image', 'video'].includes(asset.mediaType));
-    const createBody = new URLSearchParams({
-      access_token: token,
-      caption: payload.caption || ''
-    });
-    createBody.set(media.mediaType === 'video' ? 'video_url' : 'image_url', media.publicUrl);
-    if (media.mediaType === 'video') createBody.set('media_type', 'REELS');
-    const controlBeforeContainer = await this.checkPublishControl(payload);
-    if (controlBeforeContainer) return controlBeforeContainer;
-    await this.reportRemoteMediaIngestStart(payload, 'Instagram is ingesting cloud media from CreatorOps.');
-    const container = await this.requestJson(`https://graph.facebook.com/${GRAPH_VERSION}/${connection.externalAccountId}/media`, {
-      method: 'POST',
-      body: createBody,
-      signal: payload.abortSignal
-    });
-    if (!container.ok) return container;
+    const mediaFingerprint = [this.platform, media.objectKey || media.publicUrl, media.mimeType || '', media.size || 0, payload.caption || ''].join(':');
+    const savedSession = this.getProviderUploadSession(payload, INSTAGRAM_PROVIDER_SESSION_TYPE);
+    const savedData = savedSession.mediaFingerprint === mediaFingerprint && savedSession.data && typeof savedSession.data === 'object'
+      ? savedSession.data
+      : {};
+    let containerId = savedData.containerId || '';
+    let containerData = savedData.container || null;
+
+    if (!containerId) {
+      const createBody = new URLSearchParams({
+        access_token: token,
+        caption: payload.caption || ''
+      });
+      createBody.set(media.mediaType === 'video' ? 'video_url' : 'image_url', media.publicUrl);
+      if (media.mediaType === 'video') createBody.set('media_type', 'REELS');
+      const controlBeforeContainer = await this.checkPublishControl(payload);
+      if (controlBeforeContainer) return controlBeforeContainer;
+      await this.reportRemoteMediaIngestStart(payload, 'Instagram is ingesting cloud media from CreatorOps.');
+      const container = await this.requestJson(`https://graph.facebook.com/${GRAPH_VERSION}/${connection.externalAccountId}/media`, {
+        method: 'POST',
+        body: createBody
+      });
+      if (!container.ok) return container;
+      containerId = container.data.id || '';
+      containerData = container.data;
+      if (!containerId) {
+        return connectorResult({ code: 'PROVIDER_RESPONSE_INVALID', message: 'Instagram accepted media creation but did not return a creation id.' });
+      }
+      await this.saveProviderUploadSession(payload, {
+        sessionType: INSTAGRAM_PROVIDER_SESSION_TYPE,
+        mediaFingerprint,
+        totalBytes: Number(media.size || 0),
+        bytesUploaded: 0,
+        data: {
+          containerId,
+          container: containerData,
+          mediaAssetId: String(media._id || ''),
+          createdAt: new Date()
+        }
+      });
+    } else {
+      await this.reportRemoteMediaIngestStart(payload, 'Instagram saved media container found; resuming publish.');
+    }
+
     const controlBeforePublish = await this.checkPublishControl(payload);
     if (controlBeforePublish) return controlBeforePublish;
     const publishBody = new URLSearchParams({
       access_token: token,
-      creation_id: container.data.id
+      creation_id: containerId
     });
     const published = await this.requestJson(`https://graph.facebook.com/${GRAPH_VERSION}/${connection.externalAccountId}/media_publish`, {
       method: 'POST',
-      body: publishBody,
-      signal: payload.abortSignal
+      body: publishBody
     });
-    if (!published.ok) return published;
+    if (!published.ok) {
+      if (isCreationContainerInvalidResult(published)) {
+        await this.saveProviderUploadSession(payload, {
+          sessionType: INSTAGRAM_PROVIDER_SESSION_TYPE,
+          mediaFingerprint: '',
+          totalBytes: 0,
+          bytesUploaded: 0,
+          data: {}
+        });
+      }
+      return published;
+    }
     await this.reportRemoteMediaIngestComplete(payload, 'Instagram accepted the cloud media.');
     return okResult({
       providerPostId: published.data?.id || '',
       providerPostUrl: '',
-      rawResponse: { container: container.data, published: published.data }
+      rawResponse: { container: containerData || { id: containerId }, published: published.data }
     }, 'Instagram media published through the official API.');
   }
 

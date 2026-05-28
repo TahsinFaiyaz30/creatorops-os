@@ -139,7 +139,7 @@ export default class FacebookConnector extends BasePlatformConnector {
     if (image) {
       await this.reportRemoteMediaIngestStart(payload, 'Facebook is ingesting cloud media from CreatorOps.');
     }
-    const result = await this.requestJson(endpoint, { method: 'POST', body, signal: payload.abortSignal });
+    const result = await this.requestJson(endpoint, { method: 'POST', body });
     if (!result.ok) return result;
     if (image) {
       await this.reportRemoteMediaIngestComplete(payload, 'Facebook accepted the cloud media.');

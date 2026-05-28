@@ -1,6 +1,20 @@
 import env from '../../config/env.js';
 import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
 
+const THREADS_PROVIDER_SESSION_TYPE = 'threads_container_v1';
+
+const isCreationContainerInvalidResult = result => {
+  const text = [
+    result?.code,
+    result?.message,
+    result?.data?.payload?.error?.message,
+    result?.data?.payload?.message,
+    result?.data?.payload?.title,
+    result?.data?.payload?.detail
+  ].filter(Boolean).join(' ').toLowerCase();
+  return /creation|container|media/.test(text) && /invalid|expired|not found|missing/.test(text);
+};
+
 export default class ThreadsConnector extends BasePlatformConnector {
   constructor() {
     super('threads', 'Threads');
@@ -97,32 +111,68 @@ export default class ThreadsConnector extends BasePlatformConnector {
     const validation = this.validatePublishPayload(payload, connection);
     if (!validation.ok) return validation;
     const token = this.getAccessToken(connection);
-    const createBody = new URLSearchParams({
-      access_token: token,
-      media_type: 'TEXT',
-      text: payload.caption
-    });
-    const controlBeforeContainer = await this.checkPublishControl(payload);
-    if (controlBeforeContainer) return controlBeforeContainer;
-    const container = await this.requestJson(`https://graph.threads.net/v1.0/${connection.externalAccountId}/threads`, {
-      method: 'POST',
-      body: createBody,
-      signal: payload.abortSignal
-    });
-    if (!container.ok) return container;
+    const mediaFingerprint = [this.platform, connection.externalAccountId, payload.caption || ''].join(':');
+    const savedSession = this.getProviderUploadSession(payload, THREADS_PROVIDER_SESSION_TYPE);
+    const savedData = savedSession.mediaFingerprint === mediaFingerprint && savedSession.data && typeof savedSession.data === 'object'
+      ? savedSession.data
+      : {};
+    let containerId = savedData.containerId || '';
+    let containerData = savedData.container || null;
+
+    if (!containerId) {
+      const createBody = new URLSearchParams({
+        access_token: token,
+        media_type: 'TEXT',
+        text: payload.caption
+      });
+      const controlBeforeContainer = await this.checkPublishControl(payload);
+      if (controlBeforeContainer) return controlBeforeContainer;
+      const container = await this.requestJson(`https://graph.threads.net/v1.0/${connection.externalAccountId}/threads`, {
+        method: 'POST',
+        body: createBody
+      });
+      if (!container.ok) return container;
+      containerId = container.data.id || '';
+      containerData = container.data;
+      if (!containerId) {
+        return connectorResult({ code: 'PROVIDER_RESPONSE_INVALID', message: 'Threads accepted container creation but did not return a creation id.' });
+      }
+      await this.saveProviderUploadSession(payload, {
+        sessionType: THREADS_PROVIDER_SESSION_TYPE,
+        mediaFingerprint,
+        totalBytes: 0,
+        bytesUploaded: 0,
+        data: {
+          containerId,
+          container: containerData,
+          createdAt: new Date()
+        }
+      });
+    }
+
     const controlBeforePublish = await this.checkPublishControl(payload);
     if (controlBeforePublish) return controlBeforePublish;
-    const publishBody = new URLSearchParams({ access_token: token, creation_id: container.data.id });
+    const publishBody = new URLSearchParams({ access_token: token, creation_id: containerId });
     const published = await this.requestJson(`https://graph.threads.net/v1.0/${connection.externalAccountId}/threads_publish`, {
       method: 'POST',
-      body: publishBody,
-      signal: payload.abortSignal
+      body: publishBody
     });
-    if (!published.ok) return published;
+    if (!published.ok) {
+      if (isCreationContainerInvalidResult(published)) {
+        await this.saveProviderUploadSession(payload, {
+          sessionType: THREADS_PROVIDER_SESSION_TYPE,
+          mediaFingerprint: '',
+          totalBytes: 0,
+          bytesUploaded: 0,
+          data: {}
+        });
+      }
+      return published;
+    }
     return okResult({
       providerPostId: published.data.id,
       providerPostUrl: '',
-      rawResponse: { container: container.data, published: published.data }
+      rawResponse: { container: containerData || { id: containerId }, published: published.data }
     }, 'Threads post published through the official API.');
   }
 }

@@ -160,6 +160,10 @@ export default class BasePlatformConnector {
       .join(' ')
       .toLowerCase();
 
+    if (/quota|rate limit|rate-limit|daily limit|per day|usage limit|usage_limits|user rate/i.test(text)) {
+      return false;
+    }
+
     return /file|media|image|video|attachment/.test(text) && /too large|exceeds|size|limit|maximum|max/.test(text);
   }
 
@@ -258,6 +262,26 @@ export default class BasePlatformConnector {
   async checkPublishControl(payload) {
     if (typeof payload?.checkPublishControl !== 'function') return null;
     return payload.checkPublishControl();
+  }
+
+  getProviderUploadSession(payload, sessionType = '') {
+    const session = payload?.providerUploadSession || {};
+    if (session.platform && session.platform !== this.platform) return {};
+    if (sessionType && session.sessionType && session.sessionType !== sessionType) return {};
+    return session;
+  }
+
+  getProviderUploadSessionData(payload, sessionType = '') {
+    const session = this.getProviderUploadSession(payload, sessionType);
+    return session?.data && typeof session.data === 'object' ? session.data : {};
+  }
+
+  async saveProviderUploadSession(payload, updates = {}) {
+    if (typeof payload?.saveProviderUploadSession !== 'function') return;
+    await payload.saveProviderUploadSession({
+      platform: this.platform,
+      ...updates
+    });
   }
 
   getPayloadMediaBytes(payload) {

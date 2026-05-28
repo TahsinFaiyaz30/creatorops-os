@@ -152,8 +152,7 @@ export default class PinterestConnector extends BasePlatformConnector {
           source_type: 'image_url',
           url: image.publicUrl
         }
-      }),
-      signal: payload.abortSignal
+      })
     });
     if (!result.ok) return result;
     await this.reportRemoteMediaIngestComplete(payload, 'Pinterest accepted the cloud media.');
