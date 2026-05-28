@@ -11,6 +11,7 @@ import { formatDuration } from '../../lib/duration';
 import { formatPlatform, getPlatformCaptionLimit, getPlatformDetails, platformCapabilities } from '../../lib/platforms';
 import { canPublish } from '../../lib/roles';
 import {
+  broadcastPendingPublishUpdate,
   cancelUploadSession,
   createUploadKey,
   deletePendingPublish,
@@ -215,6 +216,8 @@ export default function ComposePage() {
   const currentPendingRef = useRef(null);
   const retryTimerRef = useRef(null);
   const resumeAfterPauseRef = useRef(false);
+  const pendingPersistTimerRef = useRef(null);
+  const pendingPersistPayloadRef = useRef(null);
 
   const load = async () => {
     const [connectionsResult, settingsResult] = await Promise.allSettled([
@@ -520,11 +523,46 @@ export default function ComposePage() {
     })));
   };
 
-  const persistPending = async pending => {
-    currentPendingRef.current = pending;
+  const flushPendingPersist = async () => {
+    const pending = pendingPersistPayloadRef.current;
+    if (!pending) return;
+    pendingPersistPayloadRef.current = null;
+    if (pendingPersistTimerRef.current) {
+      window.clearTimeout(pendingPersistTimerRef.current);
+      pendingPersistTimerRef.current = null;
+    }
     await putPendingPublish(pending);
-    updateUploadQueueFromPending(pending);
   };
+
+  const persistPending = async (pending, { immediate = true } = {}) => {
+    currentPendingRef.current = pending;
+    updateUploadQueueFromPending(pending);
+    broadcastPendingPublishUpdate(pending);
+
+    if (immediate) {
+      pendingPersistPayloadRef.current = null;
+      if (pendingPersistTimerRef.current) {
+        window.clearTimeout(pendingPersistTimerRef.current);
+        pendingPersistTimerRef.current = null;
+      }
+      await putPendingPublish(pending);
+      return;
+    }
+
+    pendingPersistPayloadRef.current = pending;
+    if (pendingPersistTimerRef.current) return;
+    pendingPersistTimerRef.current = window.setTimeout(() => {
+      flushPendingPersist().catch(() => {});
+    }, 500);
+  };
+
+  useEffect(() => () => {
+    if (pendingPersistTimerRef.current) {
+      window.clearTimeout(pendingPersistTimerRef.current);
+      pendingPersistTimerRef.current = null;
+    }
+    pendingPersistPayloadRef.current = null;
+  }, []);
 
   const markPendingInterrupted = pending => {
     pending.pauseReason = '';
@@ -703,13 +741,11 @@ export default function ComposePage() {
             applyUploadSessionToPendingItem(item, session, { forceSpeedZero: false });
             item.uploadSpeedBytesPerSecond = session.uploadSpeedBytesPerSecond || 0;
             persistPending(pending).catch(() => {});
-            updateUploadQueueFromPending(pending);
           },
           onProgress: session => {
             applyUploadSessionToPendingItem(item, session, { forceSpeedZero: false });
             item.uploadSpeedBytesPerSecond = session.uploadSpeedBytesPerSecond || 0;
-            persistPending(pending).catch(() => {});
-            updateUploadQueueFromPending(pending);
+            persistPending(pending, { immediate: false }).catch(() => {});
           }
         });
       } catch (error) {
@@ -1068,8 +1104,7 @@ export default function ComposePage() {
       const current = currentPendingRef.current;
       if (!current?.id || event.pendingId !== current.id) return;
 
-      const pendingItems = await getPendingPublishes().catch(() => []);
-      const latestPending = pendingItems.find(item => item.id === current.id);
+      const latestPending = event.pending || (await getPendingPublishes().catch(() => [])).find(item => item.id === current.id);
 
       if (!latestPending) {
         uploadControlRef.current.cancelled = true;

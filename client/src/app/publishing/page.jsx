@@ -30,6 +30,7 @@ import { formatDuration } from '../../lib/duration';
 import { formatPlatform } from '../../lib/platforms';
 import { canPublish } from '../../lib/roles';
 import {
+  broadcastPendingPublishUpdate,
   cancelUploadSession,
   deletePendingPublish,
   deleteUploadFile,
@@ -592,6 +593,10 @@ export default function PublishingPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const uploadControlsRef = useRef(new Map());
   const autoResumeIdsRef = useRef(new Set());
+  const pendingPersistTimersRef = useRef(new Map());
+  const pendingPersistPayloadsRef = useRef(new Map());
+  const serverRefreshTimerRef = useRef(null);
+  const requestServerStateRefreshRef = useRef(() => {});
 
   const sortPendingUploads = items =>
     [...items].sort((a, b) => getTimestamp(b.updatedAt || b.createdAt) - getTimestamp(a.updatedAt || a.createdAt));
@@ -603,16 +608,46 @@ export default function PublishingPage() {
       next.push(mergePendingPublishRecords(existing || null, pending));
       return sortPendingUploads(next);
     });
+    setLastUpdated(new Date());
   }, []);
 
   const removePendingUploadState = useCallback(pendingId => {
     setPendingUploads(current => current.filter(item => item.id !== pendingId));
   }, []);
 
-  const persistPendingUpload = useCallback(async pending => {
+  const flushPendingUploadPersist = useCallback(async pendingId => {
+    const key = String(pendingId || '');
+    const pending = pendingPersistPayloadsRef.current.get(key);
+    if (!pending) return;
+    pendingPersistPayloadsRef.current.delete(key);
+    const timer = pendingPersistTimersRef.current.get(key);
+    if (timer) window.clearTimeout(timer);
+    pendingPersistTimersRef.current.delete(key);
     await putPendingPublish(pending);
+  }, []);
+
+  const persistPendingUpload = useCallback(async (pending, { immediate = true } = {}) => {
+    if (!pending?.id) return;
     upsertPendingUploadState(pending);
-  }, [upsertPendingUploadState]);
+    broadcastPendingPublishUpdate(pending);
+
+    const key = String(pending.id);
+    if (immediate) {
+      pendingPersistPayloadsRef.current.delete(key);
+      const timer = pendingPersistTimersRef.current.get(key);
+      if (timer) window.clearTimeout(timer);
+      pendingPersistTimersRef.current.delete(key);
+      await putPendingPublish(pending);
+      return;
+    }
+
+    pendingPersistPayloadsRef.current.set(key, pending);
+    if (pendingPersistTimersRef.current.has(key)) return;
+    const timer = window.setTimeout(() => {
+      flushPendingUploadPersist(key).catch(() => {});
+    }, 500);
+    pendingPersistTimersRef.current.set(key, timer);
+  }, [flushPendingUploadPersist, upsertPendingUploadState]);
 
   const applyRealtimePublishUpdate = useCallback(payload => {
     if (!payload) return;
@@ -630,6 +665,7 @@ export default function PublishingPage() {
     setJobs(current => {
       const existingIndex = current.findIndex(job => String(job._id) === jobId);
       if (existingIndex === -1) {
+        requestServerStateRefreshRef.current();
         return sortPublishJobs([payload, ...current]);
       }
 
@@ -656,6 +692,18 @@ export default function PublishingPage() {
     return uploadControlsRef.current.get(key);
   }, []);
 
+  useEffect(() => () => {
+    for (const timer of pendingPersistTimersRef.current.values()) {
+      window.clearTimeout(timer);
+    }
+    pendingPersistTimersRef.current.clear();
+    pendingPersistPayloadsRef.current.clear();
+    if (serverRefreshTimerRef.current) {
+      window.clearTimeout(serverRefreshTimerRef.current);
+      serverRefreshTimerRef.current = null;
+    }
+  }, []);
+
   const loadServerState = useCallback(async () => {
     const [jobsPayload, settingsPayload] = await Promise.all([
       api.get('/api/publish/jobs'),
@@ -665,6 +713,16 @@ export default function PublishingPage() {
     setPublishSettings(settingsPayload.data.settings);
     setLastUpdated(new Date());
   }, []);
+
+  useEffect(() => {
+    requestServerStateRefreshRef.current = () => {
+      if (serverRefreshTimerRef.current) window.clearTimeout(serverRefreshTimerRef.current);
+      serverRefreshTimerRef.current = window.setTimeout(() => {
+        serverRefreshTimerRef.current = null;
+        loadServerState().catch(() => {});
+      }, 250);
+    };
+  }, [loadServerState]);
 
   const loadPendingUploads = useCallback(async currentUser => {
     try {
@@ -732,7 +790,9 @@ export default function PublishingPage() {
       }
 
       if (changed) {
-        await loadPendingUploads(currentUser).catch(() => {});
+        for (const pending of pendingItems) {
+          upsertPendingUploadState(pending);
+        }
       }
     };
     const handleConnect = () => setLiveTransport('socket');
@@ -768,17 +828,19 @@ export default function PublishingPage() {
       const pendingId = event.pendingId ? String(event.pendingId) : '';
       if (event.type === 'pending_publish_deleted' && pendingId) {
         stopActiveControlForPending(pendingId, { cancelled: true });
+        removePendingUploadState(pendingId);
+        return;
       }
       if (event.type === 'pending_publish_updated' && pendingId) {
-        const pendingItems = await getPendingPublishes().catch(() => []);
-        const latestPending = pendingItems.find(item => String(item.id) === pendingId);
+        const latestPending = event.pending || (await getPendingPublishes().catch(() => [])).find(item => String(item.id) === pendingId);
         if (!latestPending) {
           stopActiveControlForPending(pendingId, { cancelled: true });
         } else if (latestPending.pauseReason === 'user') {
           stopActiveControlForPending(pendingId, { paused: true });
         }
+        if (latestPending) upsertPendingUploadState(latestPending);
+        return;
       }
-      loadPendingUploads().catch(() => {});
     });
     const visibilityHandler = () => {
       if (document.visibilityState === 'visible') loadPendingUploads().catch(() => {});
@@ -788,7 +850,7 @@ export default function PublishingPage() {
       unsubscribe();
       document.removeEventListener('visibilitychange', visibilityHandler);
     };
-  }, [loadPendingUploads]);
+  }, [loadPendingUploads, removePendingUploadState, upsertPendingUploadState]);
 
   useEffect(() => {
     if (liveTransport === 'socket') return undefined;
@@ -950,12 +1012,11 @@ export default function PublishingPage() {
           .filter(item => item.sessionId && !item.mediaAssetId)
           .map(item => pauseUploadSession(item.sessionId))
       );
-      await putPendingPublish({
+      await persistPendingUpload({
         ...pending,
         mediaItems,
         pauseReason: 'user'
       });
-      await loadPendingUploads();
       setMessage('Cloud upload intake paused. Resume it from Dispatch when ready.');
     } catch (err) {
       setMessage(err.message);
@@ -1034,7 +1095,7 @@ export default function PublishingPage() {
           onProgress: session => {
             applyUploadSessionToPendingItem(item, session, { forceSpeedZero: false });
             item.uploadSpeedBytesPerSecond = session.uploadSpeedBytesPerSecond || 0;
-            persistPendingUpload(pending).catch(() => {});
+            persistPendingUpload(pending, { immediate: false }).catch(() => {});
           }
         });
       } catch (error) {

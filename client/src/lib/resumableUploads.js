@@ -30,6 +30,15 @@ const broadcastUploadStateChange = payload => {
   });
 };
 
+export const broadcastPendingPublishUpdate = pending => {
+  if (!pending?.id) return;
+  broadcastUploadStateChange({
+    type: 'pending_publish_updated',
+    pendingId: pending.id,
+    pending
+  });
+};
+
 export const subscribeUploadStateChanges = handler => {
   const channel = getUploadEventsChannel();
   if (!channel) return () => {};
@@ -364,6 +373,7 @@ export const mergePendingPublishRecords = (existing = null, incoming = {}) => {
 export const putPendingPublish = pending =>
   new Promise(async (resolve, reject) => {
     let db;
+    let savedRecord;
     try {
       db = await openUploadDb();
       const transaction = db.transaction(PUBLISH_STORE, 'readwrite');
@@ -371,14 +381,14 @@ export const putPendingPublish = pending =>
       const getRequest = store.get(pending.id);
 
       getRequest.onsuccess = () => {
-        const record = mergePendingPublishRecords(getRequest.result || null, pending);
-        store.put(record);
+        savedRecord = mergePendingPublishRecords(getRequest.result || null, pending);
+        store.put(savedRecord);
       };
       getRequest.onerror = () => reject(getRequest.error);
       transaction.oncomplete = () => {
         db.close();
-        broadcastUploadStateChange({ type: 'pending_publish_updated', pendingId: pending.id });
-        resolve();
+        broadcastPendingPublishUpdate(savedRecord || pending);
+        resolve(savedRecord || pending);
       };
       transaction.onerror = () => {
         db.close();
