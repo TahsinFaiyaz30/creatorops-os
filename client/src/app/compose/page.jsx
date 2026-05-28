@@ -21,7 +21,9 @@ import {
   pauseUploadSession,
   putPendingPublish,
   putUploadFile,
+  runWithUploadWorkerLock,
   sha256File,
+  subscribeUploadStateChanges,
   uploadFileResumable
 } from '../../lib/resumableUploads';
 import Cropper from 'react-easy-crop';
@@ -70,14 +72,22 @@ const getSessionMediaAssetId = session => {
 const applyUploadSessionToPendingItem = (item, session, { forceSpeedZero = true } = {}) => {
   if (!session) return '';
   item.sessionId = session._id || item.sessionId || '';
-  item.bytesUploaded = Number(session.bytesReceived || 0);
+  const verifiedBytes = Number(session.verifiedBytesReceived ?? session.bytesReceived ?? 0);
+  const sentBytes = Number(session.bytesSent ?? verifiedBytes);
+  item.bytesUploaded = verifiedBytes;
+  item.bytesSent = session.status === 'uploading'
+    ? Math.max(Number(item.bytesSent || 0), sentBytes, verifiedBytes)
+    : verifiedBytes;
   item.status = session.status || item.status || 'waiting';
+  item.failureReason = session.failureReason || item.failureReason || '';
   if (forceSpeedZero) item.uploadSpeedBytesPerSecond = 0;
   const mediaAssetId = getSessionMediaAssetId(session);
   if (mediaAssetId) {
     item.mediaAssetId = mediaAssetId;
     item.bytesUploaded = Number(item.size || session.size || item.bytesUploaded || 0);
+    item.bytesSent = item.bytesUploaded;
     item.status = 'completed';
+    item.failureReason = '';
   }
   return mediaAssetId;
 };
@@ -493,10 +503,16 @@ export default function ComposePage() {
       key: item.uploadKey || item.mediaAssetId || item.localId,
       name: item.originalName,
       size: item.size,
-      bytesUploaded: item.bytesUploaded || (item.mediaAssetId ? item.size : 0),
+      bytesUploaded: item.status === 'uploading'
+        ? Math.max(Number(item.bytesUploaded || 0), Number(item.bytesSent || 0))
+        : item.bytesUploaded || (item.mediaAssetId ? item.size : 0),
+      bytesVerified: item.bytesUploaded || 0,
       uploadSpeedBytesPerSecond: item.uploadSpeedBytesPerSecond || 0,
+      failureReason: item.failureReason || item.errorMessage || '',
       status: item.status || (item.mediaAssetId ? 'completed' : 'waiting'),
-      percent: item.size ? Math.round(((item.bytesUploaded || (item.mediaAssetId ? item.size : 0)) / item.size) * 100) : 0
+      percent: item.size
+        ? Math.round((((item.status === 'uploading' ? Math.max(Number(item.bytesUploaded || 0), Number(item.bytesSent || 0)) : item.bytesUploaded || (item.mediaAssetId ? item.size : 0))) / item.size) * 100)
+        : 0
     })));
   };
 
@@ -582,7 +598,8 @@ export default function ComposePage() {
         bytesUploaded: 0,
         uploadSpeedBytesPerSecond: 0,
         sessionId: '',
-        mediaAssetId: ''
+        mediaAssetId: '',
+        failureReason: ''
       });
     }
 
@@ -679,19 +696,14 @@ export default function ComposePage() {
           cropMetadata: item.cropMetadata,
           controlRef: uploadControlRef,
           onSession: session => {
-            item.sessionId = session._id;
-            item.bytesUploaded = session.bytesReceived || 0;
-            item.status = session.status;
+            applyUploadSessionToPendingItem(item, session, { forceSpeedZero: false });
             item.uploadSpeedBytesPerSecond = session.uploadSpeedBytesPerSecond || 0;
-            if (session.mediaAsset?._id) item.mediaAssetId = session.mediaAsset._id;
             persistPending(pending).catch(() => {});
             updateUploadQueueFromPending(pending);
           },
           onProgress: session => {
-            item.bytesUploaded = session.bytesReceived || 0;
-            item.status = session.status;
+            applyUploadSessionToPendingItem(item, session, { forceSpeedZero: false });
             item.uploadSpeedBytesPerSecond = session.uploadSpeedBytesPerSecond || 0;
-            if (session.mediaAsset?._id) item.mediaAssetId = session.mediaAsset._id;
             persistPending(pending).catch(() => {});
             updateUploadQueueFromPending(pending);
           }
@@ -703,8 +715,10 @@ export default function ComposePage() {
 
       item.mediaAssetId = mediaAsset._id;
       item.bytesUploaded = item.size;
+      item.bytesSent = item.size;
       item.status = 'completed';
       item.uploadSpeedBytesPerSecond = 0;
+      item.failureReason = '';
       mediaAssetIds.push(mediaAsset._id);
       uploadedMediaIds.push(mediaAsset._id);
       await deleteUploadFile(item.uploadKey);
@@ -818,7 +832,21 @@ export default function ComposePage() {
     return decisions;
   };
 
-  const continuePendingPublish = async (pending, { force = false } = {}) => {
+  const continuePendingPublish = async (pending, { force = false, skipLock = false } = {}) => {
+    if (!skipLock) {
+      const lockResult = await runWithUploadWorkerLock(pending.id, () =>
+        continuePendingPublish(pending, { force, skipLock: true })
+      );
+      if (!lockResult.acquired) {
+        currentPendingRef.current = pending;
+        updateUploadQueueFromPending(pending);
+        setPendingUploadNotice('This upload is already running in another tab. This page will follow live progress.');
+        setMessage('Upload is active in another tab.');
+        return;
+      }
+      return lockResult.value;
+    }
+
     if (pending.pauseReason === 'user' && !force) {
       currentPendingRef.current = pending;
       setIsUploadPaused(true);
@@ -878,18 +906,21 @@ export default function ComposePage() {
       } else if (isShaMismatchUploadError(error) && error.uploadItem) {
         error.uploadItem.sessionId = '';
         error.uploadItem.bytesUploaded = 0;
+        error.uploadItem.bytesSent = 0;
         error.uploadItem.status = 'failed';
         error.uploadItem.mediaAssetId = '';
+        error.uploadItem.failureReason = error.message;
         pending.pauseReason = 'user';
         await persistPending(pending).catch(() => {});
         setPendingUploadNotice('Upload failed integrity verification. The corrupted server copy was deleted.');
         const retry = window.confirm(`${error.uploadItem.originalName} was corrupted during upload and CreatorOps deleted the uploaded copy. Retry this upload from the beginning?`);
         if (retry) {
           error.uploadItem.status = 'waiting';
+          error.uploadItem.failureReason = '';
           pending.pauseReason = '';
           await persistPending(pending).catch(() => {});
           setPendingUploadNotice('Retrying corrupted upload from the beginning...');
-          await continuePendingPublish(pending, { force: true });
+          await continuePendingPublish(pending, { force: true, skipLock: true });
         } else {
           setIsUploadPaused(true);
           setPendingUploadNotice('Upload stopped after corruption was detected. Resume to retry.');
@@ -897,6 +928,7 @@ export default function ComposePage() {
         }
       } else if (isMissingUploadFileError(error) && error.uploadItem) {
         error.uploadItem.status = 'failed';
+        error.uploadItem.failureReason = error.message;
         pending.pauseReason = 'user';
         await persistPending(pending).catch(() => {});
         setIsUploadPaused(true);
@@ -905,6 +937,7 @@ export default function ComposePage() {
       } else if (isUploadSessionFailedError(error) && error.uploadItem) {
         error.uploadItem.status = 'failed';
         error.uploadItem.uploadSpeedBytesPerSecond = 0;
+        error.uploadItem.failureReason = error.message;
         pending.pauseReason = 'user';
         await persistPending(pending).catch(() => {});
         setIsUploadPaused(true);
@@ -990,12 +1023,15 @@ export default function ComposePage() {
                 ...item,
                 sessionId: '',
                 bytesUploaded: 0,
+                bytesSent: 0,
                 uploadSpeedBytesPerSecond: 0,
-                status: 'waiting'
+                status: 'waiting',
+                failureReason: ''
               }
           : {
               ...item,
-              status: item.sessionId ? 'interrupted' : 'waiting'
+              status: item.sessionId ? 'interrupted' : 'waiting',
+              failureReason: ''
             }
       );
       await persistPending(pending).catch(() => {});
@@ -1021,6 +1057,40 @@ export default function ComposePage() {
       setMessage('Upload cancelled. Temporary uploaded media was removed.');
     }
   };
+
+  useEffect(() => {
+    const unsubscribe = subscribeUploadStateChanges(async event => {
+      const current = currentPendingRef.current;
+      if (!current?.id || event.pendingId !== current.id) return;
+
+      const pendingItems = await getPendingPublishes().catch(() => []);
+      const latestPending = pendingItems.find(item => item.id === current.id);
+
+      if (!latestPending) {
+        uploadControlRef.current.cancelled = true;
+        uploadControlRef.current.abortController?.abort();
+        currentPendingRef.current = null;
+        setUploadQueue([]);
+        setPendingUploadNotice('');
+        return;
+      }
+
+      currentPendingRef.current = latestPending;
+      updateUploadQueueFromPending(latestPending);
+
+      if (latestPending.pauseReason === 'user' && !uploadControlRef.current.paused) {
+        uploadControlRef.current.paused = true;
+        setIsUploadPaused(true);
+        setPendingUploadNotice('Media upload is paused. It will not resume automatically.');
+        uploadControlRef.current.abortController?.abort();
+        if (uploadControlRef.current.currentSessionId) {
+          pauseUploadSession(uploadControlRef.current.currentSessionId).catch(() => {});
+        }
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     if (!user?._id || busy) return;
@@ -1122,6 +1192,8 @@ export default function ComposePage() {
                     <div className="mt-1 text-[10px] text-[var(--muted)]">
                       {formatBytes(item.bytesUploaded)} / {formatBytes(item.size)}
                       {item.uploadSpeedBytesPerSecond > 0 ? ` · ${formatThroughput(item.uploadSpeedBytesPerSecond)}` : ''}
+                      {item.status === 'failed' && item.failureReason ? ` · ${item.failureReason}` : ''}
+                      {item.status === 'uploading' && item.bytesVerified < item.bytesUploaded ? ` · verified ${formatBytes(item.bytesVerified)}` : ''}
                     </div>
                   </div>
                 ))}

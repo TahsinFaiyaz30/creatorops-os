@@ -85,6 +85,15 @@ const mediaUploadSessionSchema = new Schema(
       default: [],
       select: false
     },
+    chunkLease: {
+      type: {
+        token: { type: String, default: '' },
+        startedAt: { type: Date, default: null },
+        expiresAt: { type: Date, default: null }
+      },
+      default: () => ({ token: '', startedAt: null, expiresAt: null }),
+      select: false
+    },
     publicUrl: {
       type: String,
       default: ''
@@ -134,6 +143,7 @@ const mediaUploadSessionSchema = new Schema(
         delete ret.objectKey;
         delete ret.multipartUploadId;
         delete ret.multipartParts;
+        delete ret.chunkLease;
         return ret;
       }
     },
@@ -142,6 +152,7 @@ const mediaUploadSessionSchema = new Schema(
         delete ret.objectKey;
         delete ret.multipartUploadId;
         delete ret.multipartParts;
+        delete ret.chunkLease;
         return ret;
       }
     }

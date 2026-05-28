@@ -17,6 +17,7 @@ import {
   uploadResumableObjectPart
 } from './mediaStorage.service.js';
 import { getTemporaryMediaRetentionSeconds } from './systemSettings.service.js';
+import { emitRealtimeEvent } from '../sockets/socket.js';
 
 const createHttpError = (message, statusCode) => {
   const error = new Error(message);
@@ -26,6 +27,7 @@ const createHttpError = (message, statusCode) => {
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 const MIN_S3_MULTIPART_PART_BYTES = 5 * 1024 * 1024;
+const CHUNK_UPLOAD_LEASE_MS = 30 * 60 * 1000;
 
 export const detectMediaType = mimeType => {
   if (mimeType?.startsWith('image/')) return 'image';
@@ -74,7 +76,7 @@ const getSessionWithStorage = async ({ user, sessionId }) => {
     _id: sessionId,
     workspaceId: user.workspaceId,
     uploadedBy: user._id
-  }).select('+objectKey +multipartUploadId +multipartParts');
+  }).select('+objectKey +multipartUploadId +multipartParts +chunkLease');
 
   if (!session) throw createHttpError('Upload session not found.', 404);
   return session;
@@ -164,6 +166,17 @@ const serializeUploadSession = async session => {
   };
 };
 
+const emitMediaUploadSessionUpdated = (session, eventType = 'updated') => {
+  serializeUploadSession(session)
+    .then(uploadSession => {
+      emitRealtimeEvent('media:upload_session_updated', {
+        eventType,
+        uploadSession
+      });
+    })
+    .catch(() => {});
+};
+
 const getUploadSession = async ({ user, sessionId }) => {
   const session = await MediaUploadSession.findOne({
     _id: sessionId,
@@ -211,6 +224,7 @@ export const startResumableMediaUpload = async ({ user, input = {} }) => {
         existing.status = 'uploading';
         await existing.save();
       }
+      emitMediaUploadSessionUpdated(existing, 'resumed_existing');
       return serializeUploadSession(existing);
     }
   }
@@ -256,6 +270,7 @@ export const startResumableMediaUpload = async ({ user, input = {} }) => {
   session.multipartUploadId = upload.multipartUploadId;
   session.publicUrl = upload.publicUrl || '';
   await session.save();
+  emitMediaUploadSessionUpdated(session, 'started');
 
   return serializeUploadSession(session);
 };
@@ -273,6 +288,7 @@ const parseContentRange = header => {
 const failUploadSession = async ({ session, message, completedObject = false }) => {
   session.status = 'failed';
   session.failureReason = message;
+  session.chunkLease = { token: '', startedAt: null, expiresAt: null };
 
   if (completedObject) {
     await deleteStoredObject({
@@ -283,6 +299,7 @@ const failUploadSession = async ({ session, message, completedObject = false }) 
   }
 
   await session.save();
+  emitMediaUploadSessionUpdated(session, 'failed');
 };
 
 const finalizeUploadSession = async ({ user, session }) => {
@@ -316,7 +333,9 @@ const finalizeUploadSession = async ({ user, session }) => {
     session.completedAt = new Date();
     session.failureReason = '';
     session.publicUrl = asset.publicUrl;
+    session.chunkLease = { token: '', startedAt: null, expiresAt: null };
     await session.save();
+    emitMediaUploadSessionUpdated(session, 'completed');
 
     return serializeUploadSession(await session.populate({ path: 'mediaAssetId', select: '+objectKey' }));
   } catch (error) {
@@ -334,6 +353,67 @@ const finalizeUploadSession = async ({ user, session }) => {
 export const getResumableMediaUpload = async ({ user, sessionId }) => {
   const session = await getUploadSession({ user, sessionId });
   return serializeUploadSession(session);
+};
+
+const acquireChunkUploadLease = async ({ user, session, range }) => {
+  const now = new Date();
+  const leaseToken = crypto.randomUUID();
+  const leaseExpiresAt = new Date(now.getTime() + CHUNK_UPLOAD_LEASE_MS);
+  const lockedSession = await MediaUploadSession.findOneAndUpdate(
+    {
+      _id: session._id,
+      workspaceId: user.workspaceId,
+      uploadedBy: user._id,
+      status: 'uploading',
+      bytesReceived: session.bytesReceived,
+      $or: [
+        { 'chunkLease.token': '' },
+        { 'chunkLease.token': { $exists: false } },
+        { 'chunkLease.expiresAt': null },
+        { 'chunkLease.expiresAt': { $lte: now } }
+      ]
+    },
+    {
+      $set: {
+        'chunkLease.token': leaseToken,
+        'chunkLease.startedAt': now,
+        'chunkLease.expiresAt': leaseExpiresAt
+      }
+    },
+    { new: true }
+  ).select('+objectKey +multipartUploadId +multipartParts +chunkLease');
+
+  if (lockedSession) {
+    return { session: lockedSession, leaseToken };
+  }
+
+  const latestSession = await getSessionWithStorage({ user, sessionId: session._id });
+  if (latestSession.status === 'completed') return { completedSession: latestSession };
+  if (latestSession.status === 'cancelled') throw createHttpError('Upload session was cancelled.', 409);
+  if (latestSession.status === 'failed') throw createHttpError(latestSession.failureReason || 'Upload session failed.', 409);
+  if (latestSession.status === 'paused') throw createHttpError('Upload session is paused.', 409);
+  if (range.end < latestSession.bytesReceived) return { completedSession: latestSession };
+
+  const error = createHttpError('Upload session is already receiving another chunk. Retry after the active chunk checkpoint is saved.', 409);
+  error.expectedOffset = latestSession.bytesReceived;
+  throw error;
+};
+
+const releaseChunkUploadLease = async ({ sessionId, leaseToken }) => {
+  if (!leaseToken) return;
+  await MediaUploadSession.updateOne(
+    {
+      _id: sessionId,
+      'chunkLease.token': leaseToken
+    },
+    {
+      $set: {
+        'chunkLease.token': '',
+        'chunkLease.startedAt': null,
+        'chunkLease.expiresAt': null
+      }
+    }
+  );
 };
 
 export const uploadResumableMediaChunk = async ({ user, sessionId, contentRange, chunk }) => {
@@ -375,29 +455,58 @@ export const uploadResumableMediaChunk = async ({ user, sessionId, contentRange,
     throw error;
   }
 
-  const partNumber = (session.multipartParts || []).length + 1;
-  const uploadedPart = await uploadResumableObjectPart({ session, partNumber, chunk });
-  session.multipartParts.push({
-    partNumber,
-    etag: uploadedPart.etag || '',
-    size: uploadedPart.size,
-    start: range.start,
-    end: range.end
-  });
-  session.bytesReceived += chunk.length;
+  const acquiredLease = await acquireChunkUploadLease({ user, session, range });
+  if (acquiredLease.completedSession) return serializeUploadSession(acquiredLease.completedSession);
 
-  if (session.bytesReceived > session.size) {
-    await failUploadSession({ session, message: 'Upload received more bytes than expected.' });
-    throw createHttpError('Upload received more bytes than expected.', 422);
+  const leaseToken = acquiredLease.leaseToken;
+  let progressSaved = false;
+
+  try {
+    const lockedSession = acquiredLease.session;
+    const partNumber = (lockedSession.multipartParts || []).length + 1;
+    const uploadedPart = await uploadResumableObjectPart({ session: lockedSession, partNumber, chunk });
+    const latestSession = await MediaUploadSession.findOne({
+      _id: lockedSession._id,
+      workspaceId: user.workspaceId,
+      uploadedBy: user._id,
+      'chunkLease.token': leaseToken
+    }).select('+objectKey +multipartUploadId +multipartParts +chunkLease');
+
+    if (!latestSession) {
+      throw createHttpError('Upload chunk checkpoint was superseded by another request. Retry from the latest verified offset.', 409);
+    }
+    if (latestSession.status === 'cancelled') throw createHttpError('Upload session was cancelled.', 409);
+    if (latestSession.status === 'failed') throw createHttpError(latestSession.failureReason || 'Upload session failed.', 409);
+
+    latestSession.multipartParts.push({
+      partNumber,
+      etag: uploadedPart.etag || '',
+      size: uploadedPart.size,
+      start: range.start,
+      end: range.end
+    });
+    latestSession.bytesReceived += chunk.length;
+    latestSession.chunkLease = { token: '', startedAt: null, expiresAt: null };
+
+    if (latestSession.bytesReceived > latestSession.size) {
+      await failUploadSession({ session: latestSession, message: 'Upload received more bytes than expected.' });
+      throw createHttpError('Upload received more bytes than expected.', 422);
+    }
+
+    await latestSession.save();
+    progressSaved = true;
+    emitMediaUploadSessionUpdated(latestSession, 'chunk_committed');
+
+    if (latestSession.bytesReceived === latestSession.size) {
+      return finalizeUploadSession({ user, session: latestSession });
+    }
+
+    return serializeUploadSession(latestSession);
+  } finally {
+    if (!progressSaved) {
+      await releaseChunkUploadLease({ sessionId: session._id, leaseToken }).catch(() => {});
+    }
   }
-
-  await session.save();
-
-  if (session.bytesReceived === session.size) {
-    return finalizeUploadSession({ user, session });
-  }
-
-  return serializeUploadSession(session);
 };
 
 export const pauseResumableMediaUpload = async ({ user, sessionId }) => {
@@ -405,6 +514,7 @@ export const pauseResumableMediaUpload = async ({ user, sessionId }) => {
   if (session.status === 'uploading') {
     session.status = 'paused';
     await session.save();
+    emitMediaUploadSessionUpdated(session, 'paused');
   }
   return serializeUploadSession(session);
 };
@@ -414,6 +524,7 @@ export const resumeResumableMediaUpload = async ({ user, sessionId }) => {
   if (session.status === 'paused') {
     session.status = 'uploading';
     await session.save();
+    emitMediaUploadSessionUpdated(session, 'resumed');
   }
   return serializeUploadSession(session);
 };
@@ -437,7 +548,9 @@ export const cancelResumableMediaUpload = async ({ user, sessionId }) => {
 
   session.status = 'cancelled';
   session.cancelledAt = new Date();
+  session.chunkLease = { token: '', startedAt: null, expiresAt: null };
   await session.save();
+  emitMediaUploadSessionUpdated(session, 'cancelled');
   return serializeUploadSession(session);
 };
 
