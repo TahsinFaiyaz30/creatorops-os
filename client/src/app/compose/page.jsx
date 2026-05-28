@@ -50,7 +50,7 @@ const formatBytes = bytes => {
     size /= 1024;
     unitIndex += 1;
   }
-  return `${size >= 10 || unitIndex === 0 ? Math.round(size) : size.toFixed(1)} ${units[unitIndex]}`;
+  return `${unitIndex === 0 ? Math.round(size) : size.toFixed(2)} ${units[unitIndex]}`;
 };
 
 const createConnectionTarget = (connection, platform = connection.platform) => ({

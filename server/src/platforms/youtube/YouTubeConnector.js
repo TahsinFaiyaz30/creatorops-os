@@ -475,7 +475,12 @@ export default class YouTubeConnector extends BasePlatformConnector {
     };
 
     if (typeof payload.onUploadProgress === 'function') {
-      await payload.onUploadProgress({ phase: 'initializing', bytesUploaded: 0, totalBytes });
+      await this.reportUploadProgress(payload, {
+        phase: 'initializing',
+        bytesUploaded: 0,
+        totalBytes,
+        message: `Starting ${this.displayName} resumable media upload.`
+      });
     }
     const session = await this.startResumableUpload({
       token,

@@ -254,6 +254,42 @@ export default class BasePlatformConnector {
     return payload.checkPublishControl();
   }
 
+  getPayloadMediaBytes(payload) {
+    return (payload?.mediaAssets || []).reduce((sum, asset) => sum + Number(asset?.size || 0), 0);
+  }
+
+  async reportUploadProgress(payload, progress = {}) {
+    if (typeof payload?.onUploadProgress !== 'function') return;
+    await payload.onUploadProgress({
+      phase: progress.phase || 'provider_ingest',
+      bytesUploaded: Number(progress.bytesUploaded || 0),
+      totalBytes: Number(progress.totalBytes || 0),
+      message: progress.message || ''
+    });
+  }
+
+  async reportRemoteMediaIngestStart(payload, message = `${this.displayName} is ingesting cloud media.`) {
+    const totalBytes = this.getPayloadMediaBytes(payload);
+    if (totalBytes <= 0) return;
+    await this.reportUploadProgress(payload, {
+      phase: 'provider_ingest',
+      bytesUploaded: 0,
+      totalBytes,
+      message
+    });
+  }
+
+  async reportRemoteMediaIngestComplete(payload, message = `${this.displayName} accepted cloud media.`) {
+    const totalBytes = this.getPayloadMediaBytes(payload);
+    if (totalBytes <= 0) return;
+    await this.reportUploadProgress(payload, {
+      phase: 'provider_ingest_complete',
+      bytesUploaded: totalBytes,
+      totalBytes,
+      message
+    });
+  }
+
   async requestJson(url, options = {}) {
     const { retryNetworkErrors, timeoutMs = env.providerApiTimeoutMs, ...fetchOptions } = options;
     const method = String(fetchOptions.method || 'GET').toUpperCase();

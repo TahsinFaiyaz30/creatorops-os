@@ -47,6 +47,15 @@ const CONTROL_RESULT_CODES = {
 };
 const activePublishControls = new Map();
 
+const emptyProviderUpload = () => ({
+  phase: '',
+  bytesUploaded: 0,
+  totalBytes: 0,
+  percent: 0,
+  message: '',
+  updatedAt: null
+});
+
 const requirePublishPermission = user => {
   if (!roleMatches(user, PUBLISH_ROLES)) {
     throw createHttpError('Forbidden: publishing is not allowed for these roles.', 403);
@@ -185,7 +194,7 @@ const refreshTemporaryMediaLifecycleForGroup = async ({ workspaceId, postGroupId
   );
 };
 
-const updatePublishJobStage = async (job, stage, message, mediaProcessing = {}) => {
+const updatePublishJobStage = async (job, stage, message, mediaProcessing = {}, providerUpload = null) => {
   job.processingStage = stage;
   job.processingMessage = message;
   job.processingStageUpdatedAt = new Date();
@@ -193,6 +202,13 @@ const updatePublishJobStage = async (job, stage, message, mediaProcessing = {}) 
     job.mediaProcessing = {
       ...(job.mediaProcessing || {}),
       ...mediaProcessing
+    };
+  }
+  if (providerUpload) {
+    job.providerUpload = {
+      ...(job.providerUpload || {}),
+      ...providerUpload,
+      updatedAt: new Date()
     };
   }
   await job.save();
@@ -1467,6 +1483,7 @@ export const resumePublishJob = async ({ user, jobId }) => {
   job.processingStage = 'queued_resume';
   job.processingMessage = 'Paused publish job resumed and queued.';
   job.processingStageUpdatedAt = new Date();
+  job.providerUpload = emptyProviderUpload();
   job.temporaryMediaExpiresAt = null;
   await job.save();
   if (job.postGroupId) {
@@ -1506,6 +1523,7 @@ export const retryPublishJob = async ({ user, jobId, input = {} }) => {
   job.processingStage = 'queued_retry';
   job.processingMessage = 'Retry queued.';
   job.processingStageUpdatedAt = new Date();
+  job.providerUpload = emptyProviderUpload();
   if (Object.prototype.hasOwnProperty.call(input, 'mediaProcessing')) {
     job.mediaProcessing = {
       ...(job.mediaProcessing || {}),
@@ -1573,6 +1591,7 @@ export const processPublishJob = async ({ jobId }) => {
       processingStage: 'starting',
       processingMessage: 'Starting publish job.',
       processingStageUpdatedAt: new Date(),
+      providerUpload: emptyProviderUpload(),
       publishControl: {
         action: '',
         requestedAt: null,
@@ -1641,17 +1660,53 @@ export const processPublishJob = async ({ jobId }) => {
       account: sanitizeConnection(connection),
       abortSignal: abortController.signal,
       checkPublishControl: () => checkPublishControl(lockedJob),
-      onUploadProgress: async ({ phase, bytesUploaded = 0, totalBytes = 0 }) => {
+      onUploadProgress: async ({ phase, bytesUploaded = 0, totalBytes = 0, message = '' }) => {
         const percent = totalBytes > 0 ? Math.min(100, Math.floor((bytesUploaded / totalBytes) * 100)) : 0;
+        const uploadMessage = message || '';
+        const providerUpload = {
+          phase,
+          bytesUploaded,
+          totalBytes,
+          percent,
+          message: uploadMessage
+        };
         if (phase === 'initializing') {
-          await updatePublishJobStage(lockedJob, 'initializing_provider_upload', `Starting ${connector.getDisplayName()} resumable media upload.`);
+          await updatePublishJobStage(
+            lockedJob,
+            'initializing_provider_upload',
+            uploadMessage || `Starting ${connector.getDisplayName()} media upload.`,
+            {},
+            providerUpload
+          );
           return;
         }
-        if (phase === 'uploaded') {
-          await updatePublishJobStage(lockedJob, 'provider_uploaded', `${connector.getDisplayName()} media upload reached 100%.`);
+        if (phase === 'uploaded' || phase === 'provider_ingest_complete') {
+          await updatePublishJobStage(
+            lockedJob,
+            'provider_uploaded',
+            uploadMessage || `${connector.getDisplayName()} media upload reached 100%.`,
+            {},
+            providerUpload
+          );
           return;
         }
-        await updatePublishJobStage(lockedJob, 'uploading', `Uploading media to ${connector.getDisplayName()}: ${percent}% complete.`);
+        if (phase === 'provider_ingest') {
+          await updatePublishJobStage(
+            lockedJob,
+            'provider_ingesting',
+            uploadMessage || `${connector.getDisplayName()} is ingesting cloud media from CreatorOps.`,
+            {},
+            providerUpload
+          );
+          return;
+        }
+        await updatePublishJobStage(
+          lockedJob,
+          'uploading',
+          uploadMessage || `Uploading media to ${connector.getDisplayName()}: ${percent}% complete.`,
+          {},
+          providerUpload
+        );
       }
     };
     const result = await publishWithOptionalCompression({ connector, payload, connection, job: lockedJob });

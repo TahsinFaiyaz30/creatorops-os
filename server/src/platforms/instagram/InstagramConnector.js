@@ -123,6 +123,7 @@ export default class InstagramConnector extends BasePlatformConnector {
     if (media.mediaType === 'video') createBody.set('media_type', 'REELS');
     const controlBeforeContainer = await this.checkPublishControl(payload);
     if (controlBeforeContainer) return controlBeforeContainer;
+    await this.reportRemoteMediaIngestStart(payload, 'Instagram is ingesting cloud media from CreatorOps.');
     const container = await this.requestJson(`https://graph.facebook.com/${GRAPH_VERSION}/${connection.externalAccountId}/media`, {
       method: 'POST',
       body: createBody,
@@ -141,6 +142,7 @@ export default class InstagramConnector extends BasePlatformConnector {
       signal: payload.abortSignal
     });
     if (!published.ok) return published;
+    await this.reportRemoteMediaIngestComplete(payload, 'Instagram accepted the cloud media.');
     return okResult({
       providerPostId: published.data?.id || '',
       providerPostUrl: '',

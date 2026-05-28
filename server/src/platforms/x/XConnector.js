@@ -312,16 +312,30 @@ export default class XConnector extends BasePlatformConnector {
     return okResult({}, 'X payload is publishable.');
   }
 
-  async uploadImageMedia(asset, token, payload) {
+  async uploadImageMedia(asset, token, payload, progressContext = {}) {
     if (!asset.objectKey || typeof asset.readBuffer !== 'function') {
       return connectorResult({ code: 'VALIDATION_FAILED', message: 'X media upload requires verified cloud media.' });
     }
 
     const controlBeforeRead = await this.checkPublishControl(payload);
     if (controlBeforeRead) return controlBeforeRead;
+    const totalUploadBytes = Number(progressContext.totalBytes || asset.size || 0);
+    const uploadedBefore = Number(progressContext.uploadedBefore || 0);
+    await this.reportUploadProgress(payload, {
+      phase: 'initializing',
+      bytesUploaded: uploadedBefore,
+      totalBytes: totalUploadBytes,
+      message: `Starting ${this.displayName} media upload.`
+    });
     const fileBuffer = await asset.readBuffer();
     const controlBeforeUpload = await this.checkPublishControl(payload);
     if (controlBeforeUpload) return controlBeforeUpload;
+    await this.reportUploadProgress(payload, {
+      phase: 'uploading',
+      bytesUploaded: uploadedBefore,
+      totalBytes: totalUploadBytes,
+      message: `Uploading ${asset.originalName || 'media'} to ${this.displayName}.`
+    });
     const mediaCategory = asset.mimeType === 'image/gif' ? 'tweet_gif' : 'tweet_image';
     const result = await this.requestJson('https://api.x.com/2/media/upload', {
       method: 'POST',
@@ -351,6 +365,13 @@ export default class XConnector extends BasePlatformConnector {
       return connectorResult({ code: 'PROVIDER_RESPONSE_INVALID', message: 'X media upload succeeded but did not return a media id.' });
     }
 
+    await this.reportUploadProgress(payload, {
+      phase: 'uploaded',
+      bytesUploaded: uploadedBefore + (fileBuffer.length || Number(asset.size || 0)),
+      totalBytes: totalUploadBytes,
+      message: `${this.displayName} accepted ${asset.originalName || 'media'}.`
+    });
+
     return okResult({ mediaId, rawResponse: normalized.data }, 'X image uploaded through the official media API.');
   }
 
@@ -360,12 +381,16 @@ export default class XConnector extends BasePlatformConnector {
     const token = this.getAccessToken(connection);
     const mediaIds = [];
     const mediaUploadResponses = [];
+    const uploadAssets = payload.mediaAssets || [];
+    const totalUploadBytes = uploadAssets.reduce((sum, asset) => sum + Number(asset.size || 0), 0);
+    let uploadedBefore = 0;
 
-    for (const asset of payload.mediaAssets || []) {
-      const uploadResult = await this.uploadImageMedia(asset, token, payload);
+    for (const asset of uploadAssets) {
+      const uploadResult = await this.uploadImageMedia(asset, token, payload, { uploadedBefore, totalBytes: totalUploadBytes });
       if (!uploadResult.ok) return uploadResult;
       mediaIds.push(uploadResult.data.mediaId);
       mediaUploadResponses.push(uploadResult.data.rawResponse);
+      uploadedBefore += Number(asset.size || 0);
     }
 
     const tweetPayload = { text: payload.caption };

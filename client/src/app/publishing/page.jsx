@@ -52,6 +52,7 @@ const PROCESSING_STAGES = [
   'uploading',
   'uploading_compressed',
   'initializing_provider_upload',
+  'provider_ingesting',
   'provider_uploaded',
   'queued_retry',
   'queued_resume'
@@ -107,6 +108,8 @@ const formatDateTime = value => {
 
 const formatPercent = value => `${Math.max(0, Math.min(100, Math.round(value)))}%`;
 
+const clampPercent = value => Math.max(0, Math.min(100, Number(value) || 0));
+
 const formatBytes = bytes => {
   const value = Number(bytes || 0);
   if (!Number.isFinite(value) || value <= 0) return '0 B';
@@ -117,7 +120,7 @@ const formatBytes = bytes => {
     size /= 1024;
     unitIndex += 1;
   }
-  return `${size >= 10 || unitIndex === 0 ? Math.round(size) : size.toFixed(1)} ${units[unitIndex]}`;
+  return `${unitIndex === 0 ? Math.round(size) : size.toFixed(2)} ${units[unitIndex]}`;
 };
 
 const compactId = value => {
@@ -135,6 +138,39 @@ const getJobCaption = job => job.caption || job.variantId?.caption || '';
 const getJobMedia = job => (job.mediaAssetIds || []).find(asset => asset?.publicUrl) || null;
 
 const getJobStatusMeta = status => statusMeta[status] || statusMeta.mixed;
+
+const getProviderUploadProgress = job => {
+  const upload = job.providerUpload || {};
+  const hasStructuredProgress = upload.phase || Number(upload.totalBytes) > 0 || Number(upload.percent) > 0;
+  if (hasStructuredProgress) {
+    const totalBytes = Number(upload.totalBytes || 0);
+    const bytesUploaded = Number(upload.bytesUploaded || 0);
+    const percent = totalBytes > 0
+      ? clampPercent((Math.max(bytesUploaded, 0) / totalBytes) * 100)
+      : clampPercent(upload.percent);
+    return {
+      active: ['initializing', 'uploading', 'provider_ingest'].includes(upload.phase) || job.processingStage === 'uploading' || job.processingStage === 'provider_ingesting',
+      complete: ['uploaded', 'provider_ingest_complete'].includes(upload.phase) || job.processingStage === 'provider_uploaded',
+      phase: upload.phase || job.processingStage || '',
+      bytesUploaded,
+      totalBytes,
+      percent,
+      message: upload.message || job.processingMessage || ''
+    };
+  }
+
+  const match = String(job.processingMessage || '').match(/(\d+(?:\.\d+)?)%\s+complete/i);
+  if (!match) return null;
+  return {
+    active: job.status === 'publishing',
+    complete: Number(match[1]) >= 100,
+    phase: job.processingStage || 'uploading',
+    bytesUploaded: 0,
+    totalBytes: 0,
+    percent: clampPercent(Number(match[1])),
+    message: job.processingMessage || ''
+  };
+};
 
 const isProcessingJob = job =>
   job.status === 'publishing' ||
@@ -1623,6 +1659,7 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction, 
   const account = getJobAccount(job);
   const media = getJobMedia(job);
   const caption = getJobCaption(job);
+  const providerProgress = getProviderUploadProgress(job);
   const temporaryMediaExpired = Boolean(job.temporaryMediaExpiredAt);
   const temporaryMediaExpiresAt = job.temporaryMediaExpiresAt ? new Date(job.temporaryMediaExpiresAt) : null;
   const controlAction = job.publishControl?.action || '';
@@ -1656,6 +1693,30 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction, 
       <div className="min-w-0">
         <p className="line-clamp-2 text-sm font-semibold text-[var(--text)]">{caption || 'No caption saved for this platform.'}</p>
         <p className="mt-1 line-clamp-2 text-xs text-[var(--muted)]">{stageText}</p>
+        {providerProgress && (
+          <div className="mt-2 max-w-2xl">
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--muted)]">
+              <span>
+                {providerProgress.complete
+                  ? `${formatPlatform(job.platform)} media upload complete`
+                  : providerProgress.phase === 'provider_ingest'
+                    ? `${formatPlatform(job.platform)} ingesting cloud media`
+                    : `Uploading media to ${formatPlatform(job.platform)}`}
+              </span>
+              {providerProgress.totalBytes > 0 ? (
+                <span>{formatBytes(providerProgress.bytesUploaded)} / {formatBytes(providerProgress.totalBytes)}</span>
+              ) : (
+                <span>{formatPercent(providerProgress.percent)}</span>
+              )}
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-[var(--surface2)]">
+              <div
+                className={`h-full rounded-full transition-all ${providerProgress.complete ? 'bg-mint' : 'bg-gold'}`}
+                style={{ width: formatPercent(providerProgress.percent) }}
+              />
+            </div>
+          </div>
+        )}
         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--muted)]">
           <span className="inline-flex items-center gap-1">
             <Clock3 size={12} />

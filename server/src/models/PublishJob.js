@@ -18,6 +18,18 @@ const accountSnapshotSchema = new Schema(
   { _id: false }
 );
 
+const providerUploadSchema = new Schema(
+  {
+    phase: { type: String, default: '' },
+    bytesUploaded: { type: Number, default: 0, min: 0 },
+    totalBytes: { type: Number, default: 0, min: 0 },
+    percent: { type: Number, default: 0, min: 0, max: 100 },
+    message: { type: String, default: '' },
+    updatedAt: { type: Date, default: null }
+  },
+  { _id: false }
+);
+
 const publishJobSchema = new Schema(
   {
     workspaceId: {
@@ -127,6 +139,10 @@ const publishJobSchema = new Schema(
     processingStageUpdatedAt: {
       type: Date,
       default: null
+    },
+    providerUpload: {
+      type: providerUploadSchema,
+      default: () => ({})
     },
     publishControl: {
       action: {

@@ -131,6 +131,7 @@ export default class PinterestConnector extends BasePlatformConnector {
     const image = payload.mediaAssets.find(asset => asset.mediaType === 'image' && asset.publicUrl);
     const control = await this.checkPublishControl(payload);
     if (control) return control;
+    await this.reportRemoteMediaIngestStart(payload, 'Pinterest is ingesting cloud media from CreatorOps.');
     const result = await this.requestJson('https://api.pinterest.com/v5/pins', {
       method: 'POST',
       headers: {
@@ -149,6 +150,7 @@ export default class PinterestConnector extends BasePlatformConnector {
       signal: payload.abortSignal
     });
     if (!result.ok) return result;
+    await this.reportRemoteMediaIngestComplete(payload, 'Pinterest accepted the cloud media.');
     return okResult({
       providerPostId: result.data.id,
       providerPostUrl: result.data.link || '',
