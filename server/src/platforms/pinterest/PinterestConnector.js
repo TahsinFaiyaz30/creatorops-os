@@ -117,8 +117,14 @@ export default class PinterestConnector extends BasePlatformConnector {
   validatePublishPayload(payload, connection) {
     const base = super.validatePublishPayload(payload, connection);
     if (!base.ok) return base;
-    const image = payload.mediaAssets?.find(asset => asset.mediaType === 'image' && asset.publicUrl);
-    if (!image) return connectorResult({ code: 'VALIDATION_FAILED', message: 'Pinterest pin creation requires an image with a public URL.' });
+    const mediaAssets = payload.mediaAssets || [];
+    const images = mediaAssets.filter(asset => asset.mediaType === 'image' && asset.publicUrl);
+    if (mediaAssets.length !== 1 || images.length !== 1) {
+      return connectorResult({
+        code: 'VALIDATION_FAILED',
+        message: 'Pinterest pin creation requires exactly one image with a public URL. CreatorOps will not silently drop extra or unsupported media.'
+      });
+    }
     if (!connection.platformMetadata?.boardId) {
       return connectorResult({ code: 'MISSING_CONFIGURATION', message: 'Pinterest publishing requires a boardId in connection metadata.' });
     }

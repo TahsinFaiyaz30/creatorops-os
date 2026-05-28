@@ -52,6 +52,7 @@ const emptyProviderUpload = () => ({
   bytesUploaded: 0,
   totalBytes: 0,
   percent: 0,
+  bytesPerSecond: 0,
   message: '',
   updatedAt: null
 });
@@ -1646,6 +1647,13 @@ export const processPublishJob = async ({ jobId }) => {
       _id: { $in: lockedJob.mediaAssetIds },
       workspaceId: lockedJob.workspaceId
     }).select('+objectKey');
+    if (storedMediaAssets.length !== (lockedJob.mediaAssetIds || []).length) {
+      throw createHttpError(
+        'Temporary cloud media is unavailable or expired. Recreate the post with media before publishing again.',
+        410,
+        'TEMPORARY_MEDIA_UNAVAILABLE'
+      );
+    }
     const preparedMedia = await prepareMediaAssetsForPublishing({
       workspaceId: lockedJob.workspaceId,
       jobId: lockedJob._id,
@@ -1661,13 +1669,23 @@ export const processPublishJob = async ({ jobId }) => {
       abortSignal: abortController.signal,
       checkPublishControl: () => checkPublishControl(lockedJob),
       onUploadProgress: async ({ phase, bytesUploaded = 0, totalBytes = 0, message = '' }) => {
-        const percent = totalBytes > 0 ? Math.min(100, Math.floor((bytesUploaded / totalBytes) * 100)) : 0;
+        const normalizedBytesUploaded = Number(bytesUploaded || 0);
+        const normalizedTotalBytes = Number(totalBytes || 0);
+        const percent = normalizedTotalBytes > 0 ? Math.min(100, Math.floor((normalizedBytesUploaded / normalizedTotalBytes) * 100)) : 0;
         const uploadMessage = message || '';
+        const previousUpload = lockedJob.providerUpload || {};
+        const previousBytes = Number(previousUpload.bytesUploaded || 0);
+        const previousUpdatedAt = previousUpload.updatedAt ? new Date(previousUpload.updatedAt).getTime() : 0;
+        const elapsedSeconds = previousUpdatedAt > 0 ? (Date.now() - previousUpdatedAt) / 1000 : 0;
+        const measuredBytesPerSecond = elapsedSeconds > 0.2 && normalizedBytesUploaded >= previousBytes
+          ? Math.round((normalizedBytesUploaded - previousBytes) / elapsedSeconds)
+          : Number(previousUpload.bytesPerSecond || 0);
         const providerUpload = {
           phase,
-          bytesUploaded,
-          totalBytes,
+          bytesUploaded: normalizedBytesUploaded,
+          totalBytes: normalizedTotalBytes,
           percent,
+          bytesPerSecond: phase === 'uploading' ? measuredBytesPerSecond : 0,
           message: uploadMessage
         };
         if (phase === 'initializing') {
@@ -1719,7 +1737,7 @@ export const processPublishJob = async ({ jobId }) => {
       if (controlAfterProviderReturn) {
         return finalizeControlledPublishJob({ job: lockedJob, result: controlAfterProviderReturn });
       }
-      const blockedCodes = ['NOT_CONFIGURED', 'MISSING_PERMISSIONS', 'PAYMENT_REQUIRED', 'HTTP_402', 'PLATFORM_REVIEW_REQUIRED', 'CAPABILITY_UNAVAILABLE', 'NOT_IMPLEMENTED', 'NOT_CONNECTED', 'SHORTS_MEDIA_INELIGIBLE', 'SHORTS_MEDIA_UNVERIFIED'];
+      const blockedCodes = ['NOT_CONFIGURED', 'MISSING_PERMISSIONS', 'PAYMENT_REQUIRED', 'HTTP_402', 'PLATFORM_REVIEW_REQUIRED', 'CAPABILITY_UNAVAILABLE', 'NOT_IMPLEMENTED', 'NOT_CONNECTED', 'SHORTS_MEDIA_INELIGIBLE', 'SHORTS_MEDIA_UNVERIFIED', 'TEMPORARY_MEDIA_UNAVAILABLE'];
       lockedJob.status = blockedCodes.includes(result.code) ? 'blocked' : 'failed';
       lockedJob.errorCode = result.code;
       lockedJob.errorMessage = result.message;
@@ -1838,7 +1856,7 @@ export const processPublishJob = async ({ jobId }) => {
       return finalizeControlledPublishJob({ job: lockedJob, result: controlResult });
     }
     const errorCode = error.code || (/fetch failed/i.test(error.message || '') ? 'NETWORK_ERROR' : 'UNEXPECTED_ERROR');
-    lockedJob.status = error.code === 'NOT_CONNECTED' ? 'blocked' : 'failed';
+    lockedJob.status = ['NOT_CONNECTED', 'TEMPORARY_MEDIA_UNAVAILABLE'].includes(errorCode) ? 'blocked' : 'failed';
     lockedJob.errorCode = errorCode;
     lockedJob.errorMessage = errorCode === 'NETWORK_ERROR'
       ? 'The platform API could not be reached from the CreatorOps server. Retry the action after checking server network access.'
@@ -1846,6 +1864,11 @@ export const processPublishJob = async ({ jobId }) => {
     lockedJob.processingStage = errorCode === 'NETWORK_ERROR' ? 'provider_unreachable' : lockedJob.status;
     lockedJob.processingMessage = lockedJob.errorMessage;
     lockedJob.processingStageUpdatedAt = new Date();
+    if (errorCode === 'TEMPORARY_MEDIA_UNAVAILABLE') {
+      const now = new Date();
+      lockedJob.temporaryMediaExpiresAt = now;
+      lockedJob.temporaryMediaExpiredAt = now;
+    }
     await lockedJob.save();
     await createWorkflowEvent({
       workspaceId: lockedJob.workspaceId,

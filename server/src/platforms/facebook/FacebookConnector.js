@@ -83,8 +83,24 @@ export default class FacebookConnector extends BasePlatformConnector {
   validatePublishPayload(payload, connection) {
     const base = super.validatePublishPayload(payload, connection);
     if (!base.ok) return base;
-    if (!payload.caption && !payload.mediaAssets?.length) {
+    const mediaAssets = payload.mediaAssets || [];
+    if (!payload.caption && !mediaAssets.length) {
       return connectorResult({ code: 'VALIDATION_FAILED', message: 'Facebook publishing requires caption text or media.' });
+    }
+    if (mediaAssets.length > 0) {
+      const images = mediaAssets.filter(asset => asset.mediaType === 'image' && asset.publicUrl);
+      if (images.length !== mediaAssets.length) {
+        return connectorResult({
+          code: 'CAPABILITY_UNAVAILABLE',
+          message: 'Facebook connector currently supports image media only. Video or unverifiable media will not be silently dropped.'
+        });
+      }
+      if (images.length > 1) {
+        return connectorResult({
+          code: 'CAPABILITY_UNAVAILABLE',
+          message: 'Facebook connector currently supports one image per publish job. Split multi-image posts before publishing.'
+        });
+      }
     }
     return okResult({}, 'Facebook payload is publishable.');
   }

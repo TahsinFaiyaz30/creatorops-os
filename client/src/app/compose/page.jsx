@@ -17,6 +17,7 @@ import {
   deleteUploadFile,
   getPendingPublishes,
   getUploadFile,
+  getUploadSession,
   pauseUploadSession,
   putPendingPublish,
   putUploadFile,
@@ -51,6 +52,34 @@ const formatBytes = bytes => {
     unitIndex += 1;
   }
   return `${unitIndex === 0 ? Math.round(size) : size.toFixed(2)} ${units[unitIndex]}`;
+};
+
+const formatThroughput = bytesPerSecond => {
+  const value = Number(bytesPerSecond || 0);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  return `${formatBytes(value)}/s`;
+};
+
+const getSessionMediaAsset = session => session?.mediaAsset || null;
+
+const getSessionMediaAssetId = session => {
+  const mediaAsset = getSessionMediaAsset(session);
+  return mediaAsset?._id || mediaAsset?.id || '';
+};
+
+const applyUploadSessionToPendingItem = (item, session, { forceSpeedZero = true } = {}) => {
+  if (!session) return '';
+  item.sessionId = session._id || item.sessionId || '';
+  item.bytesUploaded = Number(session.bytesReceived || 0);
+  item.status = session.status || item.status || 'waiting';
+  if (forceSpeedZero) item.uploadSpeedBytesPerSecond = 0;
+  const mediaAssetId = getSessionMediaAssetId(session);
+  if (mediaAssetId) {
+    item.mediaAssetId = mediaAssetId;
+    item.bytesUploaded = Number(item.size || session.size || item.bytesUploaded || 0);
+    item.status = 'completed';
+  }
+  return mediaAssetId;
 };
 
 const createConnectionTarget = (connection, platform = connection.platform) => ({
@@ -447,12 +476,25 @@ export default function ComposePage() {
 
   const isMissingUploadFileError = error => error?.code === 'UPLOAD_FILE_UNAVAILABLE';
 
+  const isUploadSessionFailedError = error => error?.code === 'UPLOAD_SESSION_FAILED';
+
+  const getUploadQueueStatusLabel = item => {
+    if (item.status === 'completed') return 'Cloud verified';
+    if (item.status === 'uploading' && Number(item.bytesUploaded || 0) >= Number(item.size || 0) && Number(item.size || 0) > 0) return 'Verifying cloud';
+    if (item.status === 'uploading') return 'Uploading to cloud';
+    if (item.status === 'paused') return 'Paused';
+    if (item.status === 'interrupted') return 'Interrupted';
+    if (item.status === 'failed') return 'Failed';
+    return 'Waiting';
+  };
+
   const updateUploadQueueFromPending = pending => {
     setUploadQueue((pending.mediaItems || []).map(item => ({
       key: item.uploadKey || item.mediaAssetId || item.localId,
       name: item.originalName,
       size: item.size,
       bytesUploaded: item.bytesUploaded || (item.mediaAssetId ? item.size : 0),
+      uploadSpeedBytesPerSecond: item.uploadSpeedBytesPerSecond || 0,
       status: item.status || (item.mediaAssetId ? 'completed' : 'waiting'),
       percent: item.size ? Math.round(((item.bytesUploaded || (item.mediaAssetId ? item.size : 0)) / item.size) * 100) : 0
     })));
@@ -538,6 +580,7 @@ export default function ComposePage() {
         sha256,
         status: 'waiting',
         bytesUploaded: 0,
+        uploadSpeedBytesPerSecond: 0,
         sessionId: '',
         mediaAssetId: ''
       });
@@ -582,6 +625,37 @@ export default function ComposePage() {
         continue;
       }
 
+      if (item.sessionId) {
+        const sessionPayload = await getUploadSession(item.sessionId).catch(() => null);
+        const session = sessionPayload?.data?.uploadSession;
+        if (session) {
+          const mediaAssetId = applyUploadSessionToPendingItem(item, session);
+          await persistPending(pending);
+          if (mediaAssetId) {
+            mediaAssetIds.push(mediaAssetId);
+            if (item.uploadKey) await deleteUploadFile(item.uploadKey).catch(() => {});
+            continue;
+          }
+          if (session.status === 'completed') {
+            const error = new Error('Completed upload is missing its verified media asset.');
+            error.uploadItem = item;
+            error.code = 'UPLOAD_SESSION_FAILED';
+            throw error;
+          }
+          if (session.status === 'failed') {
+            const error = new Error(session.failureReason || `${item.originalName || 'Media'} upload failed before platform dispatch.`);
+            error.uploadItem = item;
+            error.code = 'UPLOAD_SESSION_FAILED';
+            throw error;
+          }
+          if (session.status === 'cancelled') {
+            const error = new Error(`${item.originalName || 'Media'} upload was cancelled before platform dispatch.`);
+            error.uploadItem = item;
+            throw error;
+          }
+        }
+      }
+
       const file = await getUploadFile(item.uploadKey);
       if (!file) {
         const error = new Error(`${item.originalName} is no longer available in this browser. Select the file again to continue.`);
@@ -608,6 +682,7 @@ export default function ComposePage() {
             item.sessionId = session._id;
             item.bytesUploaded = session.bytesReceived || 0;
             item.status = session.status;
+            item.uploadSpeedBytesPerSecond = session.uploadSpeedBytesPerSecond || 0;
             if (session.mediaAsset?._id) item.mediaAssetId = session.mediaAsset._id;
             persistPending(pending).catch(() => {});
             updateUploadQueueFromPending(pending);
@@ -615,8 +690,10 @@ export default function ComposePage() {
           onProgress: session => {
             item.bytesUploaded = session.bytesReceived || 0;
             item.status = session.status;
+            item.uploadSpeedBytesPerSecond = session.uploadSpeedBytesPerSecond || 0;
             if (session.mediaAsset?._id) item.mediaAssetId = session.mediaAsset._id;
             persistPending(pending).catch(() => {});
+            updateUploadQueueFromPending(pending);
           }
         });
       } catch (error) {
@@ -627,6 +704,7 @@ export default function ComposePage() {
       item.mediaAssetId = mediaAsset._id;
       item.bytesUploaded = item.size;
       item.status = 'completed';
+      item.uploadSpeedBytesPerSecond = 0;
       mediaAssetIds.push(mediaAsset._id);
       uploadedMediaIds.push(mediaAsset._id);
       await deleteUploadFile(item.uploadKey);
@@ -824,6 +902,14 @@ export default function ComposePage() {
         setIsUploadPaused(true);
         setPendingUploadNotice('The saved browser copy is unavailable. Select the media again before retrying.');
         setMessage(error.message);
+      } else if (isUploadSessionFailedError(error) && error.uploadItem) {
+        error.uploadItem.status = 'failed';
+        error.uploadItem.uploadSpeedBytesPerSecond = 0;
+        pending.pauseReason = 'user';
+        await persistPending(pending).catch(() => {});
+        setIsUploadPaused(true);
+        setPendingUploadNotice('Cloud upload verification failed. Retry from Dispatch or cancel it.');
+        setMessage(error.message);
       } else {
         markPendingInterrupted(pending);
         await persistPending(pending).catch(() => {});
@@ -899,6 +985,14 @@ export default function ComposePage() {
       pending.mediaItems = (pending.mediaItems || []).map(item =>
         item.mediaAssetId || item.status === 'completed'
           ? item
+          : item.status === 'failed'
+            ? {
+                ...item,
+                sessionId: '',
+                bytesUploaded: 0,
+                uploadSpeedBytesPerSecond: 0,
+                status: 'waiting'
+              }
           : {
               ...item,
               status: item.sessionId ? 'interrupted' : 'waiting'
@@ -1020,13 +1114,14 @@ export default function ComposePage() {
                   <div key={item.key} className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3">
                     <div className="flex items-center justify-between gap-3 text-xs">
                       <span className="min-w-0 truncate font-semibold text-[var(--text)]">{item.name}</span>
-                      <span className="shrink-0 text-[var(--muted)]">{item.status} · {item.percent}%</span>
+                      <span className="shrink-0 text-[var(--muted)]">{getUploadQueueStatusLabel(item)} · {item.percent}%</span>
                     </div>
                     <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--surface)]">
                       <div className="h-full rounded-full bg-mint transition-all" style={{ width: `${Math.max(0, Math.min(100, item.percent))}%` }} />
                     </div>
                     <div className="mt-1 text-[10px] text-[var(--muted)]">
                       {formatBytes(item.bytesUploaded)} / {formatBytes(item.size)}
+                      {item.uploadSpeedBytesPerSecond > 0 ? ` · ${formatThroughput(item.uploadSpeedBytesPerSecond)}` : ''}
                     </div>
                   </div>
                 ))}

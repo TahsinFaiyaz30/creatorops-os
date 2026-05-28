@@ -77,7 +77,21 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const isAbortError = error => error?.name === 'AbortError';
 
+const completedUploadMissingAssetError = () => {
+  const error = new Error('Completed upload is missing its verified media asset.');
+  error.code = 'UPLOAD_SESSION_FAILED';
+  return error;
+};
+
+const uploadSessionFailedError = message => {
+  const error = new Error(message || 'Cloud upload verification failed.');
+  error.code = 'UPLOAD_SESSION_FAILED';
+  return error;
+};
+
 export const pauseUploadSession = sessionId => api.post(`/api/media/resumable/${sessionId}/pause`, {});
+
+export const getUploadSession = sessionId => api.get(`/api/media/resumable/${sessionId}`);
 
 export const resumeUploadSession = sessionId => api.post(`/api/media/resumable/${sessionId}/resume`, {});
 
@@ -99,7 +113,7 @@ export const uploadFileResumable = async ({
   if (!file) throw new Error('A local file is required for resumable upload.');
 
   const startPayload = sessionId
-    ? await resumeUploadSession(sessionId).catch(() => api.get(`/api/media/resumable/${sessionId}`))
+    ? await resumeUploadSession(sessionId).catch(() => getUploadSession(sessionId))
     : await api.post('/api/media/resumable/start', {
         uploadKey,
         originalName: file.name,
@@ -116,9 +130,27 @@ export const uploadFileResumable = async ({
   onProgress?.(session);
 
   if (session.status === 'completed') {
-    if (!session.mediaAsset?._id) throw new Error('Completed upload is missing its verified media asset.');
+    if (!session.mediaAsset?._id) throw completedUploadMissingAssetError();
     return session.mediaAsset;
   }
+
+  let speedSampleBytes = Number(session.bytesReceived || 0);
+  let speedSampleAt = Date.now();
+  let speedBytesPerSecond = 0;
+  const withUploadSpeed = nextSession => {
+    const now = Date.now();
+    const bytesReceived = Number(nextSession.bytesReceived || 0);
+    const elapsedSeconds = (now - speedSampleAt) / 1000;
+    if (elapsedSeconds > 0.25 && bytesReceived >= speedSampleBytes) {
+      speedBytesPerSecond = Math.round((bytesReceived - speedSampleBytes) / elapsedSeconds);
+      speedSampleBytes = bytesReceived;
+      speedSampleAt = now;
+    }
+    return {
+      ...nextSession,
+      uploadSpeedBytesPerSecond: nextSession.status === 'completed' ? 0 : speedBytesPerSecond
+    };
+  };
 
   while (session.bytesReceived < file.size) {
     if (controlRef?.current?.cancelled) {
@@ -128,7 +160,7 @@ export const uploadFileResumable = async ({
 
     if (controlRef?.current?.paused) {
       await pauseUploadSession(session._id).catch(() => {});
-      onProgress?.({ ...session, status: 'paused' });
+      onProgress?.(withUploadSpeed({ ...session, status: 'paused' }));
       if (controlRef.current.stopOnPause) {
         const error = new Error('Upload paused.');
         error.code = 'UPLOAD_PAUSED';
@@ -140,8 +172,9 @@ export const uploadFileResumable = async ({
       if (controlRef?.current?.cancelled) continue;
       const resumePayload = await resumeUploadSession(session._id);
       session = resumePayload.data.uploadSession;
-      onSession?.(session);
-      onProgress?.(session);
+      const nextSession = withUploadSpeed(session);
+      onSession?.(nextSession);
+      onProgress?.(nextSession);
       continue;
     }
 
@@ -164,8 +197,9 @@ export const uploadFileResumable = async ({
         }
       });
       session = payload.data.uploadSession;
-      onSession?.(session);
-      onProgress?.(session);
+      const nextSession = withUploadSpeed(session);
+      onSession?.(nextSession);
+      onProgress?.(nextSession);
     } catch (error) {
       if (isAbortError(error) && (controlRef?.current?.paused || controlRef?.current?.cancelled)) {
         continue;
@@ -174,8 +208,9 @@ export const uploadFileResumable = async ({
       if (error?.status === 409) {
         const payload = await api.get(`/api/media/resumable/${session._id}`);
         session = payload.data.uploadSession;
-        onSession?.(session);
-        onProgress?.(session);
+        const nextSession = withUploadSpeed(session);
+        onSession?.(nextSession);
+        onProgress?.(nextSession);
         if (session.status === 'uploading') continue;
       }
 
@@ -187,18 +222,20 @@ export const uploadFileResumable = async ({
     }
 
     if (session.status === 'completed') {
-      if (!session.mediaAsset?._id) throw new Error('Completed upload is missing its verified media asset.');
+      if (!session.mediaAsset?._id) throw completedUploadMissingAssetError();
       return session.mediaAsset;
     }
-    if (session.status === 'failed') throw new Error(session.failureReason || 'Upload failed.');
+    if (session.status === 'failed') throw uploadSessionFailedError(session.failureReason || 'Upload failed.');
     if (session.status === 'cancelled') throw new Error('Upload cancelled.');
   }
 
   const finalPayload = await api.get(`/api/media/resumable/${session._id}`);
   session = finalPayload.data.uploadSession;
-  onSession?.(session);
-  onProgress?.(session);
+  const finalSession = withUploadSpeed(session);
+  onSession?.(finalSession);
+  onProgress?.(finalSession);
+  if (session.status === 'failed') throw uploadSessionFailedError(session.failureReason || 'Cloud upload verification failed.');
   if (session.status !== 'completed') throw new Error('Upload did not complete verification.');
-  if (!session.mediaAsset?._id) throw new Error('Completed upload is missing its verified media asset.');
+  if (!session.mediaAsset?._id) throw completedUploadMissingAssetError();
   return session.mediaAsset;
 };

@@ -84,11 +84,12 @@ export default class InstagramConnector extends BasePlatformConnector {
   validatePublishPayload(payload, connection) {
     const base = super.validatePublishPayload(payload, connection);
     if (!base.ok) return base;
-    const media = payload.mediaAssets?.find(asset => asset.publicUrl && ['image', 'video'].includes(asset.mediaType));
-    if (!media) {
+    const mediaAssets = payload.mediaAssets || [];
+    const supportedMedia = mediaAssets.filter(asset => asset.publicUrl && ['image', 'video'].includes(asset.mediaType));
+    if (mediaAssets.length !== 1 || supportedMedia.length !== 1) {
       return connectorResult({
         code: 'VALIDATION_FAILED',
-        message: 'Instagram Graph publishing requires an uploaded image or video with a public URL.'
+        message: 'Instagram Graph publishing requires exactly one uploaded image or video with a public URL. CreatorOps will not silently drop extra media.'
       });
     }
     return okResult({}, 'Instagram payload is publishable.');

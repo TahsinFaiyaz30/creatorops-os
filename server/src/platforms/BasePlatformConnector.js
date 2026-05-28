@@ -202,6 +202,12 @@ export default class BasePlatformConnector {
         message: 'Connect a real account before publishing.'
       });
     }
+    if (Array.isArray(_payload?.mediaAssets) && _payload.mediaAssets.length > 0 && !this.getCapabilities().mediaUpload) {
+      return connectorResult({
+        code: 'CAPABILITY_UNAVAILABLE',
+        message: `${this.displayName} media publishing is not implemented in this connector yet, so CreatorOps will not publish a text-only post while media is selected.`
+      });
+    }
     return okResult({}, 'Publish payload accepted.');
   }
 

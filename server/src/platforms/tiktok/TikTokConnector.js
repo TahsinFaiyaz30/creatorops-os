@@ -112,11 +112,12 @@ export default class TikTokConnector extends BasePlatformConnector {
   validatePublishPayload(payload, connection) {
     const base = super.validatePublishPayload(payload, connection);
     if (!base.ok) return base;
-    const video = payload.mediaAssets?.find(asset => asset.mediaType === 'video' && asset.publicUrl);
-    if (!video) {
+    const mediaAssets = payload.mediaAssets || [];
+    const videos = mediaAssets.filter(asset => asset.mediaType === 'video' && asset.publicUrl);
+    if (mediaAssets.length !== 1 || videos.length !== 1) {
       return connectorResult({
         code: 'VALIDATION_FAILED',
-        message: 'TikTok Content Posting API requires a video media asset with a public URL.'
+        message: 'TikTok Content Posting API requires exactly one video media asset with a public URL. CreatorOps will not silently drop extra or unsupported media.'
       });
     }
     if (!connection.scopes?.some(scope => ['video.publish', 'video.upload'].includes(scope))) {

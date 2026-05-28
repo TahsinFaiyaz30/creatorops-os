@@ -34,6 +34,7 @@ import {
   deletePendingPublish,
   deleteUploadFile,
   getUploadFile,
+  getUploadSession,
   getPendingPublishes,
   pauseUploadSession,
   putPendingPublish,
@@ -60,11 +61,11 @@ const PROCESSING_STAGES = [
 
 const statusMeta = {
   waiting_upload: { label: 'Waiting', tone: 'border-sky-400/30 bg-sky-400/10 text-sky-300', dot: 'bg-sky-300' },
-  uploading_client: { label: 'Uploading', tone: 'border-mint/30 bg-mint/10 text-mint', dot: 'bg-mint' },
+  uploading_client: { label: 'Cloud upload', tone: 'border-mint/30 bg-mint/10 text-mint', dot: 'bg-mint' },
   paused_upload: { label: 'Paused', tone: 'border-gold/30 bg-gold/10 text-gold', dot: 'bg-gold' },
   interrupted_upload: { label: 'Interrupted', tone: 'border-gold/30 bg-gold/10 text-gold', dot: 'bg-gold' },
   failed_upload: { label: 'Failed', tone: 'border-rose/30 bg-rose/10 text-rose', dot: 'bg-rose' },
-  verifying_upload: { label: 'Verifying', tone: 'border-blue-300/30 bg-blue-300/10 text-blue-200', dot: 'bg-blue-200' },
+  verifying_upload: { label: 'Verifying cloud', tone: 'border-blue-300/30 bg-blue-300/10 text-blue-200', dot: 'bg-blue-200' },
   queued: { label: 'Queued', tone: 'border-sky-400/30 bg-sky-400/10 text-sky-300', dot: 'bg-sky-300' },
   publishing: { label: 'Processing', tone: 'border-mint/30 bg-mint/10 text-mint', dot: 'bg-mint' },
   paused: { label: 'Paused', tone: 'border-gold/30 bg-gold/10 text-gold', dot: 'bg-gold' },
@@ -123,6 +124,12 @@ const formatBytes = bytes => {
   return `${unitIndex === 0 ? Math.round(size) : size.toFixed(2)} ${units[unitIndex]}`;
 };
 
+const formatThroughput = bytesPerSecond => {
+  const value = Number(bytesPerSecond || 0);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  return `${formatBytes(value)}/s`;
+};
+
 const compactId = value => {
   if (!value) return 'Ungrouped';
   const text = String(value);
@@ -138,6 +145,46 @@ const getJobCaption = job => job.caption || job.variantId?.caption || '';
 const getJobMedia = job => (job.mediaAssetIds || []).find(asset => asset?.publicUrl) || null;
 
 const getJobStatusMeta = status => statusMeta[status] || statusMeta.mixed;
+
+const stageLabels = {
+  queued_now: 'Queued for immediate publish',
+  scheduled: 'Scheduled',
+  starting: 'Starting platform dispatch',
+  checking_connection: 'Checking platform connection',
+  loading_media: 'Loading verified cloud media',
+  checking_media_policy: 'Checking provider media limits',
+  compressing: 'Compressing media for provider',
+  uploading_compressed: 'Uploading compressed cloud copy',
+  initializing_provider_upload: 'Starting provider upload',
+  uploading: 'Uploading to platform',
+  provider_ingesting: 'Provider is ingesting media',
+  provider_uploaded: 'Provider accepted media',
+  queued_retry: 'Retry queued',
+  queued_resume: 'Resume queued',
+  provider_unreachable: 'Provider unreachable',
+  published: 'Published',
+  failed: 'Failed',
+  blocked: 'Blocked',
+  paused: 'Paused',
+  cancelled: 'Cancelled'
+};
+
+const getJobStageLabel = job => {
+  const controlAction = job.publishControl?.action || '';
+  if (controlAction === 'pause_requested') return 'Pause requested';
+  if (controlAction === 'cancel_requested') return 'Cancel requested';
+  if (job.temporaryMediaExpiredAt) return 'Temporary cloud media expired';
+  return stageLabels[job.processingStage] || stageLabels[job.status] || job.processingStage || job.status || 'Waiting';
+};
+
+const getProviderPhaseLabel = phase => {
+  if (phase === 'initializing') return 'Starting provider upload';
+  if (phase === 'uploading') return 'Uploading to platform';
+  if (phase === 'provider_ingest') return 'Provider ingesting media';
+  if (phase === 'provider_ingest_complete') return 'Provider accepted media';
+  if (phase === 'uploaded') return 'Provider upload complete';
+  return 'Platform media transfer';
+};
 
 const getProviderUploadProgress = job => {
   const upload = job.providerUpload || {};
@@ -155,6 +202,7 @@ const getProviderUploadProgress = job => {
       bytesUploaded,
       totalBytes,
       percent,
+      bytesPerSecond: Number(upload.bytesPerSecond || 0),
       message: upload.message || job.processingMessage || ''
     };
   }
@@ -168,6 +216,7 @@ const getProviderUploadProgress = job => {
     bytesUploaded: 0,
     totalBytes: 0,
     percent: clampPercent(Number(match[1])),
+    bytesPerSecond: 0,
     message: job.processingMessage || ''
   };
 };
@@ -255,19 +304,65 @@ const buildDispatchGroups = jobs => {
 
 const pendingMediaItems = pending => Array.isArray(pending?.mediaItems) ? pending.mediaItems : [];
 
+const isPendingItemCloudReady = item => Boolean(item?.mediaAssetId);
+
+const getPendingItemUploadedBytes = item => {
+  const size = Number(item?.size || 0);
+  const bytesUploaded = Number(item?.bytesUploaded || 0);
+  return Math.max(bytesUploaded, isPendingItemCloudReady(item) ? size : 0);
+};
+
+const isPendingItemAtCloudSize = item => {
+  const size = Number(item?.size || 0);
+  return size > 0 && getPendingItemUploadedBytes(item) >= size;
+};
+
+const getSessionMediaAsset = session => session?.mediaAsset || null;
+
+const getSessionMediaAssetId = session => {
+  const mediaAsset = getSessionMediaAsset(session);
+  return mediaAsset?._id || mediaAsset?.id || '';
+};
+
+const applyUploadSessionToPendingItem = (item, session, { forceSpeedZero = true } = {}) => {
+  if (!session) return '';
+  item.sessionId = session._id || item.sessionId || '';
+  item.bytesUploaded = Number(session.bytesReceived || 0);
+  item.status = session.status || item.status || 'waiting';
+  if (forceSpeedZero) item.uploadSpeedBytesPerSecond = 0;
+  const mediaAssetId = getSessionMediaAssetId(session);
+  if (mediaAssetId) {
+    item.mediaAssetId = mediaAssetId;
+    item.bytesUploaded = Number(item.size || session.size || item.bytesUploaded || 0);
+    item.status = 'completed';
+  }
+  return mediaAssetId;
+};
+
+const targetCountForPending = pending => (pending.selectedConnections || []).length;
+
+const acceptedTargetCountForPending = pending =>
+  new Set((pending.results || []).filter(result => result.jobId).map(result => result.targetKey)).size;
+
+const isPendingFullyHandedOff = pending => {
+  const targetCount = targetCountForPending(pending);
+  return targetCount > 0 && acceptedTargetCountForPending(pending) >= targetCount;
+};
+
 const getPendingProgress = pending => {
   const items = pendingMediaItems(pending);
   const totalBytes = items.reduce((sum, item) => sum + Number(item.size || 0), 0);
-  const uploadedBytes = items.reduce((sum, item) => {
-    const completeBytes = item.mediaAssetId || item.status === 'completed' ? Number(item.size || 0) : 0;
-    return sum + Math.max(Number(item.bytesUploaded || 0), completeBytes);
-  }, 0);
-  const completedCount = items.filter(item => item.mediaAssetId || item.status === 'completed').length;
-  const statuses = new Set(items.map(item => item.status || 'waiting'));
+  const uploadedBytes = items.reduce((sum, item) => sum + getPendingItemUploadedBytes(item), 0);
+  const completedCount = items.filter(isPendingItemCloudReady).length;
+  const pendingItems = items.filter(item => !isPendingItemCloudReady(item));
+  const statuses = new Set(pendingItems.map(item => item.status || 'waiting'));
+  const hasFullSizeUnverifiedItem = pendingItems.some(item => item.sessionId && isPendingItemAtCloudSize(item));
   const hasCreatedJobs = (pending.results || []).some(result => result.jobId);
+  const bytesPerSecond = pendingItems.reduce((sum, item) => sum + Number(item.uploadSpeedBytesPerSecond || 0), 0);
 
   let status = 'waiting_upload';
   if (statuses.has('failed')) status = 'failed_upload';
+  else if (hasFullSizeUnverifiedItem) status = 'verifying_upload';
   else if (pending.pauseReason === 'user' || statuses.has('paused')) status = 'paused_upload';
   else if (statuses.has('uploading')) status = 'uploading_client';
   else if (statuses.has('interrupted')) status = 'interrupted_upload';
@@ -279,6 +374,7 @@ const getPendingProgress = pending => {
     completedCount,
     totalCount: items.length,
     percent: totalBytes > 0 ? (uploadedBytes / totalBytes) * 100 : completedCount === items.length ? 100 : 0,
+    bytesPerSecond,
     status,
     hasCreatedJobs,
     active: ['waiting_upload', 'uploading_client', 'interrupted_upload', 'paused_upload', 'verifying_upload'].includes(status),
@@ -401,8 +497,11 @@ const isUploadPausedError = error => error?.code === 'UPLOAD_PAUSED' || String(e
 
 const isMissingUploadFileError = error => error?.code === 'UPLOAD_FILE_UNAVAILABLE';
 
+const isUploadSessionFailedError = error => error?.code === 'UPLOAD_SESSION_FAILED';
+
 const shouldAutoResumePending = pending => {
   if (!pending || pending.pauseReason === 'user') return false;
+  if (isPendingFullyHandedOff(pending)) return false;
   const needsReview = (pending.results || []).some(result => !result.jobId && (result.ok === false || ['blocked', 'failed'].includes(result.status)));
   if (needsReview) return false;
   const progress = getPendingProgress(pending);
@@ -486,9 +585,19 @@ export default function PublishingPage() {
     try {
       const owner = currentUser || user;
       const pendingItems = await getPendingPublishes();
+      const ownedPendingItems = pendingItems.filter(item => !owner?._id || !item.userId || item.userId === owner._id);
+      const staleCompletedItems = ownedPendingItems.filter(isPendingFullyHandedOff);
+      if (staleCompletedItems.length > 0) {
+        await Promise.allSettled(
+          staleCompletedItems.flatMap(pending => [
+            ...pendingMediaItems(pending).filter(item => item.uploadKey).map(item => deleteUploadFile(item.uploadKey)),
+            deletePendingPublish(pending.id)
+          ])
+        );
+      }
       setPendingUploads(
-        pendingItems
-          .filter(item => !owner?._id || !item.userId || item.userId === owner._id)
+        ownedPendingItems
+          .filter(item => !isPendingFullyHandedOff(item))
           .sort((a, b) => getTimestamp(b.updatedAt || b.createdAt) - getTimestamp(a.updatedAt || a.createdAt))
       );
       setPendingUploadError('');
@@ -716,6 +825,37 @@ export default function PublishingPage() {
         continue;
       }
 
+      if (item.sessionId) {
+        const sessionPayload = await getUploadSession(item.sessionId).catch(() => null);
+        const session = sessionPayload?.data?.uploadSession;
+        if (session) {
+          const mediaAssetId = applyUploadSessionToPendingItem(item, session);
+          await persistPendingUpload(pending);
+          if (mediaAssetId) {
+            mediaAssetIds.push(mediaAssetId);
+            if (item.uploadKey) await deleteUploadFile(item.uploadKey).catch(() => {});
+            continue;
+          }
+          if (session.status === 'completed') {
+            const error = new Error('Completed upload is missing its verified media asset.');
+            error.uploadItem = item;
+            error.code = 'UPLOAD_SESSION_FAILED';
+            throw error;
+          }
+          if (session.status === 'failed') {
+            const error = new Error(session.failureReason || `${item.originalName || 'Media'} upload failed before platform dispatch.`);
+            error.uploadItem = item;
+            error.code = 'UPLOAD_SESSION_FAILED';
+            throw error;
+          }
+          if (session.status === 'cancelled') {
+            const error = new Error(`${item.originalName || 'Media'} upload was cancelled before platform dispatch.`);
+            error.uploadItem = item;
+            throw error;
+          }
+        }
+      }
+
       const file = await getUploadFile(item.uploadKey);
       if (!file) {
         const error = new Error(`${item.originalName} is no longer available in this browser. Select the file again to continue.`);
@@ -742,12 +882,14 @@ export default function PublishingPage() {
             item.sessionId = session._id;
             item.bytesUploaded = session.bytesReceived || 0;
             item.status = session.status;
+            item.uploadSpeedBytesPerSecond = session.uploadSpeedBytesPerSecond || 0;
             if (session.mediaAsset?._id) item.mediaAssetId = session.mediaAsset._id;
             persistPendingUpload(pending).catch(() => {});
           },
           onProgress: session => {
             item.bytesUploaded = session.bytesReceived || 0;
             item.status = session.status;
+            item.uploadSpeedBytesPerSecond = session.uploadSpeedBytesPerSecond || 0;
             if (session.mediaAsset?._id) item.mediaAssetId = session.mediaAsset._id;
             persistPendingUpload(pending).catch(() => {});
           }
@@ -760,6 +902,7 @@ export default function PublishingPage() {
       item.mediaAssetId = mediaAsset._id;
       item.bytesUploaded = item.size;
       item.status = 'completed';
+      item.uploadSpeedBytesPerSecond = 0;
       mediaAssetIds.push(mediaAsset._id);
       await deleteUploadFile(item.uploadKey);
       await persistPendingUpload(pending);
@@ -847,6 +990,14 @@ export default function PublishingPage() {
       pending.mediaItems = pendingMediaItems(pending).map(item =>
         item.mediaAssetId || item.status === 'completed'
           ? item
+          : item.status === 'failed'
+            ? {
+                ...item,
+                sessionId: '',
+                bytesUploaded: 0,
+                uploadSpeedBytesPerSecond: 0,
+                status: 'waiting'
+              }
           : {
               ...item,
               status: item.sessionId ? 'interrupted' : 'waiting'
@@ -911,6 +1062,11 @@ export default function PublishingPage() {
         }
       } else if (isMissingUploadFileError(err) && err.uploadItem) {
         err.uploadItem.status = 'failed';
+        pending.pauseReason = 'user';
+        await persistPendingUpload(pending).catch(() => {});
+      } else if (isUploadSessionFailedError(err) && err.uploadItem) {
+        err.uploadItem.status = 'failed';
+        err.uploadItem.uploadSpeedBytesPerSecond = 0;
         pending.pauseReason = 'user';
         await persistPendingUpload(pending).catch(() => {});
       } else {
@@ -1380,6 +1536,18 @@ function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onC
     (progress.status === 'verifying_upload' && hasUnfinishedTargets)
   );
   const canPauseUpload = canManage && !progress.hasCreatedJobs && ['waiting_upload', 'uploading_client', 'interrupted_upload'].includes(progress.status);
+  const resumeLabel = progress.status === 'failed_upload' ? 'Retry' : 'Resume';
+  const fullSizeUnverifiedCount = items.filter(item => !item.mediaAssetId && item.sessionId && isPendingItemAtCloudSize(item)).length;
+  const statusDescription = (() => {
+    if (pending.pauseReason === 'user') return 'Paused by you. Resume from Dispatch when ready.';
+    if (progress.status === 'failed_upload') return 'Cloud upload or verification failed. Retry from Dispatch or cancel it.';
+    if (progress.status === 'interrupted_upload') return 'Interrupted upload is saved. Resume from the last verified chunk here.';
+    if (progress.status === 'verifying_upload' && fullSizeUnverifiedCount > 0) return 'Upload reached cloud storage. CreatorOps is verifying SHA-256 and linking the cloud media asset.';
+    if (progress.status === 'verifying_upload' && hasUnfinishedTargets) return 'Cloud media is verified. CreatorOps is creating the remaining platform dispatches.';
+    if (progress.status === 'verifying_upload') return 'Cloud media is verified. CreatorOps is preparing platform dispatch.';
+    if (progress.status === 'uploading_client') return 'Uploading from this browser to CreatorOps cloud storage.';
+    return 'Upload runs sequentially so every file can resume from its own verified offset.';
+  })();
 
   return (
     <article className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]">
@@ -1399,7 +1567,10 @@ function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onC
           <div className="mt-4">
             <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--muted)]">
               <span>{progress.completedCount}/{progress.totalCount} uploaded to cloud</span>
-              <span>{formatBytes(progress.uploadedBytes)} / {formatBytes(progress.totalBytes)}</span>
+              <span>
+                {formatBytes(progress.uploadedBytes)} / {formatBytes(progress.totalBytes)}
+                {progress.bytesPerSecond > 0 ? ` · ${formatThroughput(progress.bytesPerSecond)}` : ''}
+              </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-[var(--surface2)]">
               <div className="h-full rounded-full bg-mint transition-all" style={{ width: formatPercent(progress.percent) }} />
@@ -1424,8 +1595,8 @@ function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onC
                 disabled={resumeBusy}
                 className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d] disabled:opacity-60"
               >
-                {resumeBusy ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />}
-                Resume
+                {resumeBusy ? <Loader2 size={14} className="animate-spin" /> : progress.status === 'failed_upload' ? <RotateCcw size={14} /> : <PlayCircle size={14} />}
+                {resumeLabel}
               </button>
             )}
             {canPauseUpload && (
@@ -1452,11 +1623,7 @@ function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onC
             )}
           </div>
           <p className="max-w-xs text-right text-xs text-[var(--muted)]">
-            {pending.pauseReason === 'user'
-              ? 'Paused by you. Resume from any upload surface when ready.'
-              : progress.status === 'interrupted_upload'
-                ? 'Interrupted upload is saved. Resume from the last verified chunk here.'
-                : 'Upload runs sequentially so every file can resume from its own verified offset.'}
+            {statusDescription}
           </p>
         </div>
       </div>
@@ -1471,9 +1638,19 @@ function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onC
 }
 
 function PendingMediaRow({ item }) {
-  const bytesUploaded = Math.max(Number(item.bytesUploaded || 0), item.mediaAssetId || item.status === 'completed' ? Number(item.size || 0) : 0);
+  const bytesUploaded = getPendingItemUploadedBytes(item);
   const percent = item.size ? (bytesUploaded / Number(item.size)) * 100 : item.status === 'completed' ? 100 : 0;
   const meta = getPendingItemMeta(item);
+  const speedText = formatThroughput(item.uploadSpeedBytesPerSecond);
+  const detailText = speedText || (
+    item.mediaAssetId
+      ? 'cloud verified'
+      : item.status === 'failed'
+        ? 'needs retry'
+      : item.status === 'completed' || (item.sessionId && isPendingItemAtCloudSize(item))
+        ? 'verifying'
+        : item.sessionId ? compactId(item.sessionId) : 'not started'
+  );
 
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface2)] p-3">
@@ -1486,18 +1663,19 @@ function PendingMediaRow({ item }) {
       </div>
       <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[var(--muted)]">
         <span>{formatBytes(bytesUploaded)} / {formatBytes(item.size)}</span>
-        <span>{item.sessionId ? compactId(item.sessionId) : item.mediaAssetId ? 'verified' : 'not started'}</span>
+        <span>{detailText}</span>
       </div>
     </div>
   );
 }
 
 function getPendingItemMeta(item) {
-  if (item.mediaAssetId || item.status === 'completed') return { label: 'Cloud', tone: 'border-mint/30 bg-mint/10 text-mint' };
-  if (item.status === 'uploading') return { label: 'Uploading', tone: 'border-mint/30 bg-mint/10 text-mint' };
+  if (item.mediaAssetId) return { label: 'Cloud', tone: 'border-mint/30 bg-mint/10 text-mint' };
+  if (item.status === 'failed') return { label: 'Failed', tone: 'border-rose/30 bg-rose/10 text-rose' };
+  if (item.status === 'completed' || (item.sessionId && isPendingItemAtCloudSize(item))) return { label: 'Verifying cloud', tone: 'border-blue-300/30 bg-blue-300/10 text-blue-200' };
+  if (item.status === 'uploading') return { label: 'Cloud upload', tone: 'border-mint/30 bg-mint/10 text-mint' };
   if (item.status === 'paused') return { label: 'Paused', tone: 'border-gold/30 bg-gold/10 text-gold' };
   if (item.status === 'interrupted') return { label: 'Interrupted', tone: 'border-gold/30 bg-gold/10 text-gold' };
-  if (item.status === 'failed') return { label: 'Failed', tone: 'border-rose/30 bg-rose/10 text-rose' };
   return { label: 'Waiting', tone: 'border-sky-400/30 bg-sky-400/10 text-sky-300' };
 }
 
@@ -1672,6 +1850,7 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction, 
     job.errorCode === 'FILE_TOO_LARGE' ||
     /too large|size|limit/i.test(job.errorMessage || '')
   );
+  const stageLabel = getJobStageLabel(job);
   const stageText = job.mediaProcessing?.lastCompressionMessage || job.processingMessage || job.errorMessage || job.processingStage || job.status;
   const busy = action => busyKey === `${action}:${job._id}`;
 
@@ -1692,19 +1871,25 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction, 
 
       <div className="min-w-0">
         <p className="line-clamp-2 text-sm font-semibold text-[var(--text)]">{caption || 'No caption saved for this platform.'}</p>
-        <p className="mt-1 line-clamp-2 text-xs text-[var(--muted)]">{stageText}</p>
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-full border border-[var(--border)] bg-[var(--surface2)] px-2 py-0.5 font-semibold text-[var(--text)]">
+            {stageLabel}
+          </span>
+          <span className="min-w-0 flex-1 line-clamp-2 text-[var(--muted)]">{stageText}</span>
+        </div>
         {providerProgress && (
           <div className="mt-2 max-w-2xl">
             <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--muted)]">
               <span>
                 {providerProgress.complete
                   ? `${formatPlatform(job.platform)} media upload complete`
-                  : providerProgress.phase === 'provider_ingest'
-                    ? `${formatPlatform(job.platform)} ingesting cloud media`
-                    : `Uploading media to ${formatPlatform(job.platform)}`}
+                  : getProviderPhaseLabel(providerProgress.phase)}
               </span>
               {providerProgress.totalBytes > 0 ? (
-                <span>{formatBytes(providerProgress.bytesUploaded)} / {formatBytes(providerProgress.totalBytes)}</span>
+                <span>
+                  {formatBytes(providerProgress.bytesUploaded)} / {formatBytes(providerProgress.totalBytes)}
+                  {providerProgress.bytesPerSecond > 0 ? ` · ${formatThroughput(providerProgress.bytesPerSecond)}` : ''}
+                </span>
               ) : (
                 <span>{formatPercent(providerProgress.percent)}</span>
               )}
@@ -1722,7 +1907,7 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction, 
             <Clock3 size={12} />
             {formatDateTime(job.scheduledAt)}
           </span>
-          <span>{job.processingStage || job.status}</span>
+          <span>{stageLabel}</span>
           {job.retryCount > 0 && <span>{job.retryCount} retries</span>}
           {job.mediaProcessing?.compressBeforeUpload && <span className="text-mint">compression enabled</span>}
           {controlAction && <span className="text-gold">{job.publishControl?.message || 'Control pending'}</span>}

@@ -248,9 +248,13 @@ export default class YouTubeConnector extends BasePlatformConnector {
   validatePublishPayload(payload, connection) {
     const base = super.validatePublishPayload(payload, connection);
     if (!base.ok) return base;
-    const video = payload.mediaAssets?.find(asset => asset.mediaType === 'video');
-    if (!video) {
-      return connectorResult({ code: 'VALIDATION_FAILED', message: 'YouTube publishing requires a video media asset.' });
+    const mediaAssets = payload.mediaAssets || [];
+    const videos = mediaAssets.filter(asset => asset.mediaType === 'video');
+    if (mediaAssets.length !== 1 || videos.length !== 1) {
+      return connectorResult({
+        code: 'VALIDATION_FAILED',
+        message: `${this.displayName} publishing requires exactly one video media asset. CreatorOps will not silently drop extra or unsupported media.`
+      });
     }
     if (!connection.scopes?.includes('https://www.googleapis.com/auth/youtube.upload')) {
       return connectorResult({ code: 'MISSING_PERMISSIONS', message: 'Missing YouTube upload scope.' });

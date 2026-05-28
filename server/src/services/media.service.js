@@ -410,9 +410,21 @@ export const resumeResumableMediaUpload = async ({ user, sessionId }) => {
 
 export const cancelResumableMediaUpload = async ({ user, sessionId }) => {
   const session = await getSessionWithStorage({ user, sessionId });
-  if (session.status !== 'completed') {
+
+  if (session.status === 'completed') {
+    if (session.storageIntent !== 'temporary_publish' || !session.mediaAssetId) {
+      return serializeUploadSession(session);
+    }
+
+    await deleteTemporaryMediaAssets({
+      workspaceId: user.workspaceId,
+      mediaAssetIds: [session.mediaAssetId]
+    });
+    session.mediaAssetId = null;
+  } else {
     await abortResumableObjectUpload(session);
   }
+
   session.status = 'cancelled';
   session.cancelledAt = new Date();
   await session.save();

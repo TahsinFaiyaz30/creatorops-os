@@ -290,11 +290,17 @@ export default class XConnector extends BasePlatformConnector {
       return connectorResult({ code: 'MISSING_PERMISSIONS', message: 'Missing X tweet.write scope.' });
     }
     const mediaAssets = payload.mediaAssets || [];
-      if (mediaAssets.length > 0) {
+    if (mediaAssets.length > 0) {
       if (!connection.scopes?.includes('media.write')) {
         return connectorResult({
           code: 'MISSING_PERMISSIONS',
           message: 'X image publishing requires the media.write OAuth scope. Reconnect the X account after adding media.write to the app permissions.'
+        });
+      }
+      if (mediaAssets.length > 4) {
+        return connectorResult({
+          code: 'VALIDATION_FAILED',
+          message: 'X image publishing supports up to 4 images per post. Split larger media sets before publishing.'
         });
       }
       const videoAsset = mediaAssets.find(asset => asset.mediaType === 'video');

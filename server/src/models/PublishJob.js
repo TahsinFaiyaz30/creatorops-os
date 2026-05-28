@@ -24,6 +24,7 @@ const providerUploadSchema = new Schema(
     bytesUploaded: { type: Number, default: 0, min: 0 },
     totalBytes: { type: Number, default: 0, min: 0 },
     percent: { type: Number, default: 0, min: 0, max: 100 },
+    bytesPerSecond: { type: Number, default: 0, min: 0 },
     message: { type: String, default: '' },
     updatedAt: { type: Date, default: null }
   },
