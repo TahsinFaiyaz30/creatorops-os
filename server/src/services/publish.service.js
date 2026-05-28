@@ -146,6 +146,10 @@ const clearProviderUploadSession = job => {
   job.providerUploadSession = emptyProviderUploadSession();
 };
 
+const clearProviderUpload = job => {
+  job.providerUpload = emptyProviderUpload();
+};
+
 const getExpectedTargetCount = groupJobs => Math.max(1, ...groupJobs.map(job => Number(job.groupTargetCount) || 1));
 
 const getGroupMediaAssetIds = groupJobs => [
@@ -1454,6 +1458,7 @@ export const cancelPublishJob = async ({ user, jobId }) => {
   job.status = 'cancelled';
   clearPublishControl(job);
   clearProviderUploadSession(job);
+  clearProviderUpload(job);
   job.processingStage = 'cancelled';
   job.processingMessage = 'Publish job cancelled.';
   job.processingStageUpdatedAt = new Date();
@@ -1616,7 +1621,10 @@ const finalizeControlledPublishJob = async ({ job, result }) => {
   job.errorCode = '';
   job.errorMessage = '';
   clearPublishControl(job);
-  if (!isPaused) clearProviderUploadSession(job);
+  if (!isPaused) {
+    clearProviderUploadSession(job);
+    clearProviderUpload(job);
+  }
   job.processingStage = isPaused ? 'paused' : 'cancelled';
   job.processingMessage = result.message;
   job.processingStageUpdatedAt = new Date();
@@ -1984,7 +1992,10 @@ export const processStalePublishingJobs = async ({ now = new Date() } = {}) => {
       job.errorCode = '';
       job.errorMessage = '';
       clearPublishControl(job);
-      if (job.status === 'cancelled') clearProviderUploadSession(job);
+      if (job.status === 'cancelled') {
+        clearProviderUploadSession(job);
+        clearProviderUpload(job);
+      }
       job.processingStage = job.status;
       job.processingMessage = controlResult.message;
     } else {

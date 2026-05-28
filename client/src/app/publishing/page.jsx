@@ -162,8 +162,10 @@ const stageLabels = {
   uploading: 'Uploading to platform',
   provider_ingesting: 'Provider is ingesting media',
   provider_uploaded: 'Provider accepted media',
+  provider_rejected: 'Provider rejected media',
   queued_retry: 'Retry queued',
   queued_resume: 'Resume queued',
+  interrupted: 'Interrupted',
   provider_unreachable: 'Provider unreachable',
   published: 'Published',
   failed: 'Failed',
@@ -1353,7 +1355,7 @@ export default function PublishingPage() {
             <SectionHeader
               icon={Cloud}
               title="Platform Dispatches"
-              detail={`Temporary cloud media expires after ${temporaryMediaRetentionLabel} once a group is no longer queued or publishing.`}
+              detail={`Temporary cloud media expires after ${temporaryMediaRetentionLabel} once a group is no longer queued, publishing, or paused.`}
             />
             {visibleGroups.map(group => (
               <DispatchGroup

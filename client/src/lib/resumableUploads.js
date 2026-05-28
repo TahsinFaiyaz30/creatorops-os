@@ -585,6 +585,17 @@ export const uploadFileResumable = async ({
           if (Number(session.bytesReceived || 0) <= previousBytesReceived) await sleep(800);
           continue;
         }
+        if (session.status === 'completed') {
+          if (!session.mediaAsset?._id) throw completedUploadMissingAssetError();
+          return session.mediaAsset;
+        }
+        if (session.status === 'paused') {
+          const pausedError = new Error('Upload paused.');
+          pausedError.code = 'UPLOAD_PAUSED';
+          throw pausedError;
+        }
+        if (session.status === 'failed') throw uploadSessionFailedError(session.failureReason || 'Upload failed.');
+        if (session.status === 'cancelled') throw new Error('Upload cancelled.');
       }
 
       throw error;

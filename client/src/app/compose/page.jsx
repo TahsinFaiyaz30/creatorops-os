@@ -1138,7 +1138,7 @@ export default function ComposePage() {
             Select multiple media files, manage cover and aspect ratios, customize captions with AI, and intelligently deploy to supported platforms. Media uploads only start when you publish or schedule.
           </p>
           <p className="mt-3 max-w-4xl rounded-xl border border-gold/30 bg-gold/10 p-3 text-sm text-gold">
-            Temporary publish media is auto-deleted after {temporaryMediaRetentionLabel} once every platform in the post group is no longer queued or publishing. Retry is unavailable after the media expires.
+            Temporary publish media is auto-deleted after {temporaryMediaRetentionLabel} once every platform in the post group is no longer queued, publishing, or paused. Retry is unavailable after the media expires.
           </p>
         </header>
 
