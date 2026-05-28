@@ -1633,9 +1633,9 @@ function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onC
     !result.jobId && (result.ok === false || ['blocked', 'failed'].includes(result.status))
   );
   const canResumeUpload = canManage && (
-    ['paused_upload', 'interrupted_upload', 'failed_upload', 'waiting_upload'].includes(progress.status) ||
-    (progress.status === 'verifying_upload' && hasUnfinishedTargets)
+    ['paused_upload', 'interrupted_upload', 'failed_upload', 'waiting_upload'].includes(progress.status)
   );
+  const handoffBusy = resumeBusy && progress.status === 'verifying_upload' && hasUnfinishedTargets;
   const canPauseUpload = canManage && !progress.hasCreatedJobs && ['waiting_upload', 'uploading_client', 'interrupted_upload'].includes(progress.status);
   const resumeLabel = progress.status === 'failed_upload' ? 'Retry' : 'Resume';
   const fullSizeUnverifiedCount = items.filter(item => !item.mediaAssetId && item.sessionId && isPendingItemAtCloudSize(item)).length;
@@ -1703,6 +1703,12 @@ function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onC
                 {resumeBusy ? <Loader2 size={14} className="animate-spin" /> : progress.status === 'failed_upload' ? <RotateCcw size={14} /> : <PlayCircle size={14} />}
                 {resumeLabel}
               </button>
+            )}
+            {handoffBusy && (
+              <span className="inline-flex h-9 items-center gap-2 rounded-lg border border-blue-300/30 bg-blue-300/10 px-3 text-xs font-semibold text-blue-200">
+                <Loader2 size={14} className="animate-spin" />
+                Dispatching
+              </span>
             )}
             {canPauseUpload && (
               <button
