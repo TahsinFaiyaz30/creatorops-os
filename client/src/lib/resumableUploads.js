@@ -474,6 +474,17 @@ export const uploadFileResumable = async ({
     if (!session.mediaAsset?._id) throw completedUploadMissingAssetError();
     return session.mediaAsset;
   }
+  if (session.status === 'paused' && !controlRef?.current?.paused) {
+    const resumedPayload = await resumeUploadSession(session._id);
+    session = resumedPayload.data.uploadSession;
+    onSession?.(session);
+    onProgress?.(session);
+  }
+  if (session.status === 'paused') {
+    const error = new Error('Upload paused.');
+    error.code = 'UPLOAD_PAUSED';
+    throw error;
+  }
 
   let speedSampleBytes = Number(session.bytesReceived || 0);
   let speedSampleAt = Date.now();

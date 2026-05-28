@@ -490,7 +490,11 @@ export default function ComposePage() {
 
   const getUploadQueueStatusLabel = item => {
     if (item.status === 'completed') return 'Cloud verified';
-    if (item.status === 'uploading' && Number(item.bytesUploaded || 0) >= Number(item.size || 0) && Number(item.size || 0) > 0) return 'Verifying cloud';
+    if (
+      item.status === 'uploading' &&
+      Number(item.size || 0) > 0 &&
+      Math.max(Number(item.bytesUploaded || 0), Number(item.bytesSent || 0)) >= Number(item.size || 0)
+    ) return 'Verifying cloud';
     if (item.status === 'uploading') return 'Uploading to cloud';
     if (item.status === 'paused') return 'Paused';
     if (item.status === 'interrupted') return 'Interrupted';
@@ -731,11 +735,10 @@ export default function ComposePage() {
   const createPublishJobsForPending = async ({ pending, mediaAssetIds, uploadedMediaIds }) => {
     let results = [...(pending.results || [])];
     const completedKeys = new Set(results.filter(result => result.jobId).map(result => result.targetKey));
+    const pendingConnections = (pending.selectedConnections || []).filter(connection => !completedKeys.has(connection.targetKey));
 
-    for (const connection of pending.selectedConnections) {
-      if (completedKeys.has(connection.targetKey)) continue;
-
-      const customizedForTarget = pending.captions.find(
+    const createdResults = await Promise.all(pendingConnections.map(async connection => {
+      const customizedForTarget = (pending.captions || []).find(
         item => item.connectionId === connection.platformConnectionId && item.platform === connection.platform
       );
 
@@ -746,14 +749,14 @@ export default function ComposePage() {
           platformConnectionId: connection.platformConnectionId,
           targetPlatform: connection.platform,
           mediaAssetIds,
-          mediaProcessing: pending.mediaProcessingDecisions[connection.targetKey] || { compressOnOversize: false, compressBeforeUpload: false },
+          mediaProcessing: pending.mediaProcessingDecisions?.[connection.targetKey] || { compressOnOversize: false, compressBeforeUpload: false },
           coverIndex: pending.coverIndex,
           caption: customizedForTarget?.caption || pending.baseCaption,
           visibility: pending.visibility,
           scheduledAt: new Date(pending.scheduledAt).toISOString()
         });
         const publishJob = payload.data.publishJob;
-        results = upsertTargetResult(results, {
+        return {
           ok: !['blocked', 'failed'].includes(publishJob?.status),
           targetKey: connection.targetKey,
           platform: connection.platform,
@@ -761,22 +764,24 @@ export default function ComposePage() {
           status: publishJob?.status || 'queued',
           jobId: publishJob?._id,
           detail: describePublishJob(publishJob)
-        });
-        pending.results = results;
+        };
       } catch (err) {
-        results = upsertTargetResult(results, {
+        return {
           ok: false,
           targetKey: connection.targetKey,
           platform: connection.platform,
           accountHandle: connection.accountHandle,
           status: 'blocked',
           detail: err.message
-        });
-        pending.results = results;
+        };
       }
+    }));
 
-      await persistPending(pending);
+    for (const result of createdResults) {
+      results = upsertTargetResult(results, result);
     }
+    pending.results = results;
+    await persistPending(pending);
 
     const acceptedCount = results.filter(result => result.jobId).length;
     if (acceptedCount === 0 && (pending.selectedConnections || []).length === 0) {

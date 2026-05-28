@@ -442,7 +442,7 @@ export const syncPublishedPost = async ({ user, postId }) => {
     post.lastCommentsErrorCode = '';
     post.lastCommentsErrorMessage = '';
     post.lastCommentCount = comments.length;
-    emitRealtimeEvent('social:comments_synced', { publishedPostId: post._id, count: comments.length });
+    emitRealtimeEvent('social:comments_synced', { workspaceId: user.workspaceId, publishedPostId: post._id, count: comments.length });
     await createWorkflowEvent({
       workspaceId: user.workspaceId,
       actorId: user._id,

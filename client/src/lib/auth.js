@@ -38,6 +38,11 @@ const clearCookie = name => {
   document.cookie = `${encodeURIComponent(name)}=; path=/; max-age=0; SameSite=Lax`;
 };
 
+const emitSessionChange = () => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event('creatorops:session-changed'));
+};
+
 export const getToken = () => {
   if (typeof window === 'undefined') return null;
   return getStorage()?.getItem(TOKEN_KEY) || readCookie(TOKEN_KEY) || memoryToken;
@@ -65,6 +70,7 @@ export const saveSession = ({ token, user }) => {
   storage?.setItem(USER_KEY, serializedUser);
   writeCookie(TOKEN_KEY, token);
   writeCookie(USER_KEY, serializedUser);
+  emitSessionChange();
 };
 
 export const clearSession = () => {
@@ -75,4 +81,5 @@ export const clearSession = () => {
   storage?.removeItem(USER_KEY);
   clearCookie(TOKEN_KEY);
   clearCookie(USER_KEY);
+  emitSessionChange();
 };

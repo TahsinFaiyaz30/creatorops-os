@@ -27,7 +27,7 @@ const createHttpError = (message, statusCode) => {
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 const MIN_S3_MULTIPART_PART_BYTES = 5 * 1024 * 1024;
-const CHUNK_UPLOAD_LEASE_MS = 30 * 60 * 1000;
+const CHUNK_UPLOAD_LEASE_MS = 5 * 60 * 1000;
 
 export const detectMediaType = mimeType => {
   if (mimeType?.startsWith('image/')) return 'image';
@@ -152,6 +152,8 @@ const serializeUploadSession = async session => {
 
   return {
     _id: populated._id,
+    workspaceId: populated.workspaceId,
+    uploadedBy: populated.uploadedBy,
     uploadKey: populated.uploadKey,
     originalName: populated.originalName,
     mimeType: populated.mimeType,
@@ -170,6 +172,8 @@ const emitMediaUploadSessionUpdated = (session, eventType = 'updated') => {
   serializeUploadSession(session)
     .then(uploadSession => {
       emitRealtimeEvent('media:upload_session_updated', {
+        workspaceId: session.workspaceId,
+        userId: session.uploadedBy,
         eventType,
         uploadSession
       });
@@ -220,10 +224,6 @@ export const startResumableMediaUpload = async ({ user, input = {} }) => {
     if (['cancelled', 'failed'].includes(existing.status)) {
       await discardUploadSession(existing);
     } else {
-      if (existing.status === 'paused') {
-        existing.status = 'uploading';
-        await existing.save();
-      }
       emitMediaUploadSessionUpdated(existing, 'resumed_existing');
       return serializeUploadSession(existing);
     }

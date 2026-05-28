@@ -213,7 +213,7 @@ export default function AdminPanelPage() {
             </div>
 
             <p className="mt-3 text-sm text-[var(--muted)]">
-              Current expiry: {formatDuration(settings.temporaryMediaRetentionSeconds)}. Use 0 for immediate deletion after a post group has no queued or publishing jobs. Scheduled queued jobs keep their media until they run.
+              Current expiry: {formatDuration(settings.temporaryMediaRetentionSeconds)}. Use 0 for immediate deletion after a post group has no queued, publishing, or paused jobs. Scheduled queued jobs keep their media until they run.
             </p>
           </section>
         )}

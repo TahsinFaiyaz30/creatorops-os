@@ -364,17 +364,7 @@ export default class XConnector extends BasePlatformConnector {
       })
     });
     const normalized = normalizeXResult(result);
-    if (!normalized.ok) {
-      if (mediaIds.length > 0 && this.isProviderMediaReferenceInvalid(normalized)) {
-        await this.saveXUploadSession(payload, {
-          postFingerprint,
-          totalBytes: totalUploadBytes,
-          bytesUploaded: 0,
-          data: { uploads: {} }
-        });
-      }
-      return normalized;
-    }
+    if (!normalized.ok) return normalized;
     const mediaId = normalized.data?.data?.id || normalized.data?.data?.media_id || '';
     if (!mediaId) {
       return connectorResult({

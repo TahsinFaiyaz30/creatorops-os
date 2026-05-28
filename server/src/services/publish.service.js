@@ -34,7 +34,7 @@ const createHttpError = (message, statusCode, code = '') => {
 
 const PUBLISH_ROLES = [CONTENT_CREATOR_ROLE, BRAND_REP_ROLE];
 const ACTIVE_PUBLISH_STATUSES = ['queued', 'publishing', 'paused'];
-const UNSUCCESSFUL_TERMINAL_STATUSES = ['failed', 'blocked', 'cancelled'];
+const RETRYABLE_TERMINAL_STATUSES = ['failed', 'blocked'];
 const FILE_TOO_LARGE_CODES = ['FILE_TOO_LARGE', 'PAYLOAD_TOO_LARGE', 'REQUEST_ENTITY_TOO_LARGE'];
 const STALE_PUBLISH_JOB_MS = 60 * 60 * 1000;
 const CONTROL_ACTIONS = {
@@ -164,11 +164,6 @@ const refreshTemporaryMediaLifecycleForGroup = async ({ workspaceId, postGroupId
   );
   if (groupJobs.length === 0) return;
 
-  const expectedTargetCount = getExpectedTargetCount(groupJobs);
-  if (groupJobs.length < expectedTargetCount) {
-    return;
-  }
-
   const hasActiveJob = groupJobs.some(job => ACTIVE_PUBLISH_STATUSES.includes(job.status));
   if (hasActiveJob) {
     await PublishJob.updateMany(
@@ -188,16 +183,49 @@ const refreshTemporaryMediaLifecycleForGroup = async ({ workspaceId, postGroupId
   });
   if (temporaryMediaCount === 0) return;
 
+  const expectedTargetCount = getExpectedTargetCount(groupJobs);
+  const hasMissingTargetJobs = groupJobs.length < expectedTargetCount;
+  const hasRetryableJob = groupJobs.some(job => RETRYABLE_TERMINAL_STATUSES.includes(job.status));
+  if (hasMissingTargetJobs && !hasRetryableJob) {
+    const resolvedRetentionSeconds = retentionSeconds ?? await getTemporaryMediaRetentionSeconds();
+    const latestKnownAt = groupJobs
+      .map(job => new Date(job.updatedAt || now).getTime())
+      .reduce((latest, timestamp) => Math.max(latest, timestamp), 0);
+    const expiresAt = new Date(latestKnownAt + resolvedRetentionSeconds * 1000);
+
+    if (expiresAt <= now) {
+      await deleteTemporaryMediaAssets({ workspaceId, mediaAssetIds });
+      await PublishJob.updateMany(
+        { workspaceId, postGroupId, status: { $ne: 'published' }, temporaryMediaExpiredAt: null },
+        { $set: { temporaryMediaExpiresAt: expiresAt, temporaryMediaExpiredAt: now } }
+      );
+      return;
+    }
+
+    await PublishJob.updateMany(
+      { workspaceId, postGroupId, status: { $ne: 'published' }, temporaryMediaExpiredAt: null },
+      { $set: { temporaryMediaExpiresAt: expiresAt } }
+    );
+    return;
+  }
+
   if (groupJobs.every(job => job.status === 'published')) {
     await deleteTemporaryMediaAssets({ workspaceId, mediaAssetIds });
     await PublishJob.updateMany({ workspaceId, postGroupId }, { $set: { temporaryMediaExpiresAt: null } });
     return;
   }
 
-  const unsuccessfulJobs = groupJobs.filter(job => UNSUCCESSFUL_TERMINAL_STATUSES.includes(job.status));
-  if (unsuccessfulJobs.length === 0) return;
+  const retryableJobs = groupJobs.filter(job => RETRYABLE_TERMINAL_STATUSES.includes(job.status));
+  if (retryableJobs.length === 0) {
+    await deleteTemporaryMediaAssets({ workspaceId, mediaAssetIds });
+    await PublishJob.updateMany(
+      { workspaceId, postGroupId },
+      { $set: { temporaryMediaExpiresAt: null, temporaryMediaExpiredAt: null } }
+    );
+    return;
+  }
 
-  const latestUnsuccessfulAt = unsuccessfulJobs
+  const latestUnsuccessfulAt = retryableJobs
     .map(job => new Date(job.updatedAt || now).getTime())
     .reduce((latest, timestamp) => Math.max(latest, timestamp), 0);
   const resolvedRetentionSeconds = retentionSeconds ?? await getTemporaryMediaRetentionSeconds();
@@ -206,7 +234,7 @@ const refreshTemporaryMediaLifecycleForGroup = async ({ workspaceId, postGroupId
   if (expiresAt <= now) {
     await deleteTemporaryMediaAssets({ workspaceId, mediaAssetIds });
     await PublishJob.updateMany(
-      { workspaceId, postGroupId, status: { $in: UNSUCCESSFUL_TERMINAL_STATUSES } },
+      { workspaceId, postGroupId, status: { $in: RETRYABLE_TERMINAL_STATUSES } },
       {
         $set: {
           temporaryMediaExpiresAt: expiresAt,
@@ -218,7 +246,7 @@ const refreshTemporaryMediaLifecycleForGroup = async ({ workspaceId, postGroupId
   }
 
   await PublishJob.updateMany(
-    { workspaceId, postGroupId, status: { $in: UNSUCCESSFUL_TERMINAL_STATUSES }, temporaryMediaExpiredAt: null },
+    { workspaceId, postGroupId, status: { $in: RETRYABLE_TERMINAL_STATUSES }, temporaryMediaExpiredAt: null },
     { $set: { temporaryMediaExpiresAt: expiresAt } }
   );
 };
@@ -1200,7 +1228,7 @@ const deletePublishJobsSafely = async ({ workspaceId, jobs = [] }) => {
 };
 
 const hasRemainingPublishRetryPath = ({ jobs, posts }) => {
-  if (jobs.some(job => ACTIVE_PUBLISH_STATUSES.includes(job.status) || UNSUCCESSFUL_TERMINAL_STATUSES.includes(job.status))) {
+  if (jobs.some(job => ACTIVE_PUBLISH_STATUSES.includes(job.status) || RETRYABLE_TERMINAL_STATUSES.includes(job.status))) {
     return true;
   }
   return posts.some(post => post.status && post.status !== 'published');
@@ -1335,6 +1363,7 @@ const deleteDispatchTargets = async ({ user, jobs, posts, input = {}, groupId })
   }
 
   emitRealtimeEvent('publishing:job_updated', {
+    workspaceId: user.workspaceId,
     deleted: true,
     groupId,
     publishJobIds: jobIds.map(String),
@@ -1342,6 +1371,7 @@ const deleteDispatchTargets = async ({ user, jobs, posts, input = {}, groupId })
     providerResults
   });
   emitRealtimeEvent('social:post_deleted', {
+    workspaceId: user.workspaceId,
     groupId,
     publishJobIds: jobIds.map(String),
     publishedPostIds: postIds.map(String)
@@ -1704,17 +1734,21 @@ export const processPublishJob = async ({ jobId }) => {
         const uploadMessage = message || '';
         const previousUpload = lockedJob.providerUpload || {};
         const previousBytes = Number(previousUpload.bytesUploaded || 0);
+        const previousSpeed = Number(previousUpload.bytesPerSecond || 0);
         const previousUpdatedAt = previousUpload.updatedAt ? new Date(previousUpload.updatedAt).getTime() : 0;
         const elapsedSeconds = previousUpdatedAt > 0 ? (Date.now() - previousUpdatedAt) / 1000 : 0;
         const measuredBytesPerSecond = elapsedSeconds > 0.2 && normalizedBytesUploaded >= previousBytes
           ? Math.round((normalizedBytesUploaded - previousBytes) / elapsedSeconds)
-          : Number(previousUpload.bytesPerSecond || 0);
+          : previousSpeed;
+        const smoothedBytesPerSecond = previousSpeed > 0 && measuredBytesPerSecond > 0
+          ? Math.round(previousSpeed * 0.7 + measuredBytesPerSecond * 0.3)
+          : measuredBytesPerSecond;
         const providerUpload = {
           phase,
           bytesUploaded: normalizedBytesUploaded,
           totalBytes: normalizedTotalBytes,
           percent,
-          bytesPerSecond: phase === 'uploading' ? measuredBytesPerSecond : 0,
+          bytesPerSecond: phase === 'uploading' ? smoothedBytesPerSecond : 0,
           message: uploadMessage
         };
         if (phase === 'initializing') {
@@ -2020,12 +2054,18 @@ export const processTemporaryPublishMediaCleanup = async () => {
       continue;
     }
 
-    const jobCount = await PublishJob.countDocuments({
-      workspaceId: group.workspaceId,
-      postGroupId: group.cleanupGroupId
-    });
+    const [jobCount, postCount] = await Promise.all([
+      PublishJob.countDocuments({
+        workspaceId: group.workspaceId,
+        postGroupId: group.cleanupGroupId
+      }),
+      PublishedPost.countDocuments({
+        workspaceId: group.workspaceId,
+        postGroupId: group.cleanupGroupId
+      })
+    ]);
 
-    if (jobCount === 0) {
+    if (jobCount === 0 && postCount === 0) {
       const orphanGroupExpiresAt = new Date(group.latestAssetCreatedAt.getTime() + retentionSeconds * 1000);
       if (orphanGroupExpiresAt <= now) {
         await deleteTemporaryMediaAssets({

@@ -327,6 +327,11 @@ const isPendingItemAtCloudSize = item => {
   return size > 0 && getPendingItemVerifiedBytes(item) >= size;
 };
 
+const isPendingItemSentToCloudSize = item => {
+  const size = Number(item?.size || 0);
+  return size > 0 && getPendingItemDisplayBytes(item) >= size;
+};
+
 const getSessionMediaAsset = session => session?.mediaAsset || null;
 
 const getSessionMediaAssetId = session => {
@@ -374,7 +379,9 @@ const getPendingProgress = pending => {
   const completedCount = items.filter(isPendingItemCloudReady).length;
   const pendingItems = items.filter(item => !isPendingItemCloudReady(item));
   const statuses = new Set(pendingItems.map(item => item.status || 'waiting'));
-  const hasFullSizeUnverifiedItem = pendingItems.some(item => item.sessionId && isPendingItemAtCloudSize(item));
+  const hasFullSizeUnverifiedItem = pendingItems.some(item =>
+    item.sessionId && (isPendingItemAtCloudSize(item) || isPendingItemSentToCloudSize(item))
+  );
   const hasCreatedJobs = (pending.results || []).some(result => result.jobId);
   const hasTargetFailure = (pending.results || []).some(result =>
     !result.jobId && (result.ok === false || ['blocked', 'failed'].includes(result.status))
@@ -736,7 +743,7 @@ export default function PublishingPage() {
       if (document.visibilityState !== 'visible') return;
       loadServerState().catch(() => {});
     };
-    const intervalId = window.setInterval(refreshLiveServerState, 3000);
+    const intervalId = window.setInterval(refreshLiveServerState, 1000);
     const focusHandler = () => {
       loadServerState().catch(() => {});
       loadPendingUploads().catch(() => {});
@@ -992,11 +999,10 @@ export default function PublishingPage() {
   const createPublishJobsForPending = async ({ pending, mediaAssetIds }) => {
     let results = [...(pending.results || [])];
     const completedKeys = new Set(results.filter(result => result.jobId).map(result => result.targetKey));
+    const pendingConnections = (pending.selectedConnections || []).filter(connection => !completedKeys.has(getConnectionTargetKey(connection)));
 
-    for (const connection of pending.selectedConnections || []) {
+    const createdResults = await Promise.all(pendingConnections.map(async connection => {
       const targetKey = getConnectionTargetKey(connection);
-      if (completedKeys.has(targetKey)) continue;
-
       const customizedForTarget = (pending.captions || []).find(
         item => item.connectionId === connection.platformConnectionId && item.platform === connection.platform
       );
@@ -1016,7 +1022,7 @@ export default function PublishingPage() {
           scheduledAt: Number.isNaN(scheduledAt.getTime()) ? new Date().toISOString() : scheduledAt.toISOString()
         });
         const publishJob = payload.data.publishJob;
-        results = upsertTargetResult(results, {
+        return {
           ok: !['blocked', 'failed'].includes(publishJob?.status),
           targetKey,
           platform: connection.platform,
@@ -1024,22 +1030,24 @@ export default function PublishingPage() {
           status: publishJob?.status || 'queued',
           jobId: publishJob?._id,
           detail: describePublishJob(publishJob)
-        });
-        pending.results = results;
+        };
       } catch (err) {
-        results = upsertTargetResult(results, {
+        return {
           ok: false,
           targetKey,
           platform: connection.platform,
           accountHandle: connection.accountHandle,
           status: 'blocked',
           detail: err.message
-        });
-        pending.results = results;
+        };
       }
+    }));
 
-      await persistPendingUpload(pending);
+    for (const result of createdResults) {
+      results = upsertTargetResult(results, result);
     }
+    pending.results = results;
+    await persistPendingUpload(pending);
 
     return results;
   };
@@ -1638,7 +1646,9 @@ function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onC
   const handoffBusy = resumeBusy && progress.status === 'verifying_upload' && hasUnfinishedTargets;
   const canPauseUpload = canManage && !progress.hasCreatedJobs && ['waiting_upload', 'uploading_client', 'interrupted_upload'].includes(progress.status);
   const resumeLabel = progress.status === 'failed_upload' ? 'Retry' : 'Resume';
-  const fullSizeUnverifiedCount = items.filter(item => !item.mediaAssetId && item.sessionId && isPendingItemAtCloudSize(item)).length;
+  const fullSizeUnverifiedCount = items.filter(item =>
+    !item.mediaAssetId && item.sessionId && (isPendingItemAtCloudSize(item) || isPendingItemSentToCloudSize(item))
+  ).length;
   const failedUploadReason = items.find(item => item.status === 'failed' && (item.failureReason || item.errorMessage))?.failureReason ||
     items.find(item => item.status === 'failed' && (item.failureReason || item.errorMessage))?.errorMessage ||
     '';
@@ -1760,7 +1770,7 @@ function PendingMediaRow({ item }) {
       ? 'cloud verified'
       : item.status === 'failed'
         ? failureText || 'needs retry'
-      : item.status === 'completed' || (item.sessionId && isPendingItemAtCloudSize(item))
+      : item.status === 'completed' || (item.sessionId && (isPendingItemAtCloudSize(item) || isPendingItemSentToCloudSize(item)))
         ? 'verifying'
       : item.sessionId ? compactId(item.sessionId) : 'not started'
   );
@@ -1791,7 +1801,7 @@ function PendingMediaRow({ item }) {
 function getPendingItemMeta(item) {
   if (item.mediaAssetId) return { label: 'Cloud', tone: 'border-mint/30 bg-mint/10 text-mint' };
   if (item.status === 'failed') return { label: 'Failed', tone: 'border-rose/30 bg-rose/10 text-rose' };
-  if (item.status === 'completed' || (item.sessionId && isPendingItemAtCloudSize(item))) return { label: 'Verifying cloud', tone: 'border-blue-300/30 bg-blue-300/10 text-blue-200' };
+  if (item.status === 'completed' || (item.sessionId && (isPendingItemAtCloudSize(item) || isPendingItemSentToCloudSize(item)))) return { label: 'Verifying cloud', tone: 'border-blue-300/30 bg-blue-300/10 text-blue-200' };
   if (item.status === 'uploading') return { label: 'Cloud upload', tone: 'border-mint/30 bg-mint/10 text-mint' };
   if (item.status === 'paused') return { label: 'Paused', tone: 'border-gold/30 bg-gold/10 text-gold' };
   if (item.status === 'interrupted') return { label: 'Interrupted', tone: 'border-gold/30 bg-gold/10 text-gold' };
