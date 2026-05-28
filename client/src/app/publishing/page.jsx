@@ -147,6 +147,34 @@ const getJobCaption = job => job.caption || job.variantId?.caption || '';
 
 const getJobMedia = job => (job.mediaAssetIds || []).find(asset => asset?.publicUrl) || null;
 
+const isPopulatedRef = value => value && typeof value === 'object' && !Array.isArray(value);
+
+const hasRenderableMediaAssets = mediaAssets =>
+  Array.isArray(mediaAssets) && mediaAssets.some(asset => isPopulatedRef(asset) && asset.publicUrl);
+
+const mergeRealtimePublishJob = (existing, incoming) => {
+  if (!existing) return incoming;
+
+  return {
+    ...existing,
+    ...incoming,
+    platformConnectionId: isPopulatedRef(incoming.platformConnectionId)
+      ? incoming.platformConnectionId
+      : existing.platformConnectionId || incoming.platformConnectionId,
+    mediaAssetIds: hasRenderableMediaAssets(incoming.mediaAssetIds)
+      ? incoming.mediaAssetIds
+      : existing.mediaAssetIds || incoming.mediaAssetIds,
+    variantId: isPopulatedRef(incoming.variantId) ? incoming.variantId : existing.variantId || incoming.variantId,
+    contentItemId: isPopulatedRef(incoming.contentItemId) ? incoming.contentItemId : existing.contentItemId || incoming.contentItemId,
+    createdBy: isPopulatedRef(incoming.createdBy) ? incoming.createdBy : existing.createdBy || incoming.createdBy
+  };
+};
+
+const sortPublishJobs = jobs =>
+  [...jobs].sort((a, b) =>
+    getTimestamp(b.scheduledAt || b.createdAt || b.updatedAt) - getTimestamp(a.scheduledAt || a.createdAt || a.updatedAt)
+  );
+
 const getJobStatusMeta = status => statusMeta[status] || statusMeta.mixed;
 
 const stageLabels = {
@@ -586,6 +614,32 @@ export default function PublishingPage() {
     upsertPendingUploadState(pending);
   }, [upsertPendingUploadState]);
 
+  const applyRealtimePublishUpdate = useCallback(payload => {
+    if (!payload) return;
+
+    if (payload.deleted) {
+      const deletedJobIds = new Set((payload.publishJobIds || []).map(String));
+      setJobs(current => current.filter(job => !deletedJobIds.has(String(job._id))));
+      setLastUpdated(new Date());
+      return;
+    }
+
+    const jobId = payload._id ? String(payload._id) : '';
+    if (!jobId) return;
+
+    setJobs(current => {
+      const existingIndex = current.findIndex(job => String(job._id) === jobId);
+      if (existingIndex === -1) {
+        return sortPublishJobs([payload, ...current]);
+      }
+
+      const next = [...current];
+      next[existingIndex] = mergeRealtimePublishJob(next[existingIndex], payload);
+      return sortPublishJobs(next);
+    });
+    setLastUpdated(new Date());
+  }, []);
+
   const getUploadControlRef = useCallback(pendingId => {
     const key = String(pendingId);
     if (!uploadControlsRef.current.has(key)) {
@@ -653,7 +707,7 @@ export default function PublishingPage() {
     loadPendingUploads(currentUser).catch(() => {});
 
     const socket = getSocket();
-    const handler = () => loadServerState().catch(() => {});
+    const handlePublishJobUpdate = payload => applyRealtimePublishUpdate(payload);
     const handleMediaUploadSession = async payload => {
       const uploadSession = payload?.uploadSession;
       if (!uploadSession?._id && !uploadSession?.uploadKey) {
@@ -684,19 +738,19 @@ export default function PublishingPage() {
     const handleConnect = () => setLiveTransport('socket');
     const handleDisconnect = () => setLiveTransport('polling');
     if (socket.connected) handleConnect();
-    socket.on('publishing:job_updated', handler);
+    socket.on('publishing:job_updated', handlePublishJobUpdate);
     socket.on('media:upload_session_updated', handleMediaUploadSession);
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleDisconnect);
     return () => {
-      socket.off('publishing:job_updated', handler);
+      socket.off('publishing:job_updated', handlePublishJobUpdate);
       socket.off('media:upload_session_updated', handleMediaUploadSession);
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleDisconnect);
     };
-  }, [loadPendingUploads, loadServerState]);
+  }, [applyRealtimePublishUpdate, loadPendingUploads, loadServerState]);
 
   useEffect(() => {
     const stopActiveControlForPending = (pendingId, { cancelled = false, paused = false } = {}) => {
@@ -726,33 +780,37 @@ export default function PublishingPage() {
       }
       loadPendingUploads().catch(() => {});
     });
-    const intervalId = window.setInterval(() => {
-      loadPendingUploads().catch(() => {});
-    }, 1000);
     const visibilityHandler = () => {
       if (document.visibilityState === 'visible') loadPendingUploads().catch(() => {});
     };
     document.addEventListener('visibilitychange', visibilityHandler);
     return () => {
       unsubscribe();
-      window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', visibilityHandler);
     };
   }, [loadPendingUploads]);
 
   useEffect(() => {
+    if (liveTransport === 'socket') return undefined;
+
     const refreshLiveServerState = () => {
       if (document.visibilityState !== 'visible') return;
       loadServerState().catch(() => {});
     };
     const intervalId = window.setInterval(refreshLiveServerState, 1000);
+    refreshLiveServerState();
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [liveTransport, loadServerState]);
+
+  useEffect(() => {
     const focusHandler = () => {
       loadServerState().catch(() => {});
       loadPendingUploads().catch(() => {});
     };
     window.addEventListener('focus', focusHandler);
     return () => {
-      window.clearInterval(intervalId);
       window.removeEventListener('focus', focusHandler);
     };
   }, [loadPendingUploads, loadServerState]);
