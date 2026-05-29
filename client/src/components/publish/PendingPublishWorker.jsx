@@ -125,11 +125,10 @@ const upsertTargetResult = (results, nextResult) => {
 export default function PendingPublishWorker({ user = null }) {
   const [sessionUser, setSessionUser] = useState(user || null);
   const activeUser = user || sessionUser;
-  const activeUserId = activeUser?._id || '';
-  const canRun = Boolean(activeUserId && canPublish(activeUser) && getToken());
   const activeUserRef = useRef(activeUser);
   const controlsRef = useRef(new Map());
   const activeIdsRef = useRef(new Set());
+  const scanRunningRef = useRef(false);
   const scanTimerRef = useRef(null);
   const scanIntervalRef = useRef(null);
   const retryTimerRef = useRef(null);
@@ -454,23 +453,31 @@ export default function PendingPublishWorker({ user = null }) {
   }, [continuePending]);
 
   const scanPendingUploads = useCallback(async () => {
-    const currentUser = activeUserRef.current || (getToken() ? getUser() : null);
-    if (currentUser?._id && !activeUserRef.current) activeUserRef.current = currentUser;
-    if (!currentUser?._id || !canPublish(currentUser) || !getToken()) return;
+    if (scanRunningRef.current || activeIdsRef.current.size > 0) return;
+    scanRunningRef.current = true;
 
-    const pendingItems = await getPendingPublishes().catch(() => []);
-    const ownedItems = pendingItems.filter(item => !item.userId || item.userId === currentUser._id);
-    const staleCompleted = ownedItems.filter(isPendingFullyHandedOff);
-    if (staleCompleted.length > 0) {
-      await Promise.allSettled(staleCompleted.flatMap(pending => [
-        ...pendingMediaItems(pending).filter(item => item.uploadKey).map(item => deleteUploadFile(item.uploadKey)),
-        deletePendingPublish(pending.id)
-      ]));
-    }
+    try {
+      const storedUser = getToken() ? getUser() : null;
+      const currentUser = storedUser || activeUserRef.current;
+      if (storedUser?._id) activeUserRef.current = storedUser;
+      if (!currentUser?._id || !canPublish(currentUser) || !getToken()) return;
 
-    const pending = ownedItems.find(item => shouldResumePending(item) && !activeIdsRef.current.has(String(item.id)));
-    if (pending) {
-      continuePendingRef.current?.({ ...pending });
+      const pendingItems = await getPendingPublishes().catch(() => []);
+      const ownedItems = pendingItems.filter(item => !item.userId || item.userId === currentUser._id);
+      const staleCompleted = ownedItems.filter(isPendingFullyHandedOff);
+      if (staleCompleted.length > 0) {
+        await Promise.allSettled(staleCompleted.flatMap(pending => [
+          ...pendingMediaItems(pending).filter(item => item.uploadKey).map(item => deleteUploadFile(item.uploadKey)),
+          deletePendingPublish(pending.id)
+        ]));
+      }
+
+      const pending = ownedItems.find(item => shouldResumePending(item) && !activeIdsRef.current.has(String(item.id)));
+      if (pending) {
+        await continuePendingRef.current?.({ ...pending });
+      }
+    } finally {
+      scanRunningRef.current = false;
     }
   }, []);
 
@@ -479,8 +486,6 @@ export default function PendingPublishWorker({ user = null }) {
   }, [scanPendingUploads]);
 
   useEffect(() => {
-    if (!canRun) return undefined;
-
     scheduleScan();
 
     const handleUploadEvent = event => {
@@ -517,8 +522,11 @@ export default function PendingPublishWorker({ user = null }) {
     const visibilityHandler = () => {
       if (document.visibilityState === 'visible') scheduleScan();
     };
+    const sessionHandler = () => scheduleScan();
 
     window.addEventListener('focus', focusHandler);
+    window.addEventListener('creatorops:session-changed', sessionHandler);
+    window.addEventListener('storage', sessionHandler);
     document.addEventListener('visibilitychange', visibilityHandler);
     scanIntervalRef.current = window.setInterval(() => {
       scheduleScan();
@@ -527,6 +535,8 @@ export default function PendingPublishWorker({ user = null }) {
     return () => {
       unsubscribe();
       window.removeEventListener('focus', focusHandler);
+      window.removeEventListener('creatorops:session-changed', sessionHandler);
+      window.removeEventListener('storage', sessionHandler);
       document.removeEventListener('visibilitychange', visibilityHandler);
       if (scanTimerRef.current) window.clearTimeout(scanTimerRef.current);
       if (scanIntervalRef.current) window.clearInterval(scanIntervalRef.current);
@@ -542,8 +552,9 @@ export default function PendingPublishWorker({ user = null }) {
       }
       controlsRef.current.clear();
       activeIdsRef.current.clear();
+      scanRunningRef.current = false;
     };
-  }, [activeUserId, canRun, scheduleScan]);
+  }, [scheduleScan]);
 
   return null;
 }
