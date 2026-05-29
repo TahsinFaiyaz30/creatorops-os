@@ -170,7 +170,7 @@ export default function PendingPublishWorker({ user = null }) {
     const timer = persistTimersRef.current.get(key);
     if (timer) window.clearTimeout(timer);
     persistTimersRef.current.delete(key);
-    await putPendingPublish(pending, { broadcast: false });
+    await putPendingPublish(pending);
   }, []);
 
   const persistPending = useCallback(async (pending, { immediate = true } = {}) => {
@@ -183,7 +183,7 @@ export default function PendingPublishWorker({ user = null }) {
       const timer = persistTimersRef.current.get(key);
       if (timer) window.clearTimeout(timer);
       persistTimersRef.current.delete(key);
-      await putPendingPublish(pending, { broadcast: false });
+      await putPendingPublish(pending);
       return;
     }
 

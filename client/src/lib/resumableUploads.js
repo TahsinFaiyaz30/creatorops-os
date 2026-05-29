@@ -370,7 +370,7 @@ export const mergePendingPublishRecords = (existing = null, incoming = {}) => {
   };
 };
 
-export const putPendingPublish = (pending, { broadcast = true } = {}) =>
+export const putPendingPublish = pending =>
   new Promise(async (resolve, reject) => {
     let db;
     let savedRecord;
@@ -387,7 +387,7 @@ export const putPendingPublish = (pending, { broadcast = true } = {}) =>
       getRequest.onerror = () => reject(getRequest.error);
       transaction.oncomplete = () => {
         db.close();
-        if (broadcast) broadcastPendingPublishUpdate(savedRecord || pending);
+        broadcastPendingPublishUpdate(savedRecord || pending);
         resolve(savedRecord || pending);
       };
       transaction.onerror = () => {
