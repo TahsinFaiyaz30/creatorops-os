@@ -37,12 +37,27 @@ const isPendingFullyHandedOff = pending => {
 const hasTargetFailure = pending =>
   (pending.results || []).some(result => !result.jobId && (result.ok === false || ['blocked', 'failed'].includes(result.status)));
 
+const isPendingItemCloudReady = item => item.mediaAssetId || item.status === 'completed';
+
 const shouldResumePending = pending => {
   if (!pending || pending.pauseReason === 'user') return false;
   if (isPendingFullyHandedOff(pending)) return false;
   if (hasTargetFailure(pending)) return false;
-  if (targetCountForPending(pending) <= 0) return false;
-  return pendingMediaItems(pending).some(item => !item.mediaAssetId) || acceptedTargetCountForPending(pending) < targetCountForPending(pending);
+
+  const items = pendingMediaItems(pending);
+  const pendingItems = items.filter(item => !isPendingItemCloudReady(item));
+  if (pendingItems.some(item => item.status === 'failed')) return false;
+
+  const hasUploadWork = pendingItems.some(item =>
+    ['waiting', 'uploading', 'interrupted'].includes(item.status || 'waiting')
+  );
+  const needsPlatformHandoff =
+    items.length > 0 &&
+    pendingItems.length === 0 &&
+    targetCountForPending(pending) > 0 &&
+    acceptedTargetCountForPending(pending) < targetCountForPending(pending);
+
+  return hasUploadWork || needsPlatformHandoff;
 };
 
 const getSessionMediaAssetId = session => session?.mediaAsset?._id || session?.mediaAsset?.id || '';
@@ -395,7 +410,7 @@ export default function PendingPublishWorker({ user = null }) {
       const acceptedCount = new Set(results.filter(result => result.jobId).map(result => result.targetKey)).size;
       const targetCount = targetCountForPending(pending);
 
-      if (targetCount > 0 && acceptedCount >= targetCount) {
+      if (targetCount === 0 || acceptedCount >= targetCount) {
         await cleanupPendingUploadRecord(pending);
       } else {
         await persistPending(pending);
