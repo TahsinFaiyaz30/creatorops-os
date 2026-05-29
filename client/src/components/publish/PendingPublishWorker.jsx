@@ -81,8 +81,7 @@ const markPendingInterrupted = pending => {
       ? item
       : {
           ...item,
-          status: item.sessionId ? 'interrupted' : 'waiting',
-          uploadSpeedBytesPerSecond: 0
+          status: item.sessionId ? 'interrupted' : 'waiting'
         }
   );
 };
@@ -131,7 +130,6 @@ export default function PendingPublishWorker({ user = null }) {
   const controlsRef = useRef(new Map());
   const activeIdsRef = useRef(new Set());
   const scanTimerRef = useRef(null);
-  const scanIntervalRef = useRef(null);
   const retryTimerRef = useRef(null);
   const persistTimersRef = useRef(new Map());
   const persistPayloadsRef = useRef(new Map());
@@ -407,7 +405,7 @@ export default function PendingPublishWorker({ user = null }) {
         await persistPending(pending);
       }
     } catch (error) {
-      if ((isUploadPausedError(error) && (controlRef.current.paused || pending.pauseReason === 'user')) || controlRef.current.paused) {
+      if (isUploadPausedError(error) || controlRef.current.paused) {
         pending.pauseReason = 'user';
         pending.mediaItems = pendingMediaItems(pending).map(item =>
           item.mediaAssetId || item.status === 'completed'
@@ -418,18 +416,6 @@ export default function PendingPublishWorker({ user = null }) {
               }
         );
         await persistPending(pending).catch(() => {});
-        return;
-      }
-
-      if (isUploadPausedError(error)) {
-        markPendingInterrupted(pending);
-        await persistPending(pending).catch(() => {});
-        shouldScanAfterFinish = false;
-        if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
-        retryTimerRef.current = window.setTimeout(() => {
-          retryTimerRef.current = null;
-          scheduleScan();
-        }, 5000);
         return;
       }
 
@@ -498,9 +484,6 @@ export default function PendingPublishWorker({ user = null }) {
     if (!canRun) return undefined;
 
     scheduleScan();
-    scanIntervalRef.current = window.setInterval(() => {
-      scheduleScan();
-    }, 1000);
 
     const handleUploadEvent = event => {
       const pendingId = event.pendingId ? String(event.pendingId) : '';
@@ -545,9 +528,7 @@ export default function PendingPublishWorker({ user = null }) {
       window.removeEventListener('focus', focusHandler);
       document.removeEventListener('visibilitychange', visibilityHandler);
       if (scanTimerRef.current) window.clearTimeout(scanTimerRef.current);
-      if (scanIntervalRef.current) window.clearInterval(scanIntervalRef.current);
       if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
-      scanIntervalRef.current = null;
       for (const timer of persistTimersRef.current.values()) {
         window.clearTimeout(timer);
       }

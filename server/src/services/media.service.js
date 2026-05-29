@@ -27,7 +27,7 @@ const createHttpError = (message, statusCode) => {
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 const MIN_S3_MULTIPART_PART_BYTES = 5 * 1024 * 1024;
-const CHUNK_UPLOAD_LEASE_MS = 30 * 1000;
+const CHUNK_UPLOAD_LEASE_MS = 5 * 60 * 1000;
 
 export const detectMediaType = mimeType => {
   if (mimeType?.startsWith('image/')) return 'image';
@@ -181,21 +181,14 @@ const emitMediaUploadSessionUpdated = (session, eventType = 'updated') => {
     .catch(() => {});
 };
 
-const isChunkLeaseStale = (session, now = new Date()) => {
-  if (!session?.chunkLease?.token) return false;
-  const expiresAt = session.chunkLease.expiresAt ? new Date(session.chunkLease.expiresAt).getTime() : 0;
-  const startedAt = session.chunkLease.startedAt ? new Date(session.chunkLease.startedAt).getTime() : 0;
-  return (
-    (expiresAt > 0 && expiresAt <= now.getTime()) ||
-    (startedAt > 0 && startedAt <= now.getTime() - CHUNK_UPLOAD_LEASE_MS)
-  );
-};
+const getUploadSession = async ({ user, sessionId }) => {
+  const session = await MediaUploadSession.findOne({
+    _id: sessionId,
+    workspaceId: user.workspaceId,
+    uploadedBy: user._id
+  });
 
-const releaseStaleChunkLease = async session => {
-  if (!isChunkLeaseStale(session)) return session;
-  session.chunkLease = { token: '', startedAt: null, expiresAt: null };
-  await session.save();
-  emitMediaUploadSessionUpdated(session, 'stale_chunk_released');
+  if (!session) throw createHttpError('Upload session not found.', 404);
   return session;
 };
 
@@ -225,13 +218,12 @@ export const startResumableMediaUpload = async ({ user, input = {} }) => {
     workspaceId: user.workspaceId,
     uploadedBy: user._id,
     uploadKey
-  }).select('+objectKey +multipartUploadId +multipartParts +chunkLease');
+  }).select('+objectKey +multipartUploadId +multipartParts');
 
   if (existing) {
     if (['cancelled', 'failed'].includes(existing.status)) {
       await discardUploadSession(existing);
     } else {
-      await releaseStaleChunkLease(existing);
       emitMediaUploadSessionUpdated(existing, 'resumed_existing');
       return serializeUploadSession(existing);
     }
@@ -359,14 +351,12 @@ const finalizeUploadSession = async ({ user, session }) => {
 };
 
 export const getResumableMediaUpload = async ({ user, sessionId }) => {
-  const session = await getSessionWithStorage({ user, sessionId });
-  await releaseStaleChunkLease(session);
+  const session = await getUploadSession({ user, sessionId });
   return serializeUploadSession(session);
 };
 
 const acquireChunkUploadLease = async ({ user, session, range }) => {
   const now = new Date();
-  const staleStartedBefore = new Date(now.getTime() - CHUNK_UPLOAD_LEASE_MS);
   const leaseToken = crypto.randomUUID();
   const leaseExpiresAt = new Date(now.getTime() + CHUNK_UPLOAD_LEASE_MS);
   const lockedSession = await MediaUploadSession.findOneAndUpdate(
@@ -380,8 +370,7 @@ const acquireChunkUploadLease = async ({ user, session, range }) => {
         { 'chunkLease.token': '' },
         { 'chunkLease.token': { $exists: false } },
         { 'chunkLease.expiresAt': null },
-        { 'chunkLease.expiresAt': { $lte: now } },
-        { 'chunkLease.startedAt': { $lte: staleStartedBefore } }
+        { 'chunkLease.expiresAt': { $lte: now } }
       ]
     },
     {
@@ -521,10 +510,9 @@ export const uploadResumableMediaChunk = async ({ user, sessionId, contentRange,
 };
 
 export const pauseResumableMediaUpload = async ({ user, sessionId }) => {
-  const session = await getSessionWithStorage({ user, sessionId });
+  const session = await getUploadSession({ user, sessionId });
   if (session.status === 'uploading') {
     session.status = 'paused';
-    session.chunkLease = { token: '', startedAt: null, expiresAt: null };
     await session.save();
     emitMediaUploadSessionUpdated(session, 'paused');
   }
@@ -532,11 +520,9 @@ export const pauseResumableMediaUpload = async ({ user, sessionId }) => {
 };
 
 export const resumeResumableMediaUpload = async ({ user, sessionId }) => {
-  const session = await getSessionWithStorage({ user, sessionId });
-  await releaseStaleChunkLease(session);
+  const session = await getUploadSession({ user, sessionId });
   if (session.status === 'paused') {
     session.status = 'uploading';
-    session.chunkLease = { token: '', startedAt: null, expiresAt: null };
     await session.save();
     emitMediaUploadSessionUpdated(session, 'resumed');
   }
