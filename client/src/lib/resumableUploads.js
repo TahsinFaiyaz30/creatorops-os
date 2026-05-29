@@ -464,7 +464,15 @@ export const uploadFileResumable = async ({
   if (!file) throw new Error('A local file is required for resumable upload.');
 
   const startPayload = sessionId
-    ? await resumeUploadSession(sessionId).catch(() => getUploadSession(sessionId))
+    ? await resumeUploadSession(sessionId).catch(async resumeError => {
+        const currentPayload = await getUploadSession(sessionId);
+        const currentSession = currentPayload.data.uploadSession;
+        if (currentSession?.status === 'paused') {
+          resumeError.code = resumeError.code || 'UPLOAD_RESUME_FAILED';
+          throw resumeError;
+        }
+        return currentPayload;
+      })
     : await api.post('/api/media/resumable/start', {
         uploadKey,
         originalName: file.name,
