@@ -7,6 +7,7 @@ const FILE_STORE = 'files';
 const PUBLISH_STORE = 'pendingPublishes';
 const DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024;
 const UPLOAD_EVENTS_CHANNEL = 'creatorops-upload-events';
+const UPLOAD_EVENTS_WINDOW_EVENT = 'creatorops:upload-state-changed';
 const UPLOAD_WORKER_OWNER_KEY = 'creatorops-upload-worker-owner';
 const UPLOAD_WORKER_LOCK_PREFIX = 'creatorops-upload-worker';
 const UPLOAD_WORKER_LOCK_LEASE_MS = 30000;
@@ -22,12 +23,16 @@ const getUploadEventsChannel = () => {
 };
 
 const broadcastUploadStateChange = payload => {
-  const channel = getUploadEventsChannel();
-  if (!channel) return;
-  channel.postMessage({
+  const message = {
     ...payload,
     emittedAt: new Date().toISOString()
-  });
+  };
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(UPLOAD_EVENTS_WINDOW_EVENT, { detail: message }));
+  }
+  const channel = getUploadEventsChannel();
+  if (!channel) return;
+  channel.postMessage(message);
 };
 
 export const broadcastPendingPublishUpdate = pending => {
@@ -41,10 +46,18 @@ export const broadcastPendingPublishUpdate = pending => {
 
 export const subscribeUploadStateChanges = handler => {
   const channel = getUploadEventsChannel();
-  if (!channel) return () => {};
-  const listener = event => handler(event.data || {});
-  channel.addEventListener('message', listener);
-  return () => channel.removeEventListener('message', listener);
+  const channelListener = event => handler(event.data || {});
+  const windowListener = event => handler(event.detail || {});
+  channel?.addEventListener('message', channelListener);
+  if (typeof window !== 'undefined') {
+    window.addEventListener(UPLOAD_EVENTS_WINDOW_EVENT, windowListener);
+  }
+  return () => {
+    channel?.removeEventListener('message', channelListener);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener(UPLOAD_EVENTS_WINDOW_EVENT, windowListener);
+    }
+  };
 };
 
 const createRandomId = prefix => {
