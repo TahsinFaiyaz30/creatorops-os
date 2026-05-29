@@ -531,7 +531,7 @@ export default function ComposePage() {
       window.clearTimeout(pendingPersistTimerRef.current);
       pendingPersistTimerRef.current = null;
     }
-    await putPendingPublish(pending);
+    await putPendingPublish(pending, { broadcast: false });
   };
 
   const persistPending = async (pending, { immediate = true } = {}) => {
@@ -545,7 +545,7 @@ export default function ComposePage() {
         window.clearTimeout(pendingPersistTimerRef.current);
         pendingPersistTimerRef.current = null;
       }
-      await putPendingPublish(pending);
+      await putPendingPublish(pending, { broadcast: false });
       return;
     }
 
@@ -1147,8 +1147,7 @@ export default function ComposePage() {
           setPendingUploadNotice('Media upload is paused. It will not resume automatically.');
           return;
         }
-        setPendingUploadNotice('Resuming interrupted media upload...');
-        continuePendingPublish(pending).catch(() => {});
+        setPendingUploadNotice('Interrupted media upload will continue in the background.');
       })
       .catch(() => {});
     return () => {

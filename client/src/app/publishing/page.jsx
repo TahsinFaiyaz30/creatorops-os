@@ -558,15 +558,6 @@ const isMissingUploadFileError = error => error?.code === 'UPLOAD_FILE_UNAVAILAB
 
 const isUploadSessionFailedError = error => error?.code === 'UPLOAD_SESSION_FAILED';
 
-const shouldAutoResumePending = pending => {
-  if (!pending || pending.pauseReason === 'user') return false;
-  if (isPendingFullyHandedOff(pending)) return false;
-  const needsReview = (pending.results || []).some(result => !result.jobId && (result.ok === false || ['blocked', 'failed'].includes(result.status)));
-  if (needsReview) return false;
-  const progress = getPendingProgress(pending);
-  return ['waiting_upload', 'uploading_client', 'interrupted_upload', 'verifying_upload'].includes(progress.status);
-};
-
 const upsertTargetResult = (results, nextResult) => {
   const existingIndex = results.findIndex(result => result.targetKey === nextResult.targetKey);
   if (existingIndex === -1) return [...results, nextResult];
@@ -592,7 +583,6 @@ export default function PublishingPage() {
   const [liveTransport, setLiveTransport] = useState('connecting');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const uploadControlsRef = useRef(new Map());
-  const autoResumeIdsRef = useRef(new Set());
   const pendingPersistTimersRef = useRef(new Map());
   const pendingPersistPayloadsRef = useRef(new Map());
   const serverRefreshTimerRef = useRef(null);
@@ -623,7 +613,7 @@ export default function PublishingPage() {
     const timer = pendingPersistTimersRef.current.get(key);
     if (timer) window.clearTimeout(timer);
     pendingPersistTimersRef.current.delete(key);
-    await putPendingPublish(pending);
+    await putPendingPublish(pending, { broadcast: false });
   }, []);
 
   const persistPendingUpload = useCallback(async (pending, { immediate = true } = {}) => {
@@ -637,7 +627,7 @@ export default function PublishingPage() {
       const timer = pendingPersistTimersRef.current.get(key);
       if (timer) window.clearTimeout(timer);
       pendingPersistTimersRef.current.delete(key);
-      await putPendingPublish(pending);
+      await putPendingPublish(pending, { broadcast: false });
       return;
     }
 
@@ -774,7 +764,7 @@ export default function PublishingPage() {
       }
 
       const pendingItems = await getPendingPublishes().catch(() => []);
-      let changed = false;
+      const changedPendingItems = [];
       for (const pending of pendingItems) {
         const item = pendingMediaItems(pending).find(mediaItem =>
           (uploadSession._id && mediaItem.sessionId === uploadSession._id) ||
@@ -785,12 +775,11 @@ export default function PublishingPage() {
         if (item.mediaAssetId && item.uploadKey) {
           deleteUploadFile(item.uploadKey).catch(() => {});
         }
-        await putPendingPublish(pending).catch(() => {});
-        changed = true;
+        changedPendingItems.push(pending);
       }
 
-      if (changed) {
-        for (const pending of pendingItems) {
+      if (changedPendingItems.length > 0) {
+        for (const pending of changedPendingItems) {
           upsertPendingUploadState(pending);
         }
       }
@@ -1308,29 +1297,6 @@ export default function PublishingPage() {
       await loadPendingUploads().catch(() => {});
     }
   };
-
-  useEffect(() => {
-    if (!canManage || busyKey) return;
-    const pending = pendingUploads.find(item => {
-      const pendingId = String(item.id);
-      return (
-        shouldAutoResumePending(item) &&
-        !autoResumeIdsRef.current.has(pendingId) &&
-        !uploadControlsRef.current.has(pendingId)
-      );
-    });
-    if (!pending) return;
-
-    const pendingId = String(pending.id);
-    autoResumeIdsRef.current.add(pendingId);
-    window.setTimeout(() => {
-      resumePendingUpload({ ...pending })
-        .catch(err => setMessage(err.message))
-        .finally(() => {
-          autoResumeIdsRef.current.delete(pendingId);
-        });
-    }, 0);
-  }, [busyKey, canManage, pendingUploads]);
 
   const deleteDispatchTarget = async ({ target, targets = [] }) => {
     const targetId = target.kind === 'group' ? target.group.id : target.job._id;

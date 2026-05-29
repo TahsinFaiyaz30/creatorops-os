@@ -1,5 +1,6 @@
 import './globals.css';
 import ThemeProvider from '../components/layout/ThemeProvider';
+import PendingPublishWorker from '../components/publish/PendingPublishWorker';
 
 export const metadata = {
   title: 'CreatorOps OS',
@@ -24,6 +25,7 @@ export default function RootLayout({ children }) {
       </head>
       <body suppressHydrationWarning>
         <ThemeProvider>
+          <PendingPublishWorker />
           {children}
         </ThemeProvider>
       </body>
