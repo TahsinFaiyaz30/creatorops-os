@@ -347,6 +347,10 @@ export default function PendingPublishWorker({ user = null }) {
       const lockResult = await runWithUploadWorkerLock(pending.id, () =>
         continuePending(pending, { skipLock: true })
       );
+      if (!lockResult.acquired) {
+        scheduleScan(1000);
+        return;
+      }
       return lockResult.value;
     }
 
@@ -358,6 +362,7 @@ export default function PendingPublishWorker({ user = null }) {
       current: {
         paused: false,
         cancelled: false,
+        interrupted: false,
         abortController: null,
         currentSessionId: '',
         stopOnPause: true
@@ -530,7 +535,7 @@ export default function PendingPublishWorker({ user = null }) {
       persistTimersRef.current.clear();
       persistPayloadsRef.current.clear();
       for (const controlRef of controlsRef.current.values()) {
-        controlRef.current.cancelled = true;
+        controlRef.current.interrupted = true;
         controlRef.current.abortController?.abort();
       }
       controlsRef.current.clear();
