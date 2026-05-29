@@ -19,6 +19,7 @@ import {
 } from '../../lib/resumableUploads';
 
 const pendingMediaItems = pending => Array.isArray(pending?.mediaItems) ? pending.mediaItems : [];
+const GLOBAL_UPLOAD_SCAN_INTERVAL_MS = 1000;
 
 const getConnectionTargetKey = connection =>
   connection.targetKey || `${connection.platformConnectionId || connection._id || 'connection'}:${connection.platform || 'platform'}`;
@@ -130,6 +131,7 @@ export default function PendingPublishWorker({ user = null }) {
   const controlsRef = useRef(new Map());
   const activeIdsRef = useRef(new Set());
   const scanTimerRef = useRef(null);
+  const scanIntervalRef = useRef(null);
   const retryTimerRef = useRef(null);
   const persistTimersRef = useRef(new Map());
   const persistPayloadsRef = useRef(new Map());
@@ -452,7 +454,8 @@ export default function PendingPublishWorker({ user = null }) {
   }, [continuePending]);
 
   const scanPendingUploads = useCallback(async () => {
-    const currentUser = activeUserRef.current;
+    const currentUser = activeUserRef.current || (getToken() ? getUser() : null);
+    if (currentUser?._id && !activeUserRef.current) activeUserRef.current = currentUser;
     if (!currentUser?._id || !canPublish(currentUser) || !getToken()) return;
 
     const pendingItems = await getPendingPublishes().catch(() => []);
@@ -517,12 +520,16 @@ export default function PendingPublishWorker({ user = null }) {
 
     window.addEventListener('focus', focusHandler);
     document.addEventListener('visibilitychange', visibilityHandler);
+    scanIntervalRef.current = window.setInterval(() => {
+      scheduleScan();
+    }, GLOBAL_UPLOAD_SCAN_INTERVAL_MS);
 
     return () => {
       unsubscribe();
       window.removeEventListener('focus', focusHandler);
       document.removeEventListener('visibilitychange', visibilityHandler);
       if (scanTimerRef.current) window.clearTimeout(scanTimerRef.current);
+      if (scanIntervalRef.current) window.clearInterval(scanIntervalRef.current);
       if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
       for (const timer of persistTimersRef.current.values()) {
         window.clearTimeout(timer);
