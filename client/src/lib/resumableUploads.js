@@ -580,12 +580,6 @@ export const uploadFileResumable = async ({
       onSession?.(nextSession);
       onProgress?.(nextSession);
     } catch (error) {
-      if (isAbortError(error) && controlRef?.current?.interrupted) {
-        const interruptedError = new Error('Upload interrupted.');
-        interruptedError.code = 'UPLOAD_INTERRUPTED';
-        throw interruptedError;
-      }
-
       if (isAbortError(error) && (controlRef?.current?.paused || controlRef?.current?.cancelled)) {
         continue;
       }
