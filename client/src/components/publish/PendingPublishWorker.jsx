@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
-import { getToken, getUser } from '../../lib/auth';
+import { getToken, getUser, getUserId } from '../../lib/auth';
 import { canPublish } from '../../lib/roles';
 import {
   broadcastPendingPublishUpdate,
@@ -475,10 +475,11 @@ export default function PendingPublishWorker({ user = null }) {
       const storedUser = getToken() ? getUser() : null;
       const currentUser = storedUser || activeUserRef.current;
       if (storedUser?._id) activeUserRef.current = storedUser;
-      if (!currentUser?._id || !canPublish(currentUser) || !getToken()) return;
+      const currentUserId = getUserId(currentUser);
+      if (!currentUserId || !canPublish(currentUser) || !getToken()) return;
 
       const pendingItems = await getPendingPublishes().catch(() => []);
-      const ownedItems = pendingItems.filter(item => !item.userId || item.userId === currentUser._id);
+      const ownedItems = pendingItems.filter(item => !item.userId || item.userId === currentUserId);
       const staleCompleted = ownedItems.filter(isPendingFullyHandedOff);
       if (staleCompleted.length > 0) {
         await Promise.allSettled(staleCompleted.flatMap(pending => [

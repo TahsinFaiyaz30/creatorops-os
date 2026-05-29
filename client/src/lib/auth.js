@@ -43,6 +43,23 @@ const emitSessionChange = () => {
   window.dispatchEvent(new Event('creatorops:session-changed'));
 };
 
+const normalizeSessionUser = user => {
+  if (!user) return null;
+  const userId = user._id || user.id || user.userId || '';
+  const normalized = {
+    ...user,
+    roles: normalizeRoles(user),
+    role: primaryRole(user)
+  };
+  if (userId) {
+    normalized.id = user.id || userId;
+    normalized._id = user._id || userId;
+  }
+  return normalized;
+};
+
+export const getUserId = user => String(user?._id || user?.id || user?.userId || '');
+
 export const getToken = () => {
   if (typeof window === 'undefined') return null;
   return getStorage()?.getItem(TOKEN_KEY) || readCookie(TOKEN_KEY) || memoryToken;
@@ -55,15 +72,15 @@ export const getUser = () => {
 
   try {
     const user = JSON.parse(raw);
-    return user ? { ...user, roles: normalizeRoles(user), role: primaryRole(user) } : null;
+    return normalizeSessionUser(user);
   } catch (_error) {
-    return memoryUser ? { ...memoryUser, roles: normalizeRoles(memoryUser), role: primaryRole(memoryUser) } : null;
+    return normalizeSessionUser(memoryUser);
   }
 };
 
 export const saveSession = ({ token, user }) => {
   memoryToken = token;
-  memoryUser = user ? { ...user, roles: normalizeRoles(user), role: primaryRole(user) } : user;
+  memoryUser = normalizeSessionUser(user);
   const serializedUser = JSON.stringify(memoryUser);
   const storage = getStorage();
   storage?.setItem(TOKEN_KEY, token);

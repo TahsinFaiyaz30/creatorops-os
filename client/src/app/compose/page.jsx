@@ -6,7 +6,7 @@ import { CalendarClock, ImagePlus, Sparkles, Send, X, Trash2, CheckCircle2, Aler
 import AppShell from '../../components/layout/AppShell';
 import VisibilitySelector from '../../components/publish/VisibilitySelector';
 import { api } from '../../lib/api';
-import { getUser } from '../../lib/auth';
+import { getUser, getUserId } from '../../lib/auth';
 import { formatDuration } from '../../lib/duration';
 import { formatPlatform, getPlatformCaptionLimit, getPlatformDetails, platformCapabilities } from '../../lib/platforms';
 import { canPublish } from '../../lib/roles';
@@ -625,7 +625,7 @@ export default function ComposePage() {
       }
 
       const sha256 = await sha256File(asset.file);
-      const uploadKey = createUploadKey({ userId: user?._id, postGroupId, localId: asset._id, file: asset.file, sha256 });
+      const uploadKey = createUploadKey({ userId: getUserId(user), postGroupId, localId: asset._id, file: asset.file, sha256 });
       await putUploadFile(uploadKey, asset.file);
       mediaItems.push({
         localId: asset._id,
@@ -647,7 +647,7 @@ export default function ComposePage() {
 
     const pending = {
       id: postGroupId,
-      userId: user?._id || '',
+      userId: getUserId(user),
       createdAt: new Date().toISOString(),
       mode,
       endpoint: mode === 'now' ? '/api/publish/now' : '/api/publish/schedule',
@@ -1133,12 +1133,13 @@ export default function ComposePage() {
   }, []);
 
   useEffect(() => {
-    if (!user?._id || busy) return;
+    const userId = getUserId(user);
+    if (!userId || busy) return;
     let mounted = true;
     getPendingPublishes()
       .then(pendingItems => {
         if (!mounted) return;
-        const pending = pendingItems.find(item => item.userId === user._id);
+        const pending = pendingItems.find(item => !item.userId || item.userId === userId);
         if (!pending) return;
         currentPendingRef.current = pending;
         updateUploadQueueFromPending(pending);
@@ -1158,7 +1159,7 @@ export default function ComposePage() {
         retryTimerRef.current = null;
       }
     };
-  }, [user?._id]);
+  }, [user?.id, user?._id, busy]);
 
   const hasPendingUpload = uploadQueue.some(item => item.status !== 'completed');
   const uploading = uploadQueue.some(item => ['waiting', 'uploading', 'paused', 'interrupted'].includes(item.status));

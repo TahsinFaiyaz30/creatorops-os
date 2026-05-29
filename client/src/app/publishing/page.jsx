@@ -25,7 +25,7 @@ import {
 import AppShell from '../../components/layout/AppShell';
 import { api } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
-import { getUser } from '../../lib/auth';
+import { getUser, getUserId } from '../../lib/auth';
 import { formatDuration } from '../../lib/duration';
 import { formatPlatform } from '../../lib/platforms';
 import { canPublish } from '../../lib/roles';
@@ -727,8 +727,9 @@ export default function PublishingPage() {
   const loadPendingUploads = useCallback(async currentUser => {
     try {
       const owner = currentUser || user;
+      const ownerId = getUserId(owner);
       const pendingItems = await getPendingPublishes();
-      const ownedPendingItems = pendingItems.filter(item => !owner?._id || !item.userId || item.userId === owner._id);
+      const ownedPendingItems = pendingItems.filter(item => !ownerId || !item.userId || item.userId === ownerId);
       const staleCompletedItems = ownedPendingItems.filter(isPendingFullyHandedOff);
       if (staleCompletedItems.length > 0) {
         await Promise.allSettled(
@@ -749,7 +750,7 @@ export default function PublishingPage() {
     } catch (err) {
       setPendingUploadError(err.message || 'Unable to read resumable upload state in this browser.');
     }
-  }, [user?._id]);
+  }, [user?.id, user?._id]);
 
   const load = useCallback(async () => {
     await Promise.all([
