@@ -265,6 +265,7 @@ The app never asks for social media passwords.
 
 Health:
 
+- `GET /` redirects to `CLIENT_URL`
 - `GET /health`
 
 Auth:
