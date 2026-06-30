@@ -71,6 +71,7 @@ const applyUploadSessionToPendingItem = (item, session, { forceSpeedZero = true 
   item.bytesSent = session.status === 'uploading'
     ? Math.max(Number(item.bytesSent || 0), sentBytes, verifiedBytes)
     : verifiedBytes;
+  item.storageHardDeleteAt = session.storageHardDeleteAt || item.storageHardDeleteAt || '';
   item.status = session.status || item.status || 'waiting';
   item.failureReason = session.failureReason || item.failureReason || '';
   if (forceSpeedZero) item.uploadSpeedBytesPerSecond = 0;

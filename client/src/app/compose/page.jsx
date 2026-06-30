@@ -29,6 +29,14 @@ import {
 } from '../../lib/resumableUploads';
 import Cropper from 'react-easy-crop';
 
+const DEFAULT_RETRY_RETENTION_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_STORAGE_HARD_DELETE_SECONDS = 30 * 24 * 60 * 60;
+
+const getUploadHardDeleteSeconds = settings =>
+  settings?.temporaryUploadHardDeleteSeconds ??
+  settings?.temporaryMediaStorageHardDeleteSeconds ??
+  DEFAULT_STORAGE_HARD_DELETE_SECONDS;
+
 const aspectOptions = [
   { label: '9:16', value: '9:16', className: 'aspect-[9/16]' },
   { label: '1:1', value: '1:1', className: 'aspect-square' },
@@ -79,6 +87,7 @@ const applyUploadSessionToPendingItem = (item, session, { forceSpeedZero = true 
   item.bytesSent = session.status === 'uploading'
     ? Math.max(Number(item.bytesSent || 0), sentBytes, verifiedBytes)
     : verifiedBytes;
+  item.storageHardDeleteAt = session.storageHardDeleteAt || item.storageHardDeleteAt || '';
   item.status = session.status || item.status || 'waiting';
   item.failureReason = session.failureReason || item.failureReason || '';
   if (forceSpeedZero) item.uploadSpeedBytesPerSecond = 0;
@@ -208,7 +217,11 @@ export default function ComposePage() {
   const [message, setMessage] = useState('');
   const [publishResults, setPublishResults] = useState([]);
   const [busy, setBusy] = useState('');
-  const [publishSettings, setPublishSettings] = useState({ temporaryMediaRetentionSeconds: 7 * 24 * 60 * 60 });
+  const [publishSettings, setPublishSettings] = useState({
+    temporaryMediaRetentionSeconds: DEFAULT_RETRY_RETENTION_SECONDS,
+    temporaryMediaStorageHardDeleteSeconds: DEFAULT_STORAGE_HARD_DELETE_SECONDS,
+    temporaryUploadHardDeleteSeconds: DEFAULT_STORAGE_HARD_DELETE_SECONDS
+  });
   const [uploadQueue, setUploadQueue] = useState([]);
   const [pendingUploadNotice, setPendingUploadNotice] = useState('');
   const [isUploadPaused, setIsUploadPaused] = useState(false);
@@ -249,7 +262,10 @@ export default function ComposePage() {
     () => connections.filter(connection => selectedIds.includes(connection.targetKey)),
     [connections, selectedIds]
   );
-  const temporaryMediaRetentionLabel = formatDuration(publishSettings.temporaryMediaRetentionSeconds);
+  const temporaryMediaRetentionLabel = formatDuration(publishSettings.temporaryMediaRetentionSeconds ?? DEFAULT_RETRY_RETENTION_SECONDS);
+  const temporaryMediaHardDeleteLabel = formatDuration(
+    getUploadHardDeleteSeconds(publishSettings)
+  );
 
   const updateActiveSettings = (updates) => {
     if (!activeAsset) return;
@@ -1174,7 +1190,7 @@ export default function ComposePage() {
             Select multiple media files, manage cover and aspect ratios, customize captions with AI, and intelligently deploy to supported platforms. Media uploads only start when you publish or schedule.
           </p>
           <p className="mt-3 max-w-4xl rounded-xl border border-gold/30 bg-gold/10 p-3 text-sm text-gold">
-            Temporary publish media is auto-deleted after {temporaryMediaRetentionLabel} once every platform in the post group is no longer queued, publishing, or paused. Retry is unavailable after the media expires.
+            Temporary publish media is removed from retry storage after {temporaryMediaRetentionLabel} once every platform in the post group is no longer queued, publishing, or paused. Storage hard-deletes temporary uploads and cloud media after {temporaryMediaHardDeleteLabel} from upload start even if work is still active, and retry becomes unavailable after deletion.
           </p>
         </header>
 

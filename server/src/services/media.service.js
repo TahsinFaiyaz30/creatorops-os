@@ -16,18 +16,29 @@ import {
   getStoredObjectUrl,
   uploadResumableObjectPart
 } from './mediaStorage.service.js';
-import { getTemporaryMediaRetentionSeconds } from './systemSettings.service.js';
+import {
+  getTemporaryMediaRetentionSeconds,
+  getTemporaryMediaStorageHardDeleteSeconds
+} from './systemSettings.service.js';
+import {
+  calculateTemporaryUploadHardDeleteAt,
+  TEMPORARY_UPLOAD_SESSION_PRUNE_SECONDS
+} from './temporaryMediaLifecycle.js';
 import { emitRealtimeEvent } from '../sockets/socket.js';
 
-const createHttpError = (message, statusCode) => {
+const createHttpError = (message, statusCode, code = '') => {
   const error = new Error(message);
   error.statusCode = statusCode;
+  if (code) error.code = code;
   return error;
 };
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 const MIN_S3_MULTIPART_PART_BYTES = 5 * 1024 * 1024;
 const CHUNK_UPLOAD_LEASE_MS = 5 * 60 * 1000;
+export const TEMPORARY_UPLOAD_STORAGE_EXPIRED_MESSAGE = 'Temporary upload storage expired and was deleted. Start a new upload to publish this media.';
+const TEMPORARY_MEDIA_CLEANUP_MESSAGE = 'Temporary publish media was deleted after its cleanup window ended. Start a new upload to publish this media again.';
+const EXPIRABLE_UPLOAD_SESSION_STATUSES = ['uploading', 'paused'];
 
 export const detectMediaType = mimeType => {
   if (mimeType?.startsWith('image/')) return 'image';
@@ -111,6 +122,14 @@ const createMediaAssetFromCompletedUpload = async ({ user, session, sha256 }) =>
   const cropMetadata = parseJsonField(session.cropMetadata);
   const storageIntent = session.storageIntent === 'temporary_publish' ? 'temporary_publish' : 'library';
   const retentionSeconds = storageIntent === 'temporary_publish' ? await getTemporaryMediaRetentionSeconds() : 0;
+  const hardDeleteSeconds = storageIntent === 'temporary_publish' ? await getTemporaryMediaStorageHardDeleteSeconds() : 0;
+  const now = Date.now();
+  const storageHardDeleteAt = storageIntent === 'temporary_publish'
+    ? new Date(session.storageHardDeleteAt || calculateTemporaryUploadHardDeleteAt({
+      startedAt: session.createdAt || now,
+      hardDeleteSeconds
+    }))
+    : null;
   const publicUrl = await getStoredObjectUrl({
     storageProvider: session.storageProvider,
     objectKey: session.objectKey
@@ -137,7 +156,8 @@ const createMediaAssetFromCompletedUpload = async ({ user, session, sha256 }) =>
     ...(cropMetadata ? { cropMetadata } : {}),
     storageIntent,
     cleanupGroupId: storageIntent === 'temporary_publish' ? String(session.cleanupGroupId || '').trim() : '',
-    cleanupAt: storageIntent === 'temporary_publish' ? new Date(Date.now() + retentionSeconds * 1000) : null
+    cleanupAt: storageIntent === 'temporary_publish' ? new Date(now + retentionSeconds * 1000) : null,
+    storageHardDeleteAt
   });
 };
 
@@ -162,6 +182,7 @@ const serializeUploadSession = async session => {
     expectedSha256: populated.expectedSha256,
     actualSha256: populated.actualSha256,
     bytesReceived: populated.bytesReceived,
+    storageHardDeleteAt: populated.storageHardDeleteAt,
     status: populated.status,
     failureReason: populated.failureReason,
     mediaAsset: populated.mediaAssetId || null
@@ -200,6 +221,59 @@ const discardUploadSession = async session => {
   await session.deleteOne();
 };
 
+const getUploadSessionStorageHardDeleteAt = async session => {
+  if (session.storageIntent !== 'temporary_publish') return null;
+  if (session.storageHardDeleteAt) return new Date(session.storageHardDeleteAt);
+
+  const hardDeleteSeconds = await getTemporaryMediaStorageHardDeleteSeconds();
+  return calculateTemporaryUploadHardDeleteAt({
+    startedAt: session.createdAt,
+    hardDeleteSeconds
+  });
+};
+
+const expireTemporaryUploadSession = async ({ session, now = new Date() }) => {
+  await abortResumableObjectUpload(session);
+  await deleteStoredObject({
+    objectKey: session.objectKey
+  });
+
+  session.status = 'failed';
+  session.failureReason = TEMPORARY_UPLOAD_STORAGE_EXPIRED_MESSAGE;
+  session.publicUrl = '';
+  session.multipartUploadId = '';
+  session.multipartParts = [];
+  session.chunkLease = { token: '', startedAt: null, expiresAt: null };
+  session.storageHardDeleteAt = session.storageHardDeleteAt || now;
+  await session.save();
+  emitMediaUploadSessionUpdated(session, 'failed');
+};
+
+const expireTemporaryUploadSessionIfNeeded = async ({ session, now = new Date() }) => {
+  if (session.storageIntent !== 'temporary_publish' || !EXPIRABLE_UPLOAD_SESSION_STATUSES.includes(session.status)) {
+    return false;
+  }
+
+  const storageHardDeleteAt = await getUploadSessionStorageHardDeleteAt(session);
+  if (!storageHardDeleteAt || storageHardDeleteAt > now) {
+    if (!session.storageHardDeleteAt && storageHardDeleteAt) {
+      session.storageHardDeleteAt = storageHardDeleteAt;
+      await session.save();
+    }
+    return false;
+  }
+
+  await expireTemporaryUploadSession({ session, now });
+  return true;
+};
+
+const assertTemporaryUploadSessionNotExpired = async session => {
+  const expired = await expireTemporaryUploadSessionIfNeeded({ session });
+  if (expired) {
+    throw createHttpError(TEMPORARY_UPLOAD_STORAGE_EXPIRED_MESSAGE, 410, 'TEMPORARY_UPLOAD_STORAGE_EXPIRED');
+  }
+};
+
 export const startResumableMediaUpload = async ({ user, input = {} }) => {
   const originalName = String(input.originalName || '').trim();
   const mimeType = String(input.mimeType || '').trim();
@@ -221,6 +295,7 @@ export const startResumableMediaUpload = async ({ user, input = {} }) => {
   }).select('+objectKey +multipartUploadId +multipartParts');
 
   if (existing) {
+    await expireTemporaryUploadSessionIfNeeded({ session: existing });
     if (['cancelled', 'failed'].includes(existing.status)) {
       await discardUploadSession(existing);
     } else {
@@ -230,6 +305,10 @@ export const startResumableMediaUpload = async ({ user, input = {} }) => {
   }
 
   const storageIntent = input.storageIntent === 'temporary_publish' ? 'temporary_publish' : 'library';
+  const hardDeleteSeconds = storageIntent === 'temporary_publish' ? await getTemporaryMediaStorageHardDeleteSeconds() : 0;
+  const storageHardDeleteAt = storageIntent === 'temporary_publish'
+    ? calculateTemporaryUploadHardDeleteAt({ startedAt: new Date(), hardDeleteSeconds })
+    : null;
   const session = new MediaUploadSession({
     workspaceId: user.workspaceId,
     uploadedBy: user._id,
@@ -243,6 +322,7 @@ export const startResumableMediaUpload = async ({ user, input = {} }) => {
     storageProvider: getMediaStorageProvider(),
     storageIntent,
     cleanupGroupId: storageIntent === 'temporary_publish' ? String(input.cleanupGroupId || '').trim() : '',
+    storageHardDeleteAt,
     cropMetadata: parseJsonField(input.cropMetadata),
     status: 'uploading'
   });
@@ -303,6 +383,8 @@ const failUploadSession = async ({ session, message, completedObject = false }) 
 };
 
 const finalizeUploadSession = async ({ user, session }) => {
+  await assertTemporaryUploadSessionNotExpired(session);
+
   if (session.bytesReceived !== session.size) {
     await failUploadSession({ session, message: 'Uploaded file size does not match the original file.' });
     throw createHttpError('Uploaded file size does not match the original file.', 422);
@@ -351,7 +433,8 @@ const finalizeUploadSession = async ({ user, session }) => {
 };
 
 export const getResumableMediaUpload = async ({ user, sessionId }) => {
-  const session = await getUploadSession({ user, sessionId });
+  const session = await getSessionWithStorage({ user, sessionId });
+  await expireTemporaryUploadSessionIfNeeded({ session });
   return serializeUploadSession(session);
 };
 
@@ -418,6 +501,7 @@ const releaseChunkUploadLease = async ({ sessionId, leaseToken }) => {
 
 export const uploadResumableMediaChunk = async ({ user, sessionId, contentRange, chunk }) => {
   const session = await getSessionWithStorage({ user, sessionId });
+  await assertTemporaryUploadSessionNotExpired(session);
 
   if (session.status === 'completed') return serializeUploadSession(session);
   if (session.status === 'cancelled') throw createHttpError('Upload session was cancelled.', 409);
@@ -510,7 +594,8 @@ export const uploadResumableMediaChunk = async ({ user, sessionId, contentRange,
 };
 
 export const pauseResumableMediaUpload = async ({ user, sessionId }) => {
-  const session = await getUploadSession({ user, sessionId });
+  const session = await getSessionWithStorage({ user, sessionId });
+  await assertTemporaryUploadSessionNotExpired(session);
   if (session.status === 'uploading') {
     session.status = 'paused';
     await session.save();
@@ -520,7 +605,8 @@ export const pauseResumableMediaUpload = async ({ user, sessionId }) => {
 };
 
 export const resumeResumableMediaUpload = async ({ user, sessionId }) => {
-  const session = await getUploadSession({ user, sessionId });
+  const session = await getSessionWithStorage({ user, sessionId });
+  await assertTemporaryUploadSessionNotExpired(session);
   if (session.status === 'paused') {
     session.status = 'uploading';
     await session.save();
@@ -600,7 +686,11 @@ export const deleteMediaAsset = async ({ user, mediaAssetId }) => {
   return asset;
 };
 
-export const deleteTemporaryMediaAssets = async ({ workspaceId, mediaAssetIds = [] }) => {
+export const deleteTemporaryMediaAssets = async ({
+  workspaceId,
+  mediaAssetIds = [],
+  sessionFailureReason = TEMPORARY_MEDIA_CLEANUP_MESSAGE
+}) => {
   if (!Array.isArray(mediaAssetIds) || mediaAssetIds.length === 0) return { deletedCount: 0 };
 
   const assets = await MediaAsset.find({
@@ -616,7 +706,55 @@ export const deleteTemporaryMediaAssets = async ({ workspaceId, mediaAssetIds = 
     await asset.deleteOne();
   }
 
-  return { deletedCount: assets.length };
+  const affectedSessions = assets.length > 0
+    ? await MediaUploadSession.find({
+      workspaceId,
+      storageIntent: 'temporary_publish',
+      mediaAssetId: { $in: assets.map(asset => asset._id) }
+    }).select('+objectKey +multipartUploadId +multipartParts +chunkLease')
+    : [];
+
+  for (const session of affectedSessions) {
+    session.status = 'failed';
+    session.failureReason = sessionFailureReason;
+    session.mediaAssetId = null;
+    session.publicUrl = '';
+    session.objectKey = '';
+    session.multipartUploadId = '';
+    session.multipartParts = [];
+    session.chunkLease = { token: '', startedAt: null, expiresAt: null };
+    await session.save();
+    emitMediaUploadSessionUpdated(session, 'failed');
+  }
+
+  return { deletedCount: assets.length, affectedUploadSessionCount: affectedSessions.length };
+};
+
+export const processExpiredTemporaryUploadSessions = async ({ now = new Date() } = {}) => {
+  const hardDeleteSeconds = await getTemporaryMediaStorageHardDeleteSeconds();
+  const legacyCutoff = new Date(now.getTime() - hardDeleteSeconds * 1000);
+  const sessions = await MediaUploadSession.find({
+    storageIntent: 'temporary_publish',
+    status: { $in: EXPIRABLE_UPLOAD_SESSION_STATUSES },
+    $or: [
+      { storageHardDeleteAt: { $ne: null, $lte: now } },
+      { storageHardDeleteAt: null, createdAt: { $lte: legacyCutoff } }
+    ]
+  }).select('+objectKey +multipartUploadId +multipartParts +chunkLease');
+
+  for (const session of sessions) {
+    await expireTemporaryUploadSession({ session, now });
+  }
+
+  const pruneCutoff = new Date(now.getTime() - TEMPORARY_UPLOAD_SESSION_PRUNE_SECONDS * 1000);
+  const pruneResult = await MediaUploadSession.deleteMany({
+    storageIntent: 'temporary_publish',
+    status: { $in: ['failed', 'cancelled'] },
+    mediaAssetId: null,
+    updatedAt: { $lte: pruneCutoff }
+  });
+
+  return { expiredCount: sessions.length, prunedCount: pruneResult.deletedCount || 0 };
 };
 
 const toPlainAsset = asset => {

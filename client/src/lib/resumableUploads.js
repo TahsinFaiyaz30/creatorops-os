@@ -311,6 +311,7 @@ const mergePendingMediaItem = (existingItem = {}, incomingItem = {}) => {
       bytesUploaded: Number(incomingItem.size || existingItem.size || existingItem.bytesUploaded || 0),
       bytesSent: Number(incomingItem.size || existingItem.size || existingItem.bytesUploaded || 0),
       uploadSpeedBytesPerSecond: 0,
+      storageHardDeleteAt: existingItem.storageHardDeleteAt || incomingItem.storageHardDeleteAt || '',
       status: 'completed'
     };
   }

@@ -108,6 +108,11 @@ const mediaUploadSessionSchema = new Schema(
       default: '',
       index: true
     },
+    storageHardDeleteAt: {
+      type: Date,
+      default: null,
+      index: true
+    },
     cropMetadata: {
       type: Schema.Types.Mixed,
       default: null
@@ -161,6 +166,9 @@ const mediaUploadSessionSchema = new Schema(
 
 mediaUploadSessionSchema.index({ workspaceId: 1, uploadedBy: 1, uploadKey: 1 }, { unique: true });
 mediaUploadSessionSchema.index({ workspaceId: 1, status: 1, updatedAt: -1 });
+mediaUploadSessionSchema.index({ storageIntent: 1, status: 1, storageHardDeleteAt: 1 });
+mediaUploadSessionSchema.index({ storageIntent: 1, mediaAssetId: 1, createdAt: 1 });
+mediaUploadSessionSchema.index({ storageIntent: 1, status: 1, mediaAssetId: 1, updatedAt: 1 });
 
 const MediaUploadSession = mongoose.model('MediaUploadSession', mediaUploadSessionSchema);
 

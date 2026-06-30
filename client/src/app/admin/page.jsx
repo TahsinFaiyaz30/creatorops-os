@@ -11,6 +11,26 @@ import { formatDuration } from '../../lib/duration';
 import { ROLES, getRoleLabel, hasAdminRole, normalizeRoles } from '../../lib/roles';
 
 const ROLE_OPTIONS = [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP, ROLES.ADMIN];
+const DEFAULT_RETRY_RETENTION_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_STORAGE_HARD_DELETE_SECONDS = 30 * 24 * 60 * 60;
+const defaultMediaSettings = {
+  temporaryMediaRetentionSeconds: DEFAULT_RETRY_RETENTION_SECONDS,
+  temporaryMediaStorageHardDeleteSeconds: DEFAULT_STORAGE_HARD_DELETE_SECONDS,
+  temporaryUploadHardDeleteSeconds: DEFAULT_STORAGE_HARD_DELETE_SECONDS,
+  temporaryMediaCleanup: null
+};
+
+const getUploadHardDeleteSeconds = settings =>
+  settings?.temporaryUploadHardDeleteSeconds ??
+  settings?.temporaryMediaStorageHardDeleteSeconds ??
+  DEFAULT_STORAGE_HARD_DELETE_SECONDS;
+
+const formatLastCleanupRun = value => {
+  if (!value) return 'Never';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Never';
+  return date.toLocaleString();
+};
 
 export default function AdminPanelPage() {
   const router = useRouter();
@@ -21,7 +41,7 @@ export default function AdminPanelPage() {
   const [roleBusy, setRoleBusy] = useState('');
   const [roleMessage, setRoleMessage] = useState('');
   const [settings, setSettings] = useState(null);
-  const [settingsDraft, setSettingsDraft] = useState({ temporaryMediaRetentionSeconds: 7 * 24 * 60 * 60 });
+  const [settingsDraft, setSettingsDraft] = useState(defaultMediaSettings);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState('');
 
@@ -51,7 +71,7 @@ export default function AdminPanelPage() {
         if (!results) return;
         const [campaigns, connections, jobs, events, adminUsers, adminSettings] = results;
         const users = adminUsers.value?.data?.users || [];
-        const loadedSettings = adminSettings.value?.data?.settings || { temporaryMediaRetentionSeconds: 7 * 24 * 60 * 60 };
+        const loadedSettings = adminSettings.value?.data?.settings || defaultMediaSettings;
 
         setStats({
           campaigns: campaigns.value?.data?.campaigns?.length ?? 'N/A',
@@ -62,7 +82,11 @@ export default function AdminPanelPage() {
         setAccounts(users);
         setDraftRoles(Object.fromEntries(users.map(account => [account.id, normalizeRoles(account)])));
         setSettings(loadedSettings);
-        setSettingsDraft({ temporaryMediaRetentionSeconds: loadedSettings.temporaryMediaRetentionSeconds });
+        setSettingsDraft({
+          temporaryMediaRetentionSeconds: loadedSettings.temporaryMediaRetentionSeconds ?? DEFAULT_RETRY_RETENTION_SECONDS,
+          temporaryMediaStorageHardDeleteSeconds: getUploadHardDeleteSeconds(loadedSettings),
+          temporaryUploadHardDeleteSeconds: getUploadHardDeleteSeconds(loadedSettings)
+        });
       })
       .catch(() => {
         router.replace('/dashboard');
@@ -111,12 +135,17 @@ export default function AdminPanelPage() {
     setSettingsMessage('');
     try {
       const payload = await api.patch('/api/admin/settings', {
-        temporaryMediaRetentionSeconds: settingsDraft.temporaryMediaRetentionSeconds
+        temporaryMediaRetentionSeconds: settingsDraft.temporaryMediaRetentionSeconds,
+        temporaryUploadHardDeleteSeconds: settingsDraft.temporaryUploadHardDeleteSeconds
       });
       const updatedSettings = payload.data.settings;
       setSettings(updatedSettings);
-      setSettingsDraft({ temporaryMediaRetentionSeconds: updatedSettings.temporaryMediaRetentionSeconds });
-      setSettingsMessage('Temporary media expiry updated.');
+      setSettingsDraft({
+        temporaryMediaRetentionSeconds: updatedSettings.temporaryMediaRetentionSeconds,
+        temporaryMediaStorageHardDeleteSeconds: getUploadHardDeleteSeconds(updatedSettings),
+        temporaryUploadHardDeleteSeconds: getUploadHardDeleteSeconds(updatedSettings)
+      });
+      setSettingsMessage('Temporary media retention updated.');
     } catch (err) {
       setSettingsMessage(err.message || 'Could not update settings.');
     } finally {
@@ -189,15 +218,30 @@ export default function AdminPanelPage() {
               {settingsMessage && <div className="text-sm text-[var(--muted)]">{settingsMessage}</div>}
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
               <label className="block">
-                <span className="mb-1.5 block text-xs uppercase tracking-wide text-[var(--muted)]">Expiry seconds</span>
+                <span className="mb-1.5 block text-xs uppercase tracking-wide text-[var(--muted)]">Retry expiry seconds</span>
                 <input
                   type="number"
                   min="0"
                   step="1"
                   value={settingsDraft.temporaryMediaRetentionSeconds}
-                  onChange={event => setSettingsDraft({ temporaryMediaRetentionSeconds: event.target.value })}
+                  onChange={event => setSettingsDraft(current => ({ ...current, temporaryMediaRetentionSeconds: event.target.value }))}
+                  className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs uppercase tracking-wide text-[var(--muted)]">Upload hard-delete seconds</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={settingsDraft.temporaryUploadHardDeleteSeconds}
+                  onChange={event => setSettingsDraft(current => ({
+                    ...current,
+                    temporaryMediaStorageHardDeleteSeconds: event.target.value,
+                    temporaryUploadHardDeleteSeconds: event.target.value
+                  }))}
                   className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]"
                 />
               </label>
@@ -215,6 +259,26 @@ export default function AdminPanelPage() {
             <p className="mt-3 text-sm text-[var(--muted)]">
               Current expiry: {formatDuration(settings.temporaryMediaRetentionSeconds)}. Use 0 for immediate deletion after a post group has no queued, publishing, or paused jobs. Scheduled queued jobs keep their media until they run.
             </p>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Upload hard delete: {formatDuration(getUploadHardDeleteSeconds(settings))} after a temporary upload starts. Use 0 for immediate deletion. This force-deletes abandoned temporary uploads and cloud media even if a platform dispatch is still queued, paused, or processing.
+            </p>
+            {settings.temporaryMediaCleanup && (
+              <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                {[
+                  { label: 'Last cleanup', value: formatLastCleanupRun(settings.temporaryMediaCleanup.lastRunAt) },
+                  { label: 'Expired uploads', value: settings.temporaryMediaCleanup.expiredUploadSessions || 0 },
+                  { label: 'Pruned sessions', value: settings.temporaryMediaCleanup.prunedUploadSessions || 0 },
+                  { label: 'Hard deletes', value: settings.temporaryMediaCleanup.hardDeletedMediaAssets || 0 },
+                  { label: 'Blocked jobs', value: settings.temporaryMediaCleanup.hardDeleteAffectedJobs || 0 },
+                  { label: 'Retry deletes', value: settings.temporaryMediaCleanup.retryDeletedMediaAssets || 0 }
+                ].map(item => (
+                  <div key={item.label} className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3">
+                    <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">{item.label}</div>
+                    <div className="mt-1 truncate text-sm font-semibold text-[var(--text)]">{item.value}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
 

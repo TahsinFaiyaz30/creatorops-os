@@ -116,6 +116,11 @@ const mediaAssetSchema = new Schema(
     cleanupAt: {
       type: Date,
       default: null
+    },
+    storageHardDeleteAt: {
+      type: Date,
+      default: null,
+      index: true
     }
   },
   {
@@ -136,6 +141,7 @@ const mediaAssetSchema = new Schema(
 );
 
 mediaAssetSchema.index({ workspaceId: 1, createdAt: -1 });
+mediaAssetSchema.index({ storageIntent: 1, storageHardDeleteAt: 1 });
 
 const MediaAsset = mongoose.model('MediaAsset', mediaAssetSchema);
 

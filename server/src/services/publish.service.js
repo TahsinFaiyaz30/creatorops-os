@@ -1,5 +1,6 @@
 import ContentItem from '../models/ContentItem.js';
 import MediaAsset from '../models/MediaAsset.js';
+import MediaUploadSession from '../models/MediaUploadSession.js';
 import PlatformConnection from '../models/PlatformConnection.js';
 import PlatformVariant from '../models/PlatformVariant.js';
 import PublishedPost from '../models/PublishedPost.js';
@@ -13,9 +14,25 @@ import { getConnector } from '../platforms/connectorRegistry.js';
 import { emitRealtimeEvent } from '../sockets/socket.js';
 import { createWorkflowEvent } from './event.service.js';
 import { createCompressedMediaAssets, deleteDerivativeFiles } from './mediaDerivative.service.js';
-import { deleteTemporaryMediaAssets, hydrateMediaAssetPublicUrls, prepareMediaAssetsForPublishing } from './media.service.js';
+import {
+  deleteTemporaryMediaAssets,
+  hydrateMediaAssetPublicUrls,
+  prepareMediaAssetsForPublishing,
+  processExpiredTemporaryUploadSessions,
+  TEMPORARY_UPLOAD_STORAGE_EXPIRED_MESSAGE
+} from './media.service.js';
 import { refreshStoredConnectionIfNeeded, sanitizeConnection } from './platformConnection.service.js';
-import { getTemporaryMediaRetentionSeconds } from './systemSettings.service.js';
+import {
+  getTemporaryMediaRetentionSeconds,
+  getTemporaryMediaStorageHardDeleteSeconds,
+  recordTemporaryMediaCleanupRun
+} from './systemSettings.service.js';
+import {
+  assertTemporaryMediaAvailableForAction,
+  createTemporaryMediaCleanupStats,
+  hasLifecycleDeadlinePassed,
+  resolveTemporaryAssetHardDeleteAt
+} from './temporaryMediaLifecycle.js';
 import { createVariantVersion } from './versioning.service.js';
 
 const createPostGroupId = () => `post_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -160,32 +177,34 @@ const getGroupMediaAssetIds = groupJobs => [
   )
 ];
 
+const emptyLifecycleCleanupResult = () => ({ deletedCount: 0 });
+
 const refreshTemporaryMediaLifecycleForGroup = async ({ workspaceId, postGroupId, now = new Date(), retentionSeconds = null }) => {
-  if (!postGroupId) return;
+  if (!postGroupId) return emptyLifecycleCleanupResult();
 
   const groupJobs = await PublishJob.find({ workspaceId, postGroupId }).select(
     'status mediaAssetIds groupTargetCount updatedAt temporaryMediaExpiredAt'
   );
-  if (groupJobs.length === 0) return;
+  if (groupJobs.length === 0) return emptyLifecycleCleanupResult();
 
   const hasActiveJob = groupJobs.some(job => ACTIVE_PUBLISH_STATUSES.includes(job.status));
   if (hasActiveJob) {
     await PublishJob.updateMany(
       { workspaceId, postGroupId, temporaryMediaExpiredAt: null },
-      { $set: { temporaryMediaExpiresAt: null } }
+      { $set: { temporaryMediaExpiresAt: null, temporaryMediaExpiryReason: '' } }
     );
-    return;
+    return emptyLifecycleCleanupResult();
   }
 
   const mediaAssetIds = getGroupMediaAssetIds(groupJobs);
-  if (mediaAssetIds.length === 0) return;
+  if (mediaAssetIds.length === 0) return emptyLifecycleCleanupResult();
 
   const temporaryMediaCount = await MediaAsset.countDocuments({
     _id: { $in: mediaAssetIds },
     workspaceId,
     storageIntent: 'temporary_publish'
   });
-  if (temporaryMediaCount === 0) return;
+  if (temporaryMediaCount === 0) return emptyLifecycleCleanupResult();
 
   const expectedTargetCount = getExpectedTargetCount(groupJobs);
   const hasMissingTargetJobs = groupJobs.length < expectedTargetCount;
@@ -198,35 +217,44 @@ const refreshTemporaryMediaLifecycleForGroup = async ({ workspaceId, postGroupId
     const expiresAt = new Date(latestKnownAt + resolvedRetentionSeconds * 1000);
 
     if (expiresAt <= now) {
-      await deleteTemporaryMediaAssets({ workspaceId, mediaAssetIds });
+      const result = await deleteTemporaryMediaAssets({ workspaceId, mediaAssetIds });
       await PublishJob.updateMany(
         { workspaceId, postGroupId, status: { $ne: 'published' }, temporaryMediaExpiredAt: null },
-        { $set: { temporaryMediaExpiresAt: expiresAt, temporaryMediaExpiredAt: now } }
+        {
+          $set: {
+            temporaryMediaExpiresAt: expiresAt,
+            temporaryMediaExpiredAt: now,
+            temporaryMediaExpiryReason: 'retry_retention'
+          }
+        }
       );
-      return;
+      return result;
     }
 
     await PublishJob.updateMany(
       { workspaceId, postGroupId, status: { $ne: 'published' }, temporaryMediaExpiredAt: null },
-      { $set: { temporaryMediaExpiresAt: expiresAt } }
+      { $set: { temporaryMediaExpiresAt: expiresAt, temporaryMediaExpiryReason: '' } }
     );
-    return;
+    return emptyLifecycleCleanupResult();
   }
 
   if (groupJobs.every(job => job.status === 'published')) {
-    await deleteTemporaryMediaAssets({ workspaceId, mediaAssetIds });
-    await PublishJob.updateMany({ workspaceId, postGroupId }, { $set: { temporaryMediaExpiresAt: null } });
-    return;
+    const result = await deleteTemporaryMediaAssets({ workspaceId, mediaAssetIds });
+    await PublishJob.updateMany(
+      { workspaceId, postGroupId },
+      { $set: { temporaryMediaExpiresAt: null, temporaryMediaExpiryReason: '' } }
+    );
+    return result;
   }
 
   const retryableJobs = groupJobs.filter(job => RETRYABLE_TERMINAL_STATUSES.includes(job.status));
   if (retryableJobs.length === 0) {
-    await deleteTemporaryMediaAssets({ workspaceId, mediaAssetIds });
+    const result = await deleteTemporaryMediaAssets({ workspaceId, mediaAssetIds });
     await PublishJob.updateMany(
       { workspaceId, postGroupId },
-      { $set: { temporaryMediaExpiresAt: null, temporaryMediaExpiredAt: null } }
+      { $set: { temporaryMediaExpiresAt: null, temporaryMediaExpiredAt: null, temporaryMediaExpiryReason: '' } }
     );
-    return;
+    return result;
   }
 
   const latestUnsuccessfulAt = retryableJobs
@@ -236,23 +264,25 @@ const refreshTemporaryMediaLifecycleForGroup = async ({ workspaceId, postGroupId
   const expiresAt = new Date(latestUnsuccessfulAt + resolvedRetentionSeconds * 1000);
 
   if (expiresAt <= now) {
-    await deleteTemporaryMediaAssets({ workspaceId, mediaAssetIds });
+    const result = await deleteTemporaryMediaAssets({ workspaceId, mediaAssetIds });
     await PublishJob.updateMany(
       { workspaceId, postGroupId, status: { $in: RETRYABLE_TERMINAL_STATUSES } },
       {
         $set: {
           temporaryMediaExpiresAt: expiresAt,
-          temporaryMediaExpiredAt: now
+          temporaryMediaExpiredAt: now,
+          temporaryMediaExpiryReason: 'retry_retention'
         }
       }
     );
-    return;
+    return result;
   }
 
   await PublishJob.updateMany(
     { workspaceId, postGroupId, status: { $in: RETRYABLE_TERMINAL_STATUSES }, temporaryMediaExpiredAt: null },
-    { $set: { temporaryMediaExpiresAt: expiresAt } }
+    { $set: { temporaryMediaExpiresAt: expiresAt, temporaryMediaExpiryReason: '' } }
   );
+  return emptyLifecycleCleanupResult();
 };
 
 const updatePublishJobStage = async (job, stage, message, mediaProcessing = {}, providerUpload = null) => {
@@ -1260,7 +1290,7 @@ const deleteTemporaryMediaWhenNoRetryPathRemains = async ({ workspaceId, groupId
   if (result.deletedCount > 0) {
     await PublishJob.updateMany(
       { workspaceId, postGroupId: groupId },
-      { $set: { temporaryMediaExpiresAt: null, temporaryMediaExpiredAt: null } }
+      { $set: { temporaryMediaExpiresAt: null, temporaryMediaExpiredAt: null, temporaryMediaExpiryReason: '' } }
     );
   }
   return result;
@@ -1539,9 +1569,7 @@ export const resumePublishJob = async ({ user, jobId }) => {
   if (job.status !== 'paused') {
     throw createHttpError('Only paused publish jobs can be resumed.', 400);
   }
-  if (job.temporaryMediaExpiredAt) {
-    throw createHttpError('Temporary media expired and was deleted. This publish job can no longer be resumed.', 400, 'TEMPORARY_MEDIA_EXPIRED');
-  }
+  assertTemporaryMediaAvailableForAction({ temporaryMediaExpiredAt: job.temporaryMediaExpiredAt, action: 'resumed' });
 
   job.status = 'queued';
   clearPublishControl(job);
@@ -1549,11 +1577,12 @@ export const resumePublishJob = async ({ user, jobId }) => {
   job.processingMessage = 'Paused publish job resumed and queued.';
   job.processingStageUpdatedAt = new Date();
   job.temporaryMediaExpiresAt = null;
+  job.temporaryMediaExpiryReason = '';
   await job.save();
   if (job.postGroupId) {
     await PublishJob.updateMany(
       { workspaceId: job.workspaceId, postGroupId: job.postGroupId, temporaryMediaExpiredAt: null },
-      { $set: { temporaryMediaExpiresAt: null } }
+      { $set: { temporaryMediaExpiresAt: null, temporaryMediaExpiryReason: '' } }
     );
   }
   await createWorkflowEvent({
@@ -1576,9 +1605,7 @@ export const retryPublishJob = async ({ user, jobId, input = {} }) => {
   if (!['failed', 'blocked'].includes(job.status)) {
     throw createHttpError('Only failed or blocked publish jobs can be retried.', 400);
   }
-  if (job.temporaryMediaExpiredAt) {
-    throw createHttpError('Temporary media expired and was deleted. This publish job can no longer be retried.', 400, 'TEMPORARY_MEDIA_EXPIRED');
-  }
+  assertTemporaryMediaAvailableForAction({ temporaryMediaExpiredAt: job.temporaryMediaExpiredAt, action: 'retried' });
   job.status = 'queued';
   job.retryCount += 1;
   job.errorCode = '';
@@ -1595,11 +1622,12 @@ export const retryPublishJob = async ({ user, jobId, input = {} }) => {
     };
   }
   job.temporaryMediaExpiresAt = null;
+  job.temporaryMediaExpiryReason = '';
   await job.save();
   if (job.postGroupId) {
     await PublishJob.updateMany(
       { workspaceId: job.workspaceId, postGroupId: job.postGroupId, temporaryMediaExpiredAt: null },
-      { $set: { temporaryMediaExpiresAt: null } }
+      { $set: { temporaryMediaExpiresAt: null, temporaryMediaExpiryReason: '' } }
     );
   }
   await createWorkflowEvent({
@@ -1616,6 +1644,12 @@ export const retryPublishJob = async ({ user, jobId, input = {} }) => {
 };
 
 const finalizeControlledPublishJob = async ({ job, result }) => {
+  const expiredJob = await PublishJob.findOne({
+    _id: job._id,
+    temporaryMediaExpiredAt: { $ne: null }
+  });
+  if (expiredJob) return expiredJob;
+
   const isPaused = result.code === 'PUBLISH_PAUSED';
   job.status = isPaused ? 'paused' : 'cancelled';
   job.errorCode = '';
@@ -1650,7 +1684,8 @@ export const processPublishJob = async ({ jobId }) => {
   const lockedJob = await PublishJob.findOneAndUpdate(
     {
       _id: jobId,
-      status: 'queued'
+      status: 'queued',
+      temporaryMediaExpiredAt: null
     },
     {
       status: 'publishing',
@@ -1804,6 +1839,11 @@ export const processPublishJob = async ({ jobId }) => {
       if (['PUBLISH_PAUSED', 'PUBLISH_CANCELLED'].includes(result.code)) {
         return finalizeControlledPublishJob({ job: lockedJob, result });
       }
+      const expiredAfterProviderReturn = await PublishJob.findOne({
+        _id: lockedJob._id,
+        temporaryMediaExpiredAt: { $ne: null }
+      });
+      if (expiredAfterProviderReturn) return expiredAfterProviderReturn;
       const controlAfterProviderReturn = await checkPublishControl(lockedJob);
       if (controlAfterProviderReturn) {
         return finalizeControlledPublishJob({ job: lockedJob, result: controlAfterProviderReturn });
@@ -1832,6 +1872,12 @@ export const processPublishJob = async ({ jobId }) => {
       emitRealtimeEvent('publishing:job_updated', lockedJob);
       return lockedJob;
     }
+
+    const expiredBeforeSuccess = await PublishJob.findOne({
+      _id: lockedJob._id,
+      temporaryMediaExpiredAt: { $ne: null }
+    });
+    if (expiredBeforeSuccess) return expiredBeforeSuccess;
 
     lockedJob.status = 'published';
     lockedJob.providerPostId = result.data.providerPostId || '';
@@ -1923,6 +1969,12 @@ export const processPublishJob = async ({ jobId }) => {
     emitRealtimeEvent('publishing:job_updated', lockedJob);
     return lockedJob;
   } catch (error) {
+    const expiredDuringPublish = await PublishJob.findOne({
+      _id: lockedJob._id,
+      temporaryMediaExpiredAt: { $ne: null }
+    });
+    if (expiredDuringPublish) return expiredDuringPublish;
+
     const controlResult = await checkPublishControl(lockedJob);
     if (controlResult) {
       return finalizeControlledPublishJob({ job: lockedJob, result: controlResult });
@@ -1940,6 +1992,7 @@ export const processPublishJob = async ({ jobId }) => {
       const now = new Date();
       lockedJob.temporaryMediaExpiresAt = now;
       lockedJob.temporaryMediaExpiredAt = now;
+      lockedJob.temporaryMediaExpiryReason = 'storage_unavailable';
     }
     await lockedJob.save();
     await createWorkflowEvent({
@@ -1967,6 +2020,7 @@ export const processDuePublishJobs = async () => {
   await processStalePublishingJobs();
   const dueJobs = await PublishJob.find({
     status: 'queued',
+    temporaryMediaExpiredAt: null,
     scheduledAt: { $lte: new Date() }
   })
     .sort({ scheduledAt: 1 })
@@ -2027,13 +2081,162 @@ export const processStalePublishingJobs = async ({ now = new Date() } = {}) => {
   return staleJobs.length;
 };
 
-export const processTemporaryPublishMediaCleanup = async () => {
+const getStorageHardDeleteAt = ({ asset, hardDeleteSeconds, uploadStartedAtByAssetId = new Map() }) => {
+  return resolveTemporaryAssetHardDeleteAt({
+    assetHardDeleteAt: asset.storageHardDeleteAt,
+    assetCreatedAt: asset.createdAt,
+    uploadStartedAt: uploadStartedAtByAssetId.get(String(asset._id)),
+    hardDeleteSeconds
+  });
+};
+
+const markJobsAfterStorageHardDelete = async ({ workspaceId, mediaAssetIds = [], now }) => {
+  if (mediaAssetIds.length === 0) return 0;
+
+  const message = 'Temporary cloud media reached the storage bucket hard-delete limit and was deleted. Recreate the post with media before publishing again.';
+  const affectedJobs = await PublishJob.find({
+    workspaceId,
+    mediaAssetIds: { $in: mediaAssetIds },
+    status: { $in: ['queued', 'publishing', 'paused', 'failed', 'blocked'] }
+  }).select('+providerUploadSession');
+
+  for (const job of affectedJobs) {
+    if (job.status === 'publishing') {
+      requestActivePublishControl({ jobId: job._id, action: CONTROL_ACTIONS.CANCEL });
+    }
+
+    job.status = 'blocked';
+    job.errorCode = 'TEMPORARY_MEDIA_STORAGE_EXPIRED';
+    job.errorMessage = message;
+    clearPublishControl(job);
+    clearProviderUploadSession(job);
+    clearProviderUpload(job);
+    job.processingStage = 'expired';
+    job.processingMessage = message;
+    job.processingStageUpdatedAt = now;
+    job.temporaryMediaExpiresAt = now;
+    job.temporaryMediaExpiredAt = now;
+    job.temporaryMediaExpiryReason = 'storage_hard_delete';
+    await job.save();
+    await createWorkflowEvent({
+      workspaceId: job.workspaceId,
+      actorId: job.createdBy,
+      eventType: 'publish.media_storage_expired',
+      message,
+      entityType: 'PublishJob',
+      entityId: job._id,
+      metadata: {
+        publishJobId: job._id,
+        code: job.errorCode,
+        platform: job.platform
+      }
+    });
+    emitRealtimeEvent('publishing:job_updated', job);
+  }
+
+  return affectedJobs.length;
+};
+
+export const processTemporaryMediaStorageHardDelete = async ({ now = new Date() } = {}) => {
+  const uploadSessionCleanup = await processExpiredTemporaryUploadSessions({ now });
+  const hardDeleteSeconds = await getTemporaryMediaStorageHardDeleteSeconds();
+  const legacyCutoff = new Date(now.getTime() - hardDeleteSeconds * 1000);
+  const [assetsWithDeadline, legacyUploadSessions, legacyAssetsByCreatedAt] = await Promise.all([
+    MediaAsset.find({
+      storageIntent: 'temporary_publish',
+      storageHardDeleteAt: { $ne: null, $lte: now }
+    }).select('workspaceId createdAt storageHardDeleteAt'),
+    MediaUploadSession.find({
+      storageIntent: 'temporary_publish',
+      mediaAssetId: { $ne: null },
+      createdAt: { $lte: legacyCutoff }
+    }).select('mediaAssetId createdAt'),
+    MediaAsset.find({
+      storageIntent: 'temporary_publish',
+      storageHardDeleteAt: null,
+      createdAt: { $lte: legacyCutoff }
+    }).select('workspaceId createdAt storageHardDeleteAt')
+  ]);
+
+  const legacySessionAssetIds = [
+    ...new Set(
+      legacyUploadSessions
+        .map(session => String(session.mediaAssetId || ''))
+        .filter(Boolean)
+    )
+  ];
+  const legacyAssetsByUploadStart = legacySessionAssetIds.length > 0
+    ? await MediaAsset.find({
+      _id: { $in: legacySessionAssetIds },
+      storageIntent: 'temporary_publish',
+      storageHardDeleteAt: null
+    }).select('workspaceId createdAt storageHardDeleteAt')
+    : [];
+  const uploadStartedAtByAssetId = new Map(
+    legacyUploadSessions
+      .filter(session => session.mediaAssetId)
+      .map(session => [String(session.mediaAssetId), session.createdAt])
+  );
+  const candidateAssetsById = new Map(
+    [...assetsWithDeadline, ...legacyAssetsByCreatedAt, ...legacyAssetsByUploadStart]
+      .map(asset => [String(asset._id), asset])
+  );
+  const expiredByWorkspace = new Map();
+
+  for (const asset of candidateAssetsById.values()) {
+    const hardDeleteAt = getStorageHardDeleteAt({ asset, hardDeleteSeconds, uploadStartedAtByAssetId });
+    if (!hasLifecycleDeadlinePassed({ deadline: hardDeleteAt, now })) continue;
+
+    const workspaceId = String(asset.workspaceId);
+    const existing = expiredByWorkspace.get(workspaceId) || {
+      workspaceId: asset.workspaceId,
+      mediaAssetIds: []
+    };
+    existing.mediaAssetIds.push(asset._id);
+    expiredByWorkspace.set(workspaceId, existing);
+  }
+
+  let deletedCount = 0;
+  let affectedJobCount = 0;
+  for (const group of expiredByWorkspace.values()) {
+    await Promise.all(
+      group.mediaAssetIds.map(mediaAssetId =>
+        MediaAsset.updateOne(
+          { _id: mediaAssetId, storageHardDeleteAt: null },
+          { $set: { storageHardDeleteAt: now } }
+        )
+      )
+    );
+    const result = await deleteTemporaryMediaAssets({
+      workspaceId: group.workspaceId,
+      mediaAssetIds: group.mediaAssetIds,
+      sessionFailureReason: TEMPORARY_UPLOAD_STORAGE_EXPIRED_MESSAGE
+    });
+    deletedCount += result.deletedCount;
+    affectedJobCount += await markJobsAfterStorageHardDelete({
+      workspaceId: group.workspaceId,
+      mediaAssetIds: group.mediaAssetIds,
+      now
+    });
+  }
+
+  return {
+    deletedCount,
+    affectedJobCount,
+    expiredUploadSessionCount: uploadSessionCleanup.expiredCount || 0,
+    prunedUploadSessionCount: uploadSessionCleanup.prunedCount || 0
+  };
+};
+
+export const processTemporaryPublishMediaCleanup = async ({ recordRun = true } = {}) => {
   const now = new Date();
+  const hardDeleteCleanup = await processTemporaryMediaStorageHardDelete({ now });
   const retentionSeconds = await getTemporaryMediaRetentionSeconds();
   const temporaryAssets = await MediaAsset.find({ storageIntent: 'temporary_publish' }).select(
     'workspaceId cleanupGroupId createdAt'
   );
   const groups = new Map();
+  let retryDeletedMediaAssets = 0;
 
   for (const asset of temporaryAssets) {
     const workspaceId = String(asset.workspaceId);
@@ -2057,10 +2260,11 @@ export const processTemporaryPublishMediaCleanup = async () => {
     if (!group.cleanupGroupId) {
       const orphanExpiresAt = new Date(group.latestAssetCreatedAt.getTime() + retentionSeconds * 1000);
       if (orphanExpiresAt <= now) {
-        await deleteTemporaryMediaAssets({
+        const result = await deleteTemporaryMediaAssets({
           workspaceId: group.workspaceId,
           mediaAssetIds: group.mediaAssetIds
         });
+        retryDeletedMediaAssets += result.deletedCount || 0;
       }
       continue;
     }
@@ -2079,10 +2283,11 @@ export const processTemporaryPublishMediaCleanup = async () => {
     if (jobCount === 0 && postCount === 0) {
       const orphanGroupExpiresAt = new Date(group.latestAssetCreatedAt.getTime() + retentionSeconds * 1000);
       if (orphanGroupExpiresAt <= now) {
-        await deleteTemporaryMediaAssets({
+        const result = await deleteTemporaryMediaAssets({
           workspaceId: group.workspaceId,
           mediaAssetIds: group.mediaAssetIds
         });
+        retryDeletedMediaAssets += result.deletedCount || 0;
       }
       continue;
     }
@@ -2091,13 +2296,28 @@ export const processTemporaryPublishMediaCleanup = async () => {
       workspaceId: group.workspaceId,
       groupId: group.cleanupGroupId
     });
+    retryDeletedMediaAssets += noRetryDeletion.deletedCount || 0;
     if (noRetryDeletion.deletedCount > 0) continue;
 
-    await refreshTemporaryMediaLifecycleForGroup({
+    const lifecycleCleanup = await refreshTemporaryMediaLifecycleForGroup({
       workspaceId: group.workspaceId,
       postGroupId: group.cleanupGroupId,
       now,
       retentionSeconds
     });
+    retryDeletedMediaAssets += lifecycleCleanup.deletedCount || 0;
   }
+
+  const stats = createTemporaryMediaCleanupStats({
+    now,
+    expiredUploadSessions: hardDeleteCleanup.expiredUploadSessionCount || 0,
+    prunedUploadSessions: hardDeleteCleanup.prunedUploadSessionCount || 0,
+    hardDeletedMediaAssets: hardDeleteCleanup.deletedCount || 0,
+    hardDeleteAffectedJobs: hardDeleteCleanup.affectedJobCount || 0,
+    retryDeletedMediaAssets
+  });
+  if (recordRun) {
+    await recordTemporaryMediaCleanupRun(stats);
+  }
+  return stats;
 };

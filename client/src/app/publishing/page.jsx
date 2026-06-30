@@ -93,6 +93,13 @@ const dispatchFilters = [
 ];
 
 const PLATFORM_DELETE_SUPPORTED = new Set(['youtube', 'youtube_shorts', 'facebook', 'x', 'pinterest', 'wordpress', 'shopify']);
+const DEFAULT_RETRY_RETENTION_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_STORAGE_HARD_DELETE_SECONDS = 30 * 24 * 60 * 60;
+
+const getUploadHardDeleteSeconds = settings =>
+  settings?.temporaryUploadHardDeleteSeconds ??
+  settings?.temporaryMediaStorageHardDeleteSeconds ??
+  DEFAULT_STORAGE_HARD_DELETE_SECONDS;
 
 const getTimestamp = value => {
   const timestamp = new Date(value || 0).getTime();
@@ -147,6 +154,14 @@ const getJobAccount = job => job.accountSnapshot || job.platformConnectionId || 
 const getJobCaption = job => job.caption || job.variantId?.caption || '';
 
 const getJobMedia = job => (job.mediaAssetIds || []).find(asset => asset?.publicUrl) || null;
+
+const getJobStorageHardDeleteAt = job => {
+  const timestamps = (job.mediaAssetIds || [])
+    .map(asset => (asset && typeof asset === 'object' && asset.storageHardDeleteAt ? new Date(asset.storageHardDeleteAt).getTime() : 0))
+    .filter(timestamp => Number.isFinite(timestamp) && timestamp > 0);
+  if (timestamps.length === 0) return null;
+  return new Date(Math.min(...timestamps));
+};
 
 const isPopulatedRef = value => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -207,6 +222,7 @@ const getJobStageLabel = job => {
   const controlAction = job.publishControl?.action || '';
   if (controlAction === 'pause_requested') return 'Pause requested';
   if (controlAction === 'cancel_requested') return 'Cancel requested';
+  if (job.temporaryMediaExpiredAt && job.temporaryMediaExpiryReason === 'storage_hard_delete') return 'Storage hard-deleted media';
   if (job.temporaryMediaExpiredAt) return 'Temporary cloud media expired';
   return stageLabels[job.processingStage] || stageLabels[job.status] || job.processingStage || job.status || 'Waiting';
 };
@@ -379,6 +395,7 @@ const applyUploadSessionToPendingItem = (item, session, { forceSpeedZero = true 
   item.bytesSent = session.status === 'uploading'
     ? Math.max(Number(item.bytesSent || 0), sentBytes, verifiedBytes)
     : verifiedBytes;
+  item.storageHardDeleteAt = session.storageHardDeleteAt || item.storageHardDeleteAt || '';
   item.status = session.status || item.status || 'waiting';
   item.failureReason = session.failureReason || item.failureReason || '';
   if (forceSpeedZero) item.uploadSpeedBytesPerSecond = 0;
@@ -587,7 +604,11 @@ export default function PublishingPage() {
   const [busyKey, setBusyKey] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const [query, setQuery] = useState('');
-  const [publishSettings, setPublishSettings] = useState({ temporaryMediaRetentionSeconds: 7 * 24 * 60 * 60 });
+  const [publishSettings, setPublishSettings] = useState({
+    temporaryMediaRetentionSeconds: DEFAULT_RETRY_RETENTION_SECONDS,
+    temporaryMediaStorageHardDeleteSeconds: DEFAULT_STORAGE_HARD_DELETE_SECONDS,
+    temporaryUploadHardDeleteSeconds: DEFAULT_STORAGE_HARD_DELETE_SECONDS
+  });
   const [lastUpdated, setLastUpdated] = useState(null);
   const [liveTransport, setLiveTransport] = useState('connecting');
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -911,7 +932,10 @@ export default function PublishingPage() {
     published: stats.published,
     expired: stats.expired
   }), [groups.length, pendingUploads.length, stats]);
-  const temporaryMediaRetentionLabel = formatDuration(publishSettings.temporaryMediaRetentionSeconds);
+  const temporaryMediaRetentionLabel = formatDuration(publishSettings.temporaryMediaRetentionSeconds ?? DEFAULT_RETRY_RETENTION_SECONDS);
+  const temporaryMediaHardDeleteLabel = formatDuration(
+    getUploadHardDeleteSeconds(publishSettings)
+  );
   const canManage = canPublish(user);
 
   const runJobAction = async ({ job, action, options = {} }) => {
@@ -1475,7 +1499,7 @@ export default function PublishingPage() {
             <SectionHeader
               icon={Cloud}
               title="Platform Dispatches"
-              detail={`Temporary cloud media expires after ${temporaryMediaRetentionLabel} once a group is no longer queued, publishing, or paused.`}
+              detail={`Retry media expires after ${temporaryMediaRetentionLabel} once a group is no longer queued, publishing, or paused. Storage hard-deletes temporary uploads and cloud media after ${temporaryMediaHardDeleteLabel} from upload start even if jobs are still active.`}
             />
             {visibleGroups.map(group => (
               <DispatchGroup
@@ -1484,6 +1508,7 @@ export default function PublishingPage() {
                 canManage={canManage}
                 busyKey={busyKey}
                 retentionLabel={temporaryMediaRetentionLabel}
+                hardDeleteLabel={temporaryMediaHardDeleteLabel}
                 onJobAction={runJobAction}
                 onGroupAction={runGroupAction}
                 onDeleteGroup={group => setDeleteTarget({ kind: 'group', group })}
@@ -1899,6 +1924,10 @@ function PendingMediaRow({ item }) {
   const verifiedText = item.status === 'uploading' && verifiedBytes < bytesUploaded
     ? `verified ${formatBytes(verifiedBytes)}`
     : '';
+  const storageHardDeleteAt = item.storageHardDeleteAt ? new Date(item.storageHardDeleteAt) : null;
+  const storageHardDeleteText = storageHardDeleteAt && !Number.isNaN(storageHardDeleteAt.getTime())
+    ? `Hard delete ${storageHardDeleteAt.toLocaleString()}`
+    : '';
 
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface2)] p-3">
@@ -1916,6 +1945,9 @@ function PendingMediaRow({ item }) {
       {verifiedText && (
         <p className="mt-1 text-[10px] text-[var(--muted)]">{verifiedText}</p>
       )}
+      {storageHardDeleteText && (
+        <p className="mt-1 text-[10px] text-gold">{storageHardDeleteText}</p>
+      )}
     </div>
   );
 }
@@ -1930,7 +1962,7 @@ function getPendingItemMeta(item) {
   return { label: 'Waiting', tone: 'border-sky-400/30 bg-sky-400/10 text-sky-300' };
 }
 
-function DispatchGroup({ group, canManage, busyKey, retentionLabel, onJobAction, onGroupAction, onDeleteGroup, onDeleteJob }) {
+function DispatchGroup({ group, canManage, busyKey, retentionLabel, hardDeleteLabel, onJobAction, onGroupAction, onDeleteGroup, onDeleteJob }) {
   const meta = getJobStatusMeta(group.status);
   const pauseJobs = getGroupActionJobs(group, 'pause');
   const resumeJobs = getGroupActionJobs(group, 'resume');
@@ -2042,6 +2074,7 @@ function DispatchGroup({ group, canManage, busyKey, retentionLabel, onJobAction,
             canManage={canManage}
             busyKey={busyKey}
             retentionLabel={retentionLabel}
+            hardDeleteLabel={hardDeleteLabel}
             onJobAction={onJobAction}
             onDeleteJob={onDeleteJob}
           />
@@ -2083,14 +2116,21 @@ function PlatformPill({ job }) {
   );
 }
 
-function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction, onDeleteJob }) {
+function PlatformJobRow({ job, canManage, busyKey, retentionLabel, hardDeleteLabel, onJobAction, onDeleteJob }) {
   const meta = getJobStatusMeta(job.temporaryMediaExpiredAt ? 'expired' : job.status);
   const account = getJobAccount(job);
   const media = getJobMedia(job);
   const caption = getJobCaption(job);
   const providerProgress = getProviderUploadProgress(job);
   const temporaryMediaExpired = Boolean(job.temporaryMediaExpiredAt);
+  const temporaryMediaExpiryReason = job.temporaryMediaExpiryReason || '';
   const temporaryMediaExpiresAt = job.temporaryMediaExpiresAt ? new Date(job.temporaryMediaExpiresAt) : null;
+  const storageHardDeleteAt = getJobStorageHardDeleteAt(job);
+  const temporaryMediaExpiredMessage = temporaryMediaExpiryReason === 'storage_hard_delete'
+    ? `Storage hard-deleted media after ${hardDeleteLabel} from upload start; retry is disabled.`
+    : temporaryMediaExpiryReason === 'storage_unavailable'
+      ? 'Temporary cloud media is unavailable; retry is disabled.'
+      : `Media expired after ${retentionLabel}; retry is disabled.`;
   const controlAction = job.publishControl?.action || '';
   const canManageJob = canManage && !temporaryMediaExpired;
   const canPause = canManageJob && ['queued', 'publishing'].includes(job.status) && controlAction !== 'pause_requested' && controlAction !== 'cancel_requested';
@@ -2162,9 +2202,12 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, onJobAction, 
           {job.retryCount > 0 && <span>{job.retryCount} retries</span>}
           {job.mediaProcessing?.compressBeforeUpload && <span className="text-mint">compression enabled</span>}
           {controlAction && <span className="text-gold">{job.publishControl?.message || 'Control pending'}</span>}
-          {temporaryMediaExpired && <span className="text-rose">Media expired after {retentionLabel}</span>}
+          {temporaryMediaExpired && <span className="text-rose">{temporaryMediaExpiredMessage}</span>}
           {!temporaryMediaExpired && temporaryMediaExpiresAt && (
             <span className="text-gold">Retry media until {temporaryMediaExpiresAt.toLocaleString()}</span>
+          )}
+          {!temporaryMediaExpired && storageHardDeleteAt && (
+            <span className="text-gold">Storage hard delete {storageHardDeleteAt.toLocaleString()}</span>
           )}
         </div>
       </div>

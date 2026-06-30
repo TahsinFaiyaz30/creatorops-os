@@ -208,6 +208,11 @@ const publishJobSchema = new Schema(
       type: Date,
       default: null
     },
+    temporaryMediaExpiryReason: {
+      type: String,
+      enum: ['', 'retry_retention', 'storage_hard_delete', 'storage_unavailable'],
+      default: ''
+    },
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',
