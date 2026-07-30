@@ -72,13 +72,13 @@ export default function ApprovalQueue({ user }) {
               <p><span className="text-[var(--muted)]">Scores:</span> Brand {variant?.brandScore} / Readiness {variant?.readinessScore}</p>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              <button onClick={() => decide(approval, 'approve')} disabled={busyId === approval._id} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]">
+              <button onClick={() => decide(approval, 'approve')} disabled={busyId === approval._id} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[var(--accent-fg)]">
                 <Check size={15} /> Approve for publishing
               </button>
               <button onClick={() => decide(approval, 'reject')} disabled={busyId === approval._id} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-rose px-3 py-2 text-sm font-semibold text-[var(--text)]">
                 <X size={15} /> Reject
               </button>
-              <button onClick={() => decide(approval, 'request-changes')} disabled={busyId === approval._id} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-[#05130d]">
+              <button onClick={() => decide(approval, 'request-changes')} disabled={busyId === approval._id} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-[var(--accent-fg)]">
                 <MessageSquareWarning size={15} /> Request changes
               </button>
             </div>

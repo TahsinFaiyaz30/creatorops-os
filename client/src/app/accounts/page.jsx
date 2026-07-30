@@ -145,7 +145,7 @@ export default function AccountsPage() {
             
             <button 
               onClick={() => setShowAddAccount(!showAddAccount)}
-              className="flex items-center gap-2 px-6 py-3 bg-mint text-[#05130d] font-bold rounded-2xl hover:brightness-110 hover:scale-105 transition-all shadow-[0_0_20px_rgba(var(--color-mint-rgb),0.3)]"
+              className="flex items-center gap-2 px-6 py-3 bg-mint text-[var(--accent-fg)] font-bold rounded-2xl hover:brightness-110 hover:scale-105 transition-all shadow-[0_0_20px_rgba(var(--color-mint-rgb),0.3)]"
             >
               <Plus size={18} />
               {showAddAccount ? 'Close Directory' : 'Add Account'}
@@ -192,7 +192,7 @@ export default function AccountsPage() {
                     type="button"
                     disabled={busyPlatform === platform.platform || !platform.configured}
                     onClick={() => connect(platform)}
-                    className="w-full py-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface2)] text-sm font-bold text-[var(--text)] hover:bg-mint hover:text-[#05130d] hover:border-mint transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full py-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface2)] text-sm font-bold text-[var(--text)] hover:bg-mint hover:text-[var(--accent-fg)] hover:border-mint transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {busyPlatform === platform.platform ? 'Connecting...' : 'Connect'}
                   </button>

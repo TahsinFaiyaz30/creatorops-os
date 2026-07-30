@@ -1407,7 +1407,7 @@ export default function PublishingPage() {
               <StatusStat icon={Activity} label="Processing" value={stats.processing} tone="text-mint" />
               <StatusStat icon={AlertTriangle} label="Review" value={stats.review} tone="text-gold" />
               <StatusStat icon={CheckCircle2} label="Done" value={stats.published} tone="text-mint" />
-              <Link href="/compose" className="focus-ring inline-flex h-10 items-center gap-2 rounded-lg bg-mint px-3 text-sm font-semibold text-[#05130d]">
+              <Link href="/compose" className="focus-ring inline-flex h-10 items-center gap-2 rounded-lg bg-mint px-3 text-sm font-semibold text-[var(--accent-fg)]">
                 <Send size={16} />
                 Compose
               </Link>
@@ -1855,7 +1855,7 @@ function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onC
                 type="button"
                 onClick={() => onResume(pending)}
                 disabled={resumeBusy}
-                className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d] disabled:opacity-60"
+                className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[var(--accent-fg)] disabled:opacity-60"
               >
                 {resumeBusy ? <Loader2 size={14} className="animate-spin" /> : progress.status === 'failed_upload' ? <RotateCcw size={14} /> : <PlayCircle size={14} />}
                 {resumeLabel}
@@ -2024,7 +2024,7 @@ function DispatchGroup({ group, canManage, busyKey, retentionLabel, hardDeleteLa
                   type="button"
                   onClick={() => onGroupAction({ group, action: 'resume' })}
                   disabled={busyKey === `resume:group:${group.id}`}
-                  className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d] disabled:opacity-60"
+                  className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[var(--accent-fg)] disabled:opacity-60"
                 >
                   <PlayCircle size={14} />
                   Resume {resumeJobs.length}
@@ -2251,7 +2251,7 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, hardDeleteLab
             type="button"
             onClick={() => onJobAction({ job, action: 'resume' })}
             disabled={busy('resume')}
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d] disabled:opacity-60"
+            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[var(--accent-fg)] disabled:opacity-60"
           >
             <PlayCircle size={14} />
             Resume
@@ -2262,7 +2262,7 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, hardDeleteLab
             type="button"
             onClick={() => onJobAction({ job, action: 'retry' })}
             disabled={busy('retry')}
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-gold px-3 text-xs font-semibold text-[#05130d] disabled:opacity-60"
+            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-gold px-3 text-xs font-semibold text-[var(--accent-fg)] disabled:opacity-60"
           >
             <RotateCcw size={14} />
             Retry

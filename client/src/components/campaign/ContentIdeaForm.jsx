@@ -48,7 +48,7 @@ export default function ContentIdeaForm({ onCreate }) {
       <button
         type="submit"
         disabled={busy}
-        className="focus-ring mt-4 inline-flex items-center gap-2 rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[#05130d] hover:bg-green-300"
+        className="focus-ring mt-4 inline-flex items-center gap-2 rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[var(--accent-fg)] hover:bg-green-300"
       >
         <Lightbulb size={16} />
         {busy ? 'Creating...' : 'Create idea'}

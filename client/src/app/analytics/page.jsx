@@ -305,7 +305,7 @@ export default function AnalyticsPage() {
                       <h2 className="text-xl font-bold text-[var(--text)]">{selectedGroup.title}</h2>
                       <p className="mt-2 max-w-3xl text-sm text-[var(--muted)]">{selectedGroup.caption}</p>
                     </div>
-                    <button type="button" disabled={busy === `sync-${selectedGroup.id}`} onClick={() => syncGroup(selectedGroup)} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50">
+                    <button type="button" disabled={busy === `sync-${selectedGroup.id}`} onClick={() => syncGroup(selectedGroup)} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[var(--accent-fg)] disabled:opacity-50">
                       <RefreshCw size={15} />
                       Sync all platforms
                     </button>
@@ -313,9 +313,9 @@ export default function AnalyticsPage() {
 
                   <div className="mt-4 flex flex-wrap items-center gap-2">
                     <span className="inline-flex items-center gap-1 text-xs text-[var(--muted)]"><Filter size={13} /> Filter:</span>
-                    <button type="button" onClick={() => openGroup(selectedGroup.id, '')} className={`rounded-full px-3 py-1 text-xs ${!selectedPlatform ? 'bg-mint text-[#05130d]' : 'bg-[var(--surface2)] text-[var(--text)]'}`}>All</button>
+                    <button type="button" onClick={() => openGroup(selectedGroup.id, '')} className={`rounded-full px-3 py-1 text-xs ${!selectedPlatform ? 'bg-mint text-[var(--accent-fg)]' : 'bg-[var(--surface2)] text-[var(--text)]'}`}>All</button>
                     {selectedGroup.platforms.map(platform => (
-                      <button key={platform} type="button" onClick={() => openGroup(selectedGroup.id, platform)} className={`rounded-full px-3 py-1 text-xs ${selectedPlatform === platform ? 'bg-mint text-[#05130d]' : 'bg-[var(--surface2)] text-[var(--text)]'}`}>
+                      <button key={platform} type="button" onClick={() => openGroup(selectedGroup.id, platform)} className={`rounded-full px-3 py-1 text-xs ${selectedPlatform === platform ? 'bg-mint text-[var(--accent-fg)]' : 'bg-[var(--surface2)] text-[var(--text)]'}`}>
                         {formatPlatform(platform)}
                       </button>
                     ))}
@@ -484,7 +484,7 @@ function CommentThreadNode({ comment, user, busy, replyText, setReplyText, onRep
               type="button"
               disabled={busy === commentKey || !String(replyText[commentKey] || '').trim()}
               onClick={() => onReply(comment)}
-              className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]"
+              className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[var(--accent-fg)]"
             >
               Reply
             </button>
@@ -548,7 +548,7 @@ function AccountReplyCard({ reply, user, busy, replyText, setReplyText, onReply,
               type="button"
               disabled={busy === replyKey || !String(replyText[replyKey] || '').trim()}
               onClick={() => onReply(reply)}
-              className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]"
+              className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[var(--accent-fg)]"
             >
               Reply
             </button>

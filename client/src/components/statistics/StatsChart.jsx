@@ -223,14 +223,14 @@ export default function StatsChart({ data = [], metric = 'value', title = '', su
           <button
             id="chart-toggle-bar"
             onClick={() => setView('bar')}
-            className={`rounded-xl px-3 py-1 text-xs font-semibold transition-colors ${view === 'bar' ? 'bg-mint text-[#05130d]' : 'text-[var(--muted)] hover:text-[var(--text)]'}`}
+            className={`rounded-xl px-3 py-1 text-xs font-semibold transition-colors ${view === 'bar' ? 'bg-mint text-[var(--accent-fg)]' : 'text-[var(--muted)] hover:text-[var(--text)]'}`}
           >
             Bar
           </button>
           <button
             id="chart-toggle-ogive"
             onClick={() => setView('ogive')}
-            className={`rounded-xl px-3 py-1 text-xs font-semibold transition-colors ${view === 'ogive' ? 'bg-mint text-[#05130d]' : 'text-[var(--muted)] hover:text-[var(--text)]'}`}
+            className={`rounded-xl px-3 py-1 text-xs font-semibold transition-colors ${view === 'ogive' ? 'bg-mint text-[var(--accent-fg)]' : 'text-[var(--muted)] hover:text-[var(--text)]'}`}
           >
             Ogive
           </button>

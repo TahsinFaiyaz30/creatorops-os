@@ -4,30 +4,102 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── CSS custom properties (light default, dark override) ──────────────────── */
-:root {
-  --bg:       #000000;
-  --surface:  #0a0a0a;
-  --surface2: #141414;
-  --border:   #262626;
-  --text:     #ffffff;
-  --muted:    #a3a3a3;
-  --accent:   #ffffff;
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS
+
+   Every surface, border and text colour in the app resolves through these
+   variables (≈1000 usages), so the whole client re-themes from this block.
+
+   `.dark` and `.light` are both written by ThemeProvider / the pre-paint script
+   in layout.jsx. `:root` carries the dark values so that if class application
+   is ever delayed the page still renders dark rather than unstyled.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root,
+.dark {
+  /* Surfaces — near-black, low-chroma, stepped for real elevation */
+  --bg:        #050505;
+  --surface:   #0b0b0d;
+  --surface2:  #121216;
+  --surface3:  #1a1a20;
+
+  /* Hairlines */
+  --border:        rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.20);
+
+  /* Type */
+  --text:   #fafafa;
+  --text-2: #d4d4d8;
+  --muted:  #8b8b94;
+
+  /* Brand accent — replaces the old pure-white "mint".
+     Stored as space-separated RGB channels because Tailwind 3 can only apply
+     opacity modifiers (bg-mint/10, border-mint/30 — ~170 usages) to a colour
+     declared as `rgb(var(--x) / <alpha-value>)`. A plain hex var breaks them. */
+  --accent-rgb:  167 139 250;
+  --accent:      rgb(var(--accent-rgb));
+  --accent-hover:#c4b5fd;
+  --accent-fg:   #16091f;
+  --accent-soft: rgb(var(--accent-rgb) / 0.14);
+  --accent-line: rgb(var(--accent-rgb) / 0.35);
+
+  /* Semantic — channels for the same reason */
+  --success-rgb: 52 211 153;
+  --warning-rgb: 251 191 36;
+  --danger-rgb:  251 113 133;
+  --info-rgb:    56 189 248;
+  --success: rgb(var(--success-rgb));
+  --warning: rgb(var(--warning-rgb));
+  --danger:  rgb(var(--danger-rgb));
+  --info:    rgb(var(--info-rgb));
+
+  /* Effects */
+  --ring:  rgba(167, 139, 250, 0.55);
+  --glow:  rgba(167, 139, 250, 0.22);
+  --shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.75);
+  --grid-line: rgba(255, 255, 255, 0.035);
+
   color-scheme: dark;
 }
 
 .light {
-  --bg:       #ffffff;
-  --surface:  #f8fafc;
-  --surface2: #f1f5f9;
-  --border:   #e2e8f0;
-  --text:     #0f172a;
-  --muted:    #64748b;
-  --accent:   #000000;
+  --bg:        #fbfbfc;
+  --surface:   #ffffff;
+  --surface2:  #f4f4f6;
+  --surface3:  #eaeaee;
+
+  --border:        rgba(9, 9, 11, 0.10);
+  --border-strong: rgba(9, 9, 11, 0.20);
+
+  --text:   #09090b;
+  --text-2: #3f3f46;
+  --muted:  #6b6b76;
+
+  --accent-rgb:  124 58 237;
+  --accent:      rgb(var(--accent-rgb));
+  --accent-hover:#6d28d9;
+  --accent-fg:   #ffffff;
+  --accent-soft: rgb(var(--accent-rgb) / 0.10);
+  --accent-line: rgb(var(--accent-rgb) / 0.30);
+
+  --success-rgb: 5 150 105;
+  --warning-rgb: 180 83 9;
+  --danger-rgb:  225 29 72;
+  --info-rgb:    2 132 199;
+  --success: rgb(var(--success-rgb));
+  --warning: rgb(var(--warning-rgb));
+  --danger:  rgb(var(--danger-rgb));
+  --info:    rgb(var(--info-rgb));
+
+  --ring:  rgba(124, 58, 237, 0.45);
+  --glow:  rgba(124, 58, 237, 0.16);
+  --shadow: 0 18px 50px -18px rgba(9, 9, 11, 0.20);
+  --grid-line: rgba(9, 9, 11, 0.05);
+
   color-scheme: light;
 }
 
-/* ── Base resets ───────────────────────────────────────────────────────────── */
+/* ── Base ──────────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
 html {
@@ -47,48 +119,75 @@ body {
 }
 
 button, input, textarea, select { font: inherit; }
-
 button:disabled { cursor: not-allowed; opacity: 0.5; }
 
-/* ── Focus ring ────────────────────────────────────────────────────────────── */
+::selection { background: var(--accent-soft); color: var(--text); }
+
+/* ── Focus ring — was hardcoded white, invisible in light mode ─────────────── */
 .focus-ring { outline: none; }
 .focus-ring:focus-visible {
-  box-shadow: 0 0 0 3px rgba(255,255,255,0.4);
+  box-shadow: 0 0 0 3px var(--ring);
 }
+:focus-visible { outline: none; }
 
-/* ── Custom scrollbar ──────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
+/* ── Scrollbar — hover colour was hardcoded white ──────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--border-strong);
   border-radius: 99px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #ffffff40;
-}
+::-webkit-scrollbar-thumb:hover { background: var(--accent-line); }
+* { scrollbar-color: var(--border-strong) transparent; scrollbar-width: thin; }
 
-/* ── Sidebar nav link active glow ──────────────────────────────────────────── */
+/* ── Sidebar active link — was white-on-white in light mode ────────────────── */
 .nav-active {
-  background: rgba(255,255,255,0.10);
-  color: #ffffff;
-  box-shadow: inset 2px 0 0 #ffffff;
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
-/* ── Glass card ────────────────────────────────────────────────────────────── */
+/* ── Glass ─────────────────────────────────────────────────────────────────── */
 .glass {
-  backdrop-filter: blur(12px) saturate(140%);
-  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
 }
 
-/* ── Light mode card overrides ─────────────────────────────────────────────── */
-:root .card {
+/* ── Reusable surface primitives ───────────────────────────────────────────── */
+.card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  border-radius: 1rem;
+}
+.card-hover {
+  transition: border-color 0.2s, background-color 0.2s, transform 0.2s;
+}
+.card-hover:hover {
+  border-color: var(--border-strong);
+  background: var(--surface2);
 }
 
-/* ── Transition utilities ──────────────────────────────────────────────────── */
+/* Faint blueprint grid used behind hero / dashboard surfaces */
+.bg-blueprint {
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ── Transitions ───────────────────────────────────────────────────────────── */
 .sidebar-transition {
   transition: width 0.22s cubic-bezier(0.4,0,0.2,1),
               transform 0.22s cubic-bezier(0.4,0,0.2,1);
+}
+
+/* Respect reduced-motion globally for CSS-driven animation */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -126,7 +126,7 @@ export default function FloatingCalendarDrawer() {
         type="button"
         aria-label="Open calendar"
         onClick={() => setOpen(true)}
-        className={`fixed right-0 top-1/2 z-40 -translate-y-1/2 rounded-l-lg border border-r-0 border-[var(--border)] bg-mint px-2 py-6 font-bold text-[#05130d] shadow-soft transition-transform ${open ? 'translate-x-full' : ''}`}
+        className={`fixed right-0 top-1/2 z-40 -translate-y-1/2 rounded-l-lg border border-r-0 border-[var(--border)] bg-mint px-2 py-6 font-bold text-[var(--accent-fg)] shadow-soft transition-transform ${open ? 'translate-x-full' : ''}`}
       >
         <ChevronLeft size={18} />
       </button>

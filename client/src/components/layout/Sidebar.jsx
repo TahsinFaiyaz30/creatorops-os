@@ -1,239 +1,234 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import {
-  BarChart3, Bot, BriefcaseBusiness, ChevronLeft, ChevronRight,
-  ClipboardList, Edit3, GitBranch, LayoutDashboard, ServerCog,
-  LogOut, RadioTower, Send, ShieldCheck, UserCircle, X
-} from 'lucide-react';
-import { useTheme } from './ThemeProvider';
-import RoleBadge from './RoleBadge';
-import SiteLogo from './SiteLogo';
-import NotificationBell from '../notifications/NotificationBell';
-import { clearSession } from '../../lib/auth';
-import { ROLES, hasRole } from '../../lib/roles';
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Sidebar — CreatorOps.OS command rail.
+ *
+ * Nav lives here; AppShell owns layout + auth. Built on the Aceternity Sidebar
+ * primitive (icon rail that expands on hover; controlled `open` state so the
+ * mobile sheet shares one source of truth).
+ *
+ * Hierarchy is the brief's, verbatim:
+ *   PLAN · CREATE · REVIEW · DISTRIBUTE · MEASURE · MARKETPLACE · SYSTEM
+ *
+ * Two entries the brief omits are kept but role-gated, because dropping them
+ * from the nav would orphan working pages with no other route in:
+ *   · Admin (ADMIN only) — /admin is otherwise unreachable
+ *   · Brand Profile (BRAND_REP only) — drives AI tone; nothing else links it
+ * Neither is visible to a plain content creator, so what that role sees is
+ * exactly the brief's structure.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
 
-// ── Nav groups by account roles ───────────────────────────────────────────────
-const NAV_GROUPS = [
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { motion } from 'motion/react';
+import {
+  LayoutDashboard, GitBranch, Edit3, Bot, Images, ShieldCheck,
+  RadioTower, Ruler, Send, BarChart3, Rss, MessagesSquare,
+  BriefcaseBusiness, ClipboardList, Building2, Activity, Network,
+  ServerCog, LogOut
+} from 'lucide-react';
+
+import { SidebarLink } from '../ui/sidebar';
+import { ROLES, hasRole, getRoleLabel } from '../../lib/roles';
+
+export const NAV_GROUPS = [
   {
-    label: 'Workspace',
+    label: 'Plan',
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-    ],
+      { href: '/campaigns', label: 'Campaigns', icon: GitBranch,       roles: [ROLES.CONTENT_CREATOR] }
+    ]
   },
   {
-    label: 'Content',
+    label: 'Create',
     items: [
-      { href: '/campaigns',  label: 'Campaigns',  icon: GitBranch, roles: [ROLES.CONTENT_CREATOR] },
-      { href: '/compose',    label: 'Compose',    icon: Edit3,     roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-      { href: '/scripting',  label: 'Script AI',  icon: Bot,       roles: [ROLES.CONTENT_CREATOR] },
-    ],
+      { href: '/compose',   label: 'Compose',   icon: Edit3,  roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/scripting', label: 'Script AI', icon: Bot,    roles: [ROLES.CONTENT_CREATOR] },
+      { href: '/media',     label: 'Media',     icon: Images, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] }
+    ]
   },
   {
-    label: 'Review & Publish',
+    label: 'Review',
     items: [
-      { href: '/review',     label: 'Creator Review',  icon: ShieldCheck, roles: [ROLES.CONTENT_CREATOR] },
-      { href: '/accounts',   label: 'Accounts',   icon: RadioTower,  roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-      { href: '/publishing', label: 'Dispatch',  icon: Send,        roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-      { href: '/analytics',  label: 'Analytics',  icon: BarChart3,   roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-    ],
+      { href: '/review', label: 'Approvals', icon: ShieldCheck, roles: [ROLES.CONTENT_CREATOR] }
+    ]
   },
   {
-    label: 'Creator Economy',
+    label: 'Distribute',
     items: [
-      { href: '/brand-circulars', label: 'Brand Circulars', icon: BriefcaseBusiness, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-      { href: '/applications',    label: 'Applications',    icon: ClipboardList,     roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-    ],
+      { href: '/accounts',   label: 'Connections',  icon: RadioTower, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/formats',    label: 'Format Rules', icon: Ruler,      roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/publishing', label: 'Dispatch',     icon: Send,       roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] }
+    ]
+  },
+  {
+    label: 'Measure',
+    items: [
+      { href: '/analytics', label: 'Analytics', icon: BarChart3,      roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/posts',     label: 'Posts',     icon: Rss,            roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/inbox',     label: 'Inbox',     icon: MessagesSquare, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] }
+    ]
+  },
+  {
+    label: 'Marketplace',
+    items: [
+      { href: '/brand-circulars', label: 'Circulars',     icon: BriefcaseBusiness, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/applications',    label: 'Applications',  icon: ClipboardList,     roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/brand-profile',   label: 'Brand Profile', icon: Building2,         roles: [ROLES.BRAND_REP] }
+    ]
   },
   {
     label: 'System',
     items: [
-      { href: '/admin', label: 'Admin Panel', icon: ServerCog, roles: [ROLES.ADMIN] },
-      { href: '/architecture', label: 'Architecture',  icon: BarChart3, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-    ],
-  },
+      { href: '/activity',     label: 'Activity',     icon: Activity,  roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/architecture', label: 'Architecture', icon: Network,   roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/admin',        label: 'Admin',        icon: ServerCog, roles: [ROLES.ADMIN] }
+    ]
+  }
 ];
 
-export default function Sidebar({ user, collapsed, onCollapse, mobileOpen, onMobileClose }) {
-  const pathname = usePathname();
-  const router   = useRouter();
-  const { theme, toggle } = useTheme();
+export function visibleGroupsFor(user) {
+  return NAV_GROUPS
+    .map(g => ({ ...g, items: g.items.filter(i => !i.roles || i.roles.some(r => hasRole(user, r))) }))
+    .filter(g => g.items.length > 0);
+}
 
-  const logout = () => { clearSession(); router.push('/login'); };
+/* ── One nav link with a glowing active state ─────────────────────────────── */
 
-  const initials = user?.name
-    ? user.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
-    : '??';
+function NavRow({ item, active, expanded }) {
+  const Icon = item.icon;
+  return (
+    <div className="relative">
+      {/* Active glow — a shared layoutId slides it between links */}
+      {active && (
+        <motion.span
+          layoutId="nav-active-glow"
+          transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+          className="pointer-events-none absolute inset-0 rounded-lg border border-[var(--accent-line)] bg-[var(--accent-soft)] shadow-[0_0_18px_-6px_var(--glow)]"
+        />
+      )}
+      {/* Left rail tick — stays legible when the rail is collapsed to icons */}
+      {active && (
+        <span className="pointer-events-none absolute left-0 top-1/2 z-10 h-4 w-[2px] -translate-y-1/2 rounded-full bg-[var(--accent)]" />
+      )}
+      <SidebarLink
+        link={{
+          href: item.href,
+          label: item.label,
+          icon: (
+            <Icon
+              size={18}
+              className={`shrink-0 transition-colors ${
+                active ? 'text-[var(--accent)]' : 'text-[var(--muted)] group-hover/sidebar:text-[var(--text)]'
+              }`}
+            />
+          )
+        }}
+        className={`relative z-10 rounded-lg px-2.5 py-1.5 transition-colors ${
+          active
+            ? 'font-semibold text-[var(--accent)]'
+            : 'text-[var(--text-2)] hover:bg-[var(--surface2)]'
+        }`}
+      />
+    </div>
+  );
+}
 
-  // Filter groups/items for this account's roles
-  const visibleGroups = NAV_GROUPS.map(g => ({
-    ...g,
-    items: g.items.filter(item => {
-      return !item.roles || item.roles.some(role => hasRole(user, role));
-    }),
-  })).filter(g => g.items.length > 0);
+/* ── Footer: profile + sign out ───────────────────────────────────────────── */
 
-  const NavItem = ({ href, label, icon: Icon }) => {
-    const active = pathname === href || pathname.startsWith(`${href}/`);
-    return (
+function ProfileFooter({ user, expanded, onSignOut }) {
+  /* Name comes from the authenticated session, not a constant — hardcoding a
+     name would mislabel whoever is actually signed in. */
+  const name = user?.name || 'Account';
+  const initials =
+    name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || 'CO';
+  const profileHref = user?._id || user?.id ? `/profile/${user._id || user.id}` : '/profile/edit';
+
+  return (
+    <div className="mt-2 shrink-0 border-t border-[var(--border)] pt-3">
       <Link
-        href={href}
-        onClick={onMobileClose}
-        title={collapsed ? label : undefined}
-        className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all
-          ${active
-            ? 'nav-active'
-            : 'text-[var(--muted)] hover:bg-[var(--border)] hover:text-[var(--text)]'
-          }
-          ${collapsed ? 'justify-center px-2' : ''}
-        `}
+        href={profileHref}
+        className="focus-ring group flex items-center gap-2.5 rounded-lg p-1.5 transition-colors hover:bg-[var(--surface2)]"
       >
-        <Icon size={18} strokeWidth={active ? 2.2 : 1.8} className="shrink-0" />
-        {!collapsed && <span className="truncate">{label}</span>}
-        {/* Tooltip when collapsed */}
-        {collapsed && (
-          <span className="pointer-events-none absolute left-full ml-2 hidden rounded-md bg-[#05130d] px-2.5 py-1.5 text-xs font-semibold text-white shadow-lg group-hover:block dark:bg-slate-800 z-50">
-            {label}
+        <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#6344F5] to-[#AE48FF] text-[11px] font-bold text-white shadow-[0_0_16px_-6px_var(--glow)]">
+          {initials}
+          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--surface)] bg-success" />
+        </span>
+        <motion.span
+          animate={{ opacity: expanded ? 1 : 0 }}
+          className="min-w-0 flex-1 overflow-hidden text-left"
+        >
+          <span className="block truncate text-xs font-semibold text-[var(--text)]">{name}</span>
+          <span className="block truncate text-[10px] text-[var(--muted)]">
+            {user ? getRoleLabel(user.role) : 'Signed out'}
           </span>
-        )}
+        </motion.span>
       </Link>
-    );
-  };
 
-  const sidebarContent = (
-    <div className="flex h-full flex-col">
-      {/* Logo + collapse toggle */}
-      <div className={`flex h-14 shrink-0 items-center border-b border-[var(--border)] px-3 ${collapsed ? 'justify-center' : 'justify-between'}`}>
-        {!collapsed && (
-          <SiteLogo />
-        )}
-        {collapsed && (
-          <SiteLogo compact />
-        )}
-        <div className="flex items-center gap-1">
-          {/* Mobile close */}
-          {mobileOpen && (
-            <button
-              type="button"
-              onClick={onMobileClose}
-              className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[var(--border)] hover:text-[var(--text)] lg:hidden"
-              aria-label="Close navigation"
-            >
-              <X size={18} />
-            </button>
-          )}
-          {/* Desktop collapse */}
-          <button
-            type="button"
-            onClick={onCollapse}
-            className="focus-ring hidden h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[var(--border)] hover:text-[var(--text)] lg:flex"
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      <button
+        type="button"
+        onClick={onSignOut}
+        className="focus-ring mt-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-[var(--muted)] transition-colors hover:bg-danger/10 hover:text-danger"
+      >
+        <LogOut size={18} className="shrink-0" />
+        <motion.span animate={{ opacity: expanded ? 1 : 0 }} className="whitespace-nowrap">
+          Sign out
+        </motion.span>
+      </button>
+    </div>
+  );
+}
+
+/* ── Public: the rail's inner content ─────────────────────────────────────── */
+
+export default function Sidebar({ user, expanded, onSignOut }) {
+  const pathname = usePathname();
+  const groups = visibleGroupsFor(user);
+
+  return (
+    <>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+        {/* Brand */}
+        <Link href="/dashboard" className="mb-5 flex items-center gap-2.5 px-1.5">
+          <img src="/logo.jpeg" alt="" width={26} height={26} className="shrink-0 rounded-md" />
+          <motion.span
+            animate={{ opacity: expanded ? 1 : 0 }}
+            className="min-w-0 overflow-hidden whitespace-nowrap"
           >
-            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </button>
-        </div>
-      </div>
+            <span className="block text-sm font-bold leading-tight tracking-tight text-[var(--text)]">
+              CreatorOps<span className="text-[var(--accent)]">.OS</span>
+            </span>
+            <span className="block text-[9px] uppercase tracking-[0.16em] text-[var(--muted)]">
+              Command Center
+            </span>
+          </motion.span>
+        </Link>
 
-      {/* Nav groups */}
-      <nav className="flex-1 overflow-y-auto px-2 py-3">
-        {visibleGroups.map((group, gi) => (
-          <div key={gi} className={gi > 0 ? 'mt-4' : ''}>
-            {!collapsed && (
-              <div className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
-                {group.label}
-              </div>
-            )}
-            {collapsed && gi > 0 && <div className="my-3 mx-3 h-px bg-[var(--border)]" />}
-            <div className="space-y-0.5">
+        {groups.map(group => (
+          <div key={group.label} className="mb-3.5">
+            <motion.p
+              animate={{ opacity: expanded ? 1 : 0 }}
+              className="mb-1 whitespace-nowrap px-2.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]"
+            >
+              {group.label}
+            </motion.p>
+            <div className="flex flex-col gap-0.5">
               {group.items.map(item => (
-                <NavItem key={item.href} {...item} />
+                <NavRow
+                  key={item.href}
+                  item={item}
+                  expanded={expanded}
+                  active={pathname === item.href || pathname.startsWith(item.href + '/')}
+                />
               ))}
             </div>
           </div>
         ))}
-      </nav>
-
-      {/* User section */}
-      <div className={`shrink-0 border-t border-[var(--border)] p-3 flex flex-col gap-3 ${collapsed ? 'items-center' : ''}`}>
-        {!collapsed && (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface2)] px-3 py-2.5">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-mint to-blue-500 text-xs font-bold text-[#05130d]">
-                {initials}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold text-[var(--text)]">{user?.name || 'Unknown'}</div>
-                <div className="truncate text-xs text-[var(--muted)]">{user?.email}</div>
-              </div>
-            </div>
-            <RoleBadge user={user} />
-          </div>
-        )}
-        
-        <div className={`flex gap-2 ${collapsed ? 'flex-col items-center' : 'items-center'}`}>
-          <NotificationBell compact={collapsed} />
-          
-          <button
-            id="sidebar-theme-toggle"
-            type="button"
-            onClick={toggle}
-            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-            className="focus-ring flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[var(--border)] hover:text-[var(--text)]"
-          >
-            {theme === 'dark'
-              ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-              : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-            }
-          </button>
-
-          <Link
-            href="/profile/me"
-            title="My Profile"
-            className={`focus-ring flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:bg-mint/10 hover:text-mint hover:border-mint/20 ${collapsed ? 'h-9 w-9' : 'flex-1 py-2 gap-2 text-sm'}`}
-          >
-            <UserCircle size={15} /> {!collapsed && 'Profile'}
-          </Link>
-
-          <button
-            id="sidebar-logout"
-            type="button"
-            onClick={logout}
-            title="Logout"
-            className={`focus-ring flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:bg-rose/10 hover:text-rose hover:border-rose/20 ${collapsed ? 'h-9 w-9' : 'flex-1 py-2 gap-2 text-sm'}`}
-          >
-            <LogOut size={15} /> {!collapsed && 'Logout'}
-          </button>
-        </div>
       </div>
-    </div>
-  );
 
-  return (
-    <>
-      {/* ── Desktop sidebar ─────────────────────────────────────────────────── */}
-      <aside
-        className={`sidebar-transition hidden lg:flex flex-col shrink-0 border-r border-[var(--border)] bg-[var(--surface)] ${
-          collapsed ? 'w-[60px]' : 'w-64'
-        }`}
-        style={{ height: '100vh', position: 'sticky', top: 0 }}
-      >
-        {sidebarContent}
-      </aside>
-
-      {/* ── Mobile overlay ───────────────────────────────────────────────────── */}
-      {mobileOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
-            onClick={onMobileClose}
-            aria-hidden="true"
-          />
-          <aside className="fixed left-0 top-0 z-50 flex h-full w-72 flex-col border-r border-[var(--border)] bg-[var(--surface)] animate-slide-in-left lg:hidden">
-            {sidebarContent}
-          </aside>
-        </>
-      )}
+      <ProfileFooter user={user} expanded={expanded} onSignOut={onSignOut} />
     </>
   );
 }

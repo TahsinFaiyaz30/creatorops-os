@@ -249,7 +249,7 @@ export default function AdminPanelPage() {
                 type="button"
                 onClick={saveSettings}
                 disabled={settingsBusy}
-                className="focus-ring self-end inline-flex items-center justify-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50"
+                className="focus-ring self-end inline-flex items-center justify-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[var(--accent-fg)] disabled:opacity-50"
               >
                 {settingsBusy ? <Loader2 size={15} className="animate-spin-slow" /> : <Save size={15} />}
                 Save
@@ -309,7 +309,7 @@ export default function AdminPanelPage() {
                       type="button"
                       onClick={() => saveRoles(account.id)}
                       disabled={roleBusy === account.id}
-                      className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50"
+                      className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[var(--accent-fg)] disabled:opacity-50"
                     >
                       {roleBusy === account.id ? <Loader2 size={15} className="animate-spin-slow" /> : <Save size={15} />}
                       Save

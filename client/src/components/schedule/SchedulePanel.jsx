@@ -114,7 +114,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
           type="button"
           onClick={schedule}
           disabled={busy || !canPublish(user) || variant.status !== 'approved' || !platformConnectionId}
-          className="focus-ring inline-flex items-center gap-2 rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50"
+          className="focus-ring inline-flex items-center gap-2 rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-[var(--accent-fg)] disabled:opacity-50"
         >
           <CalendarClock size={15} />
           Schedule
@@ -123,7 +123,7 @@ export default function SchedulePanel({ variant, user, onDone }) {
           type="button"
           onClick={publishNow}
           disabled={busy || !canPublish(user) || variant.status !== 'approved' || !platformConnectionId}
-          className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50"
+          className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[var(--accent-fg)] disabled:opacity-50"
         >
           <Send size={15} />
           Publish now

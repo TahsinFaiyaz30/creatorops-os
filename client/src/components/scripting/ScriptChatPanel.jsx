@@ -77,7 +77,7 @@ export default function ScriptChatPanel() {
 
         <div className="mt-3 flex gap-2">
           <textarea value={message} onChange={event => setMessage(event.target.value)} rows={3} placeholder="Ask Script AI to create or revise a script..." className="focus-ring flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]" />
-          <button type="button" disabled={busy} onClick={send} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50">
+          <button type="button" disabled={busy} onClick={send} className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[var(--accent-fg)] disabled:opacity-50">
             <Send size={16} /> Send
           </button>
         </div>
@@ -104,7 +104,7 @@ export default function ScriptChatPanel() {
               </ul>
             </div>
             <pre className="whitespace-pre-wrap rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3 text-xs text-[var(--text)]">{finalScript.voiceover || finalScript.dialogue}</pre>
-            <button type="button" disabled={busy || !campaignId} onClick={convert} className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50">Convert to ContentItem</button>
+            <button type="button" disabled={busy || !campaignId} onClick={convert} className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[var(--accent-fg)] disabled:opacity-50">Convert to ContentItem</button>
           </div>
         ) : (
           <p className="mt-3 text-sm text-[var(--muted)]">No final script yet.</p>
