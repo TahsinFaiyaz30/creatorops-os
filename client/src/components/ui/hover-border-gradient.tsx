@@ -10,6 +10,7 @@ export function HoverBorderGradient({
   children,
   containerClassName,
   className,
+  fillClassName,
   as: Tag = "button",
   duration = 1,
   clockwise = true,
@@ -19,6 +20,8 @@ export function HoverBorderGradient({
     as?: React.ElementType;
     containerClassName?: string;
     className?: string;
+    /** Overrides the inner fill layer (default is upstream's black pill). */
+    fillClassName?: string;
     duration?: number;
     clockwise?: boolean;
   } & React.HTMLAttributes<HTMLElement>
@@ -93,7 +96,11 @@ export function HoverBorderGradient({
         }}
         transition={{ ease: "linear", duration: duration ?? 1 }}
       />
-      <div className="bg-black absolute z-1 flex-none inset-[2px] rounded-[100px]" />
+      {/* Inner fill. Upstream hardcodes `bg-black … rounded-[100px]`, which paints
+          a black pill behind any non-pill child (rectangular inputs) and ignores
+          the theme. Exposed as a prop; the default is the original string, so
+          omitting it renders exactly as upstream does. */}
+      <div className={cn("bg-black absolute z-1 flex-none inset-[2px] rounded-[100px]", fillClassName)} />
     </Tag>
   );
 }

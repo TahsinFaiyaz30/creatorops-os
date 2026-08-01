@@ -2,70 +2,98 @@
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- * ContentBoard — Bento Grid production board.
+ * ContentBoard — cinematic production board.
  *
- * Replaces the flat vertical stack with lanes driven by the server's real
- * CONTENT_STATUSES enum (idea, draft, in_review, approved, scheduled, published,
- * rejected, changes_requested). The eight statuses collapse into five lanes that
- * read like a production pipeline; review-adjacent states share a lane so
- * `changes_requested` and `rejected` surface next to `in_review` rather than
- * hiding in their own dead columns.
+ * Lanes are driven by the server's real CONTENT_STATUSES enum. The eight
+ * statuses collapse into five lanes that read like a pipeline; review-adjacent
+ * states (changes_requested, rejected) share the Review lane instead of hiding
+ * in their own dead columns.
  *
- * When a campaign has no content yet, the board renders representative tiles
- * flagged "Sample" so the layout is legible on an empty workspace. They are
- * visibly labelled and non-interactive — never mixed in with real items.
+ * Layout notes:
+ *  · Lane headers are sticky glass pills, so they stay legible while a long lane
+ *    scrolls underneath.
+ *  · Mobile gets horizontal scroll-snap — five lanes cannot share 375px.
+ *  · Empty lanes render a low-contrast dashed slot rather than collapsing, so the
+ *    board keeps its shape and the eye can still scan across statuses.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { useMemo } from 'react';
 import { motion } from 'motion/react';
-import { Lightbulb, PenTool, Eye, CheckCircle2, Rocket } from 'lucide-react';
+import { Lightbulb, PenTool, Eye, CheckCircle2, Rocket, Sparkles } from 'lucide-react';
 
-import { BentoGrid } from '../ui/bento-grid';
-import { Badge, useStagger } from '../ds';
+import { GlowingStarsBackgroundCard, GlowingStarsTitle, GlowingStarsDescription } from '../ui/glowing-stars';
+import { useStagger } from '../ds';
 import ContentCard from './ContentCard';
 
+const EASE = [0.16, 1, 0.3, 1];
+
 const LANES = [
-  { key: 'ideation',   label: 'Ideation',      icon: Lightbulb,    statuses: ['idea'] },
-  { key: 'production', label: 'In Production', icon: PenTool,      statuses: ['draft'] },
-  { key: 'review',     label: 'Review',        icon: Eye,          statuses: ['in_review', 'changes_requested', 'rejected'] },
-  { key: 'approved',   label: 'Approved',      icon: CheckCircle2, statuses: ['approved'] },
-  { key: 'released',   label: 'Released',      icon: Rocket,       statuses: ['scheduled', 'published'] }
+  { key: 'ideation',   label: 'Ideation',      icon: Lightbulb,    accent: '#6344F5', statuses: ['idea'] },
+  { key: 'production', label: 'In Production', icon: PenTool,      accent: '#0ea5e9', statuses: ['draft'] },
+  { key: 'review',     label: 'Review',        icon: Eye,          accent: '#f59e0b', statuses: ['in_review', 'changes_requested', 'rejected'] },
+  { key: 'approved',   label: 'Approved',      icon: CheckCircle2, accent: '#10b981', statuses: ['approved'] },
+  { key: 'released',   label: 'Released',      icon: Rocket,       accent: '#AE48FF', statuses: ['scheduled', 'published'] }
 ];
 
-/* Representative tiles for an empty board — clearly marked as samples. */
-const SAMPLES = {
-  ideation: [
-    { _id: 's1', title: 'Anamorphic B-roll — rooftop golden hour', rawIdea: 'Handheld 2.39:1 pass over the east rooftop at last light. Pull focus off the skyline into the lens flare.', status: 'idea' }
-  ],
-  production: [
-    { _id: 's2', title: 'Client sizzle — Q3 brand film', rawIdea: 'Assembly cut down to 90s. Needs colour pass and a licensed track before it goes out.', status: 'draft' }
-  ],
-  review: [
-    { _id: 's3', title: 'Behind the lens — grip department', rawIdea: 'Vertical cut for Shorts and Reels. Awaiting sign-off on the crew interview audio mix.', status: 'in_review' }
-  ],
-  approved: [
-    { _id: 's4', title: 'Title sequence breakdown', rawIdea: 'Approved for release across YouTube and LinkedIn. Captions locked.', status: 'approved' }
-  ],
-  released: [
-    { _id: 's5', title: 'Short film teaser — 30s', rawIdea: 'Published to all connected accounts. Analytics syncing nightly.', status: 'published' }
-  ]
-};
-
+/* Sticky glass pill with a glowing count. */
 function LaneHeader({ lane, count }) {
   const Icon = lane.icon;
+  const active = count > 0;
   return (
-    <header className="mb-3 flex items-center justify-between gap-2 border-b border-[var(--border)] pb-2">
-      <span className="flex min-w-0 items-center gap-2">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--surface2)] text-[var(--accent)]">
-          <Icon className="h-3 w-3" />
+    <header className="sticky top-0 z-20 -mx-1 mb-3 px-1 pb-2 pt-1 backdrop-blur-xl">
+      <div className="flex items-center justify-between gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)]/70 py-1.5 pl-2 pr-1.5 shadow-[var(--shadow)]">
+        <span className="flex min-w-0 items-center gap-2">
+          <span
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
+            style={{
+              background: `${lane.accent}1f`,
+              boxShadow: active ? `0 0 12px -2px ${lane.accent}66` : 'none'
+            }}
+          >
+            <Icon className="h-2.5 w-2.5" style={{ color: lane.accent }} />
+          </span>
+          <span className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text)]">
+            {lane.label}
+          </span>
         </span>
-        <span className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text)]">
-          {lane.label}
+        <span
+          className="flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold tabular-nums"
+          style={
+            active
+              ? { background: `${lane.accent}26`, color: lane.accent, boxShadow: `0 0 14px -4px ${lane.accent}` }
+              : { background: 'var(--surface3)', color: 'var(--muted)' }
+          }
+        >
+          {count}
         </span>
-      </span>
-      <Badge tone={count ? 'accent' : 'neutral'}>{count}</Badge>
+      </div>
     </header>
+  );
+}
+
+/* Glowing empty state — replaces the amber warning banner. */
+function BoardEmptyState() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, ease: EASE }}
+      className="mx-auto w-full max-w-sm"
+    >
+      <GlowingStarsBackgroundCard>
+        <GlowingStarsTitle>Nothing in production</GlowingStarsTitle>
+        <div className="flex items-end justify-between gap-3">
+          <GlowingStarsDescription>
+            Capture an idea in a campaign and it enters the board here, moving lane
+            by lane until it ships.
+          </GlowingStarsDescription>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--accent-line)] bg-[var(--accent-soft)]">
+            <Sparkles className="h-4 w-4 text-[var(--accent)]" />
+          </span>
+        </div>
+      </GlowingStarsBackgroundCard>
+    </motion.div>
   );
 }
 
@@ -77,59 +105,48 @@ export default function ContentBoard({ items, variantsByContent = {}, user, onRe
     () =>
       LANES.map(lane => ({
         ...lane,
-        cards: isEmpty
-          ? (SAMPLES[lane.key] || []).map(s => ({ ...s, __sample: true }))
-          : items.filter(i => lane.statuses.includes(i.status || 'idea'))
+        cards: (items || []).filter(i => lane.statuses.includes(i.status || 'idea'))
       })),
-    [items, isEmpty]
+    [items]
   );
 
+  if (isEmpty) return <BoardEmptyState />;
+
   return (
-    <div className="space-y-3">
-      {isEmpty ? (
-        <p className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-          <Lightbulb className="h-3.5 w-3.5 shrink-0" />
-          No content yet — the tiles below are samples showing how the board fills in.
-        </p>
-      ) : null}
+    <motion.div
+      variants={container}
+      initial="hidden"
+      animate="visible"
+      className="-mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 lg:mx-0 lg:grid lg:snap-none lg:grid-cols-3 lg:overflow-visible lg:px-0 xl:grid-cols-5"
+    >
+      {lanes.map(lane => (
+        <motion.section
+          key={lane.key}
+          variants={itemVariant}
+          className="min-w-[290px] snap-start lg:min-w-0"
+        >
+          <LaneHeader lane={lane} count={lane.cards.length} />
 
-      {/* Bento lanes. Horizontal scroll-snap on mobile beats squeezing 5 lanes
-          into 375px; a real grid from lg upwards. */}
-      <motion.div
-        variants={container}
-        initial="hidden"
-        animate="visible"
-        className="-mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 lg:mx-0 lg:grid lg:snap-none lg:grid-cols-3 lg:overflow-visible lg:px-0 xl:grid-cols-5"
-      >
-        {lanes.map(lane => (
-          <motion.section
-            key={lane.key}
-            variants={itemVariant}
-            className="min-w-[280px] snap-start lg:min-w-0"
-          >
-            <LaneHeader lane={lane} count={lane.cards.length} />
-
-            {lane.cards.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface2)]/40 p-4 text-center text-[11px] text-[var(--muted)]">
-                Empty
-              </div>
-            ) : (
-              <BentoGrid className="mx-0 max-w-none grid-cols-1 gap-3 md:auto-rows-auto md:grid-cols-1">
-                {lane.cards.map(card => (
-                  <ContentCard
-                    key={card._id}
-                    item={card}
-                    user={user}
-                    initialVariants={variantsByContent[card._id] || []}
-                    onRefresh={onRefresh}
-                    sample={Boolean(card.__sample)}
-                  />
-                ))}
-              </BentoGrid>
-            )}
-          </motion.section>
-        ))}
-      </motion.div>
-    </div>
+          {lane.cards.length === 0 ? (
+            <div className="flex min-h-24 items-center justify-center rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface2)]/30 text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+              Empty
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {lane.cards.map(card => (
+                <ContentCard
+                  key={card._id}
+                  item={card}
+                  user={user}
+                  accent={lane.accent}
+                  initialVariants={variantsByContent[card._id] || []}
+                  onRefresh={onRefresh}
+                />
+              ))}
+            </div>
+          )}
+        </motion.section>
+      ))}
+    </motion.div>
   );
 }

@@ -168,13 +168,27 @@ export function Voices() {
 
 /* ───────────────── 6. Global reach ───────────────── */
 
-const ROUTES = [
-  { start: { lat: 23.8103, lng: 90.4125, label: "Dhaka" }, end: { lat: 51.5074, lng: -0.1278, label: "London" } },
-  { start: { lat: 23.8103, lng: 90.4125, label: "Dhaka" }, end: { lat: 1.3521, lng: 103.8198, label: "Singapore" } },
-  { start: { lat: 40.7128, lng: -74.006, label: "New York" }, end: { lat: 23.8103, lng: 90.4125, label: "Dhaka" } },
-  { start: { lat: -33.8688, lng: 151.2093, label: "Sydney" }, end: { lat: 35.6762, lng: 139.6503, label: "Tokyo" } },
-  { start: { lat: 37.7749, lng: -122.4194, label: "San Francisco" }, end: { lat: 52.52, lng: 13.405, label: "Berlin" } },
+/*
+ * Routes fan out from one origin instead of being unrelated city pairs. The old
+ * set included Sydney→Tokyo and SF→Berlin, which implied traffic that has
+ * nothing to do with this workspace and made the map read as decoration.
+ *
+ * Dhaka is the hub (weight 6, so it renders larger); every arc is a real
+ * publish destination region. Each leg is a distinct great-circle direction, so
+ * arcs separate cleanly rather than stacking on top of one another.
+ */
+const ORIGIN = { lat: 23.8103, lng: 90.4125, label: "Dhaka" };
+
+const DESTINATIONS = [
+  { lat: 1.3521,   lng: 103.8198, label: "Singapore" },
+  { lat: 35.6762,  lng: 139.6503, label: "Tokyo" },
+  { lat: 51.5074,  lng: -0.1278,  label: "London" },
+  { lat: 40.7128,  lng: -74.006,  label: "New York" },
+  { lat: 37.7749,  lng: -122.4194, label: "San Francisco" },
+  { lat: -33.8688, lng: 151.2093, label: "Sydney" },
 ];
+
+const ROUTES = DESTINATIONS.map(end => ({ start: ORIGIN, end }));
 
 export function GlobalReach() {
   return (
@@ -194,7 +208,13 @@ export function GlobalReach() {
         </div>
 
         <div className="mt-12">
-          <WorldMap dots={ROUTES} lineColor="#AE48FF" />
+          <WorldMap
+            dots={ROUTES}
+            lineColor="#AE48FF"
+            showLabels
+            animatePackets
+            cycleSeconds={9}
+          />
         </div>
 
         {/* Encrypted-feel security card */}

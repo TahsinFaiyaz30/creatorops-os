@@ -20,6 +20,7 @@ import ContentBoard from '../../components/campaign/ContentBoard';
 import { TextGenerateEffect } from '../../components/ui/text-generate-effect';
 import { GlareCard } from '../../components/ui/glare-card';
 import { BentoGrid } from '../../components/ui/bento-grid';
+import { BackgroundBeams } from '../../components/ui/background-beams';
 import {
   Page, Section, Badge, Button,
   EmptyState, Skeleton, Notice, GlareStat, GlareStatGrid, GLARE_TINTS, useStagger
@@ -167,6 +168,14 @@ export default function CampaignsPage() {
 
   return (
     <AppShell>
+      {/* Ambient layer. `fixed` + negative z sits it behind the whole scroll
+          container; pointer-events-none so it never eats clicks. Opacity is
+          dropped in light mode where beams read as smudges. */}
+      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <BackgroundBeams className="opacity-30 dark:opacity-60" />
+        <div className="absolute inset-0 bg-blueprint [mask-image:radial-gradient(ellipse_at_top,black_10%,transparent_70%)]" />
+      </div>
+
       <Page>
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">Plan</p>
@@ -197,51 +206,60 @@ export default function CampaignsPage() {
           </GlareStatGrid>
         ) : null}
 
-        <div className="grid gap-5 xl:grid-cols-[380px_1fr]">
-          {/* CampaignForm renders its own Surface — no outer wrapper, or the
-              card nests inside a card. */}
-          <Section title="New campaign" description="Name it, set a goal, pick platforms.">
-            <CampaignForm onCreate={create} />
-          </Section>
+        {/*
+          Layout: 35% / 65% two-column from xl up. The form column is `sticky` so
+          it stays in view while the right column scrolls, and Roster + Production
+          Board stack in that right column. Previously the board sat full-width
+          *below* the two columns, which left a tall empty gutter beside the short
+          form — the dead space in the middle of the page.
+        */}
+        <div className="grid items-start gap-5 xl:grid-cols-[minmax(320px,35fr)_65fr]">
+          <div className="xl:sticky xl:top-20">
+            <Section title="New campaign" description="Name it, set a goal, pick platforms.">
+              {/* CampaignForm renders its own glass panel — no outer wrapper. */}
+              <CampaignForm onCreate={create} />
+            </Section>
+          </div>
 
-          <Section
-            title="Roster"
-            description={campaigns ? `${campaigns.length} total` : undefined}
-            actions={
-              <Button as="a" href="/compose" variant="secondary" size="sm">
-                <Plus className="h-3.5 w-3.5" /> Compose
-              </Button>
-            }
-          >
-            {!campaigns ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-56" />)}
-              </div>
-            ) : campaigns.length === 0 ? (
-              <EmptyState
-                icon={GitBranch}
-                title="No campaigns yet"
-                description="Create one on the left. Each campaign groups raw ideas, generated variants, reviews and publishes into a single production line."
-              />
-            ) : (
-              <BentoGrid className="mx-0 max-w-none grid-cols-1 gap-4 md:auto-rows-auto md:grid-cols-2">
-                {campaigns.map(c => (
-                  <motion.div key={c._id || c.id} variants={item} initial="hidden" animate="visible">
-                    <CampaignCard campaign={c} summary={summaries[c._id || c.id]} />
-                  </motion.div>
-                ))}
-              </BentoGrid>
-            )}
-          </Section>
+          <div className="min-w-0 space-y-5">
+            <Section
+              title="Roster"
+              description={campaigns ? `${campaigns.length} total` : undefined}
+              actions={
+                <Button as="a" href="/compose" variant="secondary" size="sm">
+                  <Plus className="h-3.5 w-3.5" /> Compose
+                </Button>
+              }
+            >
+              {!campaigns ? (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-56" />)}
+                </div>
+              ) : campaigns.length === 0 ? (
+                <EmptyState
+                  icon={GitBranch}
+                  title="No campaigns yet"
+                  description="Create one on the left. Each campaign groups raw ideas, generated variants, reviews and publishes into a single production line."
+                />
+              ) : (
+                <BentoGrid className="mx-0 max-w-none grid-cols-1 gap-4 md:auto-rows-auto md:grid-cols-2">
+                  {campaigns.map(c => (
+                    <motion.div key={c._id || c.id} variants={item} initial="hidden" animate="visible">
+                      <CampaignCard campaign={c} summary={summaries[c._id || c.id]} />
+                    </motion.div>
+                  ))}
+                </BentoGrid>
+              )}
+            </Section>
+
+            <Section
+              title="Production board"
+              description="Every content item across all campaigns, laned by its real workflow status."
+            >
+              <ContentBoard items={boardItems} onRefresh={load} />
+            </Section>
+          </div>
         </div>
-
-        {/* Cross-campaign production board */}
-        <Section
-          title="Production board"
-          description="Every content item across all campaigns, laned by its real workflow status."
-        >
-          <ContentBoard items={boardItems} onRefresh={load} />
-        </Section>
       </Page>
     </AppShell>
   );

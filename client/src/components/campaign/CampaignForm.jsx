@@ -2,19 +2,24 @@
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- * CampaignForm — rebuilt.
+ * CampaignForm — briefing console.
  *
- * Was: three unlabelled inputs and 11 native checkboxes, all checked by default.
+ * Direction change from the previous chip-grid version:
+ *  · Circular readiness gauge instead of a linear bar.
+ *  · Floating-label fields — the label rides up on focus/fill, so there's no
+ *    separate label row eating vertical space.
+ *  · Platform picker is a 3-up tile grid with per-platform marks, not a list of
+ *    checkbox rows.
+ *  · A LIVE PREVIEW of the campaign card renders below, mirroring the roster
+ *    card exactly. This is what fills the empty column: instead of dead space
+ *    under a short form, you see the thing you're about to create, updating as
+ *    you type.
  *
- * Now surfaces the platform metadata that already existed in lib/platforms.js
- * and was never rendered anywhere — caption limits, media capacity, supported
- * media types, tone and required elements. Picking platforms now tells you what
- * you're committing to:
- *   · tightest caption limit across the selection (the real governing constraint)
- *   · smallest media capacity across the selection
- *   · per-chip tooltip with limits + required elements
+ * Still surfaces the platform metadata from lib/platforms.js that nothing else
+ * renders — caption limits, media capacity, media types — and computes the
+ * governing constraint across the selection.
  *
- * The onCreate contract is unchanged: { name, goal, targetAudience, platforms }.
+ * onCreate contract unchanged: { name, goal, targetAudience, platforms }.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -22,12 +27,10 @@ import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Plus, Check, CheckCheck, XCircle, Type, Images, Video,
-  Sparkles, TriangleAlert, Info
+  Target, TriangleAlert, Users, ArrowUpRight, Radio
 } from 'lucide-react';
 
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Surface, Badge, Button, Notice } from '../ds';
+import { Badge, Notice } from '../ds';
 import {
   platformOptions,
   formatPlatform,
@@ -38,6 +41,13 @@ import {
 
 const EASE = [0.16, 1, 0.3, 1];
 
+/* Two-letter marks so tiles stay uniform without shipping brand logos. */
+const MARKS = {
+  facebook: 'Fb', instagram: 'Ig', tiktok: 'Tt', youtube: 'Yt',
+  youtube_shorts: 'Sh', threads: 'Th', linkedin: 'In', x: 'X',
+  pinterest: 'Pi', wordpress: 'Wp', shopify: 'Sp'
+};
+
 const emptyForm = () => ({
   name: '',
   goal: '',
@@ -45,9 +55,97 @@ const emptyForm = () => ({
   platforms: [...platformOptions]
 });
 
-/* ── One animated platform chip ───────────────────────────────────────────── */
+/* ── Circular readiness gauge ─────────────────────────────────────────────── */
 
-function PlatformChip({ platform, selected, onToggle }) {
+function ReadinessGauge({ value }) {
+  const r = 15;
+  const c = 2 * Math.PI * r;
+  return (
+    <div className="relative h-10 w-10 shrink-0">
+      <svg viewBox="0 0 36 36" className="h-10 w-10 -rotate-90">
+        <circle cx="18" cy="18" r={r} fill="none" stroke="var(--surface3)" strokeWidth="3" />
+        <motion.circle
+          cx="18" cy="18" r={r}
+          fill="none"
+          stroke="url(#gauge-grad)"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          animate={{ strokeDashoffset: c - (c * value) / 100 }}
+          transition={{ duration: 0.6, ease: EASE }}
+        />
+        <defs>
+          <linearGradient id="gauge-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#6344F5" />
+            <stop offset="100%" stopColor="#AE48FF" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold tabular-nums text-[var(--text)]">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/* ── Floating-label field ─────────────────────────────────────────────────── */
+
+function FloatField({ id, label, value, onChange, max, required, textarea }) {
+  const [focused, setFocused] = useState(false);
+  const lifted = focused || value.length > 0;
+  const over = max && value.length > max;
+  const Control = textarea ? 'textarea' : 'input';
+
+  return (
+    <div className="relative">
+      <div
+        className={`relative overflow-hidden rounded-xl border transition-colors ${
+          focused
+            ? 'border-[var(--accent-line)] bg-[var(--surface2)] shadow-[0_0_22px_-10px_var(--glow)]'
+            : 'border-[var(--border)] bg-[var(--surface2)]/60 hover:border-[var(--border-strong)]'
+        }`}
+      >
+        <Control
+          id={id}
+          value={value}
+          onChange={onChange}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          required={required}
+          rows={textarea ? 2 : undefined}
+          className="peer w-full resize-none bg-transparent px-3 pb-2 pt-5 text-sm text-[var(--text)] outline-none"
+        />
+        <motion.label
+          htmlFor={id}
+          animate={{
+            y: lifted ? -8 : 0,
+            scale: lifted ? 0.82 : 1,
+            color: focused ? 'var(--accent)' : 'var(--muted)'
+          }}
+          transition={{ duration: 0.18, ease: EASE }}
+          className="pointer-events-none absolute left-3 top-3.5 origin-left text-sm font-medium"
+        >
+          {label}
+          {required ? <span className="ml-0.5 text-[var(--accent)]">*</span> : null}
+        </motion.label>
+
+        {max ? (
+          <span
+            className={`absolute bottom-1.5 right-2.5 text-[9px] tabular-nums ${
+              over ? 'text-danger' : 'text-[var(--muted)]'
+            }`}
+          >
+            {value.length}/{max}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/* ── Platform tile ────────────────────────────────────────────────────────── */
+
+function PlatformTile({ platform, selected, onToggle }) {
   const [hover, setHover] = useState(false);
   const caps = platformCapabilities[platform] || {};
   const details = getPlatformDetails(platform);
@@ -63,81 +161,68 @@ function PlatformChip({ platform, selected, onToggle }) {
         type="button"
         onClick={() => onToggle(platform)}
         aria-pressed={selected}
-        whileHover={{ scale: 1.03 }}
-        whileTap={{ scale: 0.96 }}
-        transition={{ type: 'spring', stiffness: 420, damping: 26 }}
-        className={`focus-ring relative flex w-full items-center gap-2 overflow-hidden rounded-lg border px-2.5 py-2 text-left text-xs font-medium transition-colors ${
+        aria-label={formatPlatform(platform)}
+        whileHover={{ scale: 1.05, y: -2 }}
+        whileTap={{ scale: 0.94 }}
+        transition={{ type: 'spring', stiffness: 460, damping: 22 }}
+        className={`focus-ring relative flex w-full flex-col items-center gap-1 overflow-hidden rounded-xl border px-1 py-2.5 transition-colors ${
           selected
-            ? 'border-[var(--accent-line)] text-[var(--accent)]'
-            : 'border-[var(--border)] bg-[var(--surface2)] text-[var(--muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
+            ? 'border-[var(--accent-line)] text-[var(--accent)] shadow-[0_0_20px_-8px_var(--glow)]'
+            : 'border-[var(--border)] bg-[var(--surface2)]/50 text-[var(--muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
         }`}
       >
-        {/* Per-chip fill. Multi-select rules out one shared layoutId, so each chip
-            animates its own background. */}
         <AnimatePresence>
           {selected && (
             <motion.span
-              initial={{ opacity: 0, scale: 0.85 }}
+              initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.85 }}
-              transition={{ duration: 0.22, ease: EASE }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.2, ease: EASE }}
               className="pointer-events-none absolute inset-0 bg-[var(--accent-soft)]"
             />
           )}
         </AnimatePresence>
 
-        <span
-          className={`relative flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-            selected ? 'border-[var(--accent)] bg-[var(--accent)]' : 'border-[var(--border-strong)]'
-          }`}
-        >
-          <AnimatePresence>
-            {selected && (
-              <motion.span
-                initial={{ scale: 0, rotate: -30 }}
-                animate={{ scale: 1, rotate: 0 }}
-                exit={{ scale: 0 }}
-                transition={{ type: 'spring', stiffness: 520, damping: 24 }}
-              >
-                <Check className="h-3 w-3 text-[var(--accent-fg)]" strokeWidth={3} />
-              </motion.span>
-            )}
-          </AnimatePresence>
+        <span className="relative flex h-6 w-6 items-center justify-center rounded-md border border-current/30 text-[10px] font-bold">
+          {MARKS[platform] || platform.slice(0, 2)}
+        </span>
+        <span className="relative w-full truncate text-center text-[9px] font-medium leading-tight">
+          {formatPlatform(platform)}
         </span>
 
-        <span className="relative min-w-0 truncate">{formatPlatform(platform)}</span>
+        <AnimatePresence>
+          {selected && (
+            <motion.span
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0 }}
+              transition={{ type: 'spring', stiffness: 540, damping: 20 }}
+              className="absolute right-1 top-1 flex h-3 w-3 items-center justify-center rounded-full bg-[var(--accent)]"
+            >
+              <Check className="h-2 w-2 text-[var(--accent-fg)]" strokeWidth={4} />
+            </motion.span>
+          )}
+        </AnimatePresence>
       </motion.button>
 
-      {/* Capability tooltip — metadata that previously had nowhere to live */}
       <AnimatePresence>
         {hover && (
           <motion.div
             initial={{ opacity: 0, y: 4, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.97 }}
-            transition={{ duration: 0.16, ease: EASE }}
+            transition={{ duration: 0.15, ease: EASE }}
             role="tooltip"
-            className="pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 w-56 rounded-lg border border-[var(--border)] bg-[var(--surface3)] p-2.5 shadow-[var(--shadow)]"
+            className="pointer-events-none absolute bottom-full left-1/2 z-40 mb-1.5 w-48 -translate-x-1/2 rounded-lg border border-[var(--border)] bg-[var(--surface3)]/95 p-2 shadow-[var(--shadow)] backdrop-blur-xl"
           >
-            <p className="text-[11px] font-semibold text-[var(--text)]">
-              {formatPlatform(platform)}
-            </p>
-            <dl className="mt-1.5 space-y-1 text-[10px] text-[var(--muted)]">
-              <div className="flex items-center gap-1.5">
-                <Type className="h-2.5 w-2.5" />
-                {limit.toLocaleString()} char caption
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Images className="h-2.5 w-2.5" />
-                up to {caps.maxMedia ?? 1} {caps.multiMedia ? 'items' : 'item'}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Video className="h-2.5 w-2.5" />
-                {(caps.types || ['image']).join(', ')}
-              </div>
+            <p className="text-[10px] font-semibold text-[var(--text)]">{formatPlatform(platform)}</p>
+            <dl className="mt-1 space-y-0.5 text-[9px] text-[var(--muted)]">
+              <div className="flex items-center gap-1"><Type className="h-2 w-2" />{limit.toLocaleString()} chars</div>
+              <div className="flex items-center gap-1"><Images className="h-2 w-2" />up to {caps.maxMedia ?? 1}</div>
+              <div className="flex items-center gap-1"><Video className="h-2 w-2" />{(caps.types || ['image']).join(', ')}</div>
             </dl>
             {details.requirements?.length ? (
-              <p className="mt-1.5 border-t border-[var(--border)] pt-1.5 text-[10px] leading-snug text-[var(--text-2)]">
+              <p className="mt-1 border-t border-[var(--border)] pt-1 text-[9px] leading-snug text-[var(--text-2)]">
                 {details.requirements.join(' · ')}
               </p>
             ) : null}
@@ -148,36 +233,109 @@ function PlatformChip({ platform, selected, onToggle }) {
   );
 }
 
-/* ── Field with a live character counter ──────────────────────────────────── */
+/* ── Live preview — mirrors the roster card ───────────────────────────────── */
 
-function CountedField({ id, label, value, onChange, placeholder, max, required, hint }) {
-  const pct = max ? Math.min(100, (value.length / max) * 100) : 0;
-  const over = max && value.length > max;
-
+function LivePreview({ form, insight }) {
+  const named = form.name.trim();
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-baseline justify-between gap-2">
-        <Label htmlFor={id} className="text-xs font-medium text-[var(--muted)]">
-          {label}
-          {required ? <span className="ml-0.5 text-[var(--accent)]">*</span> : null}
-        </Label>
-        {max ? (
-          <span className={`text-[10px] tabular-nums ${over ? 'text-danger' : 'text-[var(--muted)]'}`}>
-            {value.length}/{max}
-          </span>
-        ) : null}
-      </div>
-      <Input id={id} value={value} onChange={onChange} placeholder={placeholder} required={required} />
-      {max ? (
-        <div className="h-0.5 overflow-hidden rounded-full bg-[var(--surface3)]">
-          <motion.div
-            className={`h-full rounded-full ${over ? 'bg-danger' : 'bg-[var(--accent)]'}`}
-            animate={{ width: `${pct}%` }}
-            transition={{ duration: 0.3, ease: EASE }}
-          />
+    <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface2)]/30 p-2.5">
+      <p className="mb-2 flex items-center gap-1.5 px-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+        <Radio className="h-2.5 w-2.5 text-[var(--accent)]" />
+        Live preview
+      </p>
+
+      <motion.div
+        layout
+        className="relative overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow)]"
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_80%_at_0%_0%,var(--accent-soft),transparent_60%)]"
+        />
+        <div className="relative">
+          <div className="flex items-start justify-between gap-2">
+            <h4
+              className={`min-w-0 truncate text-sm font-bold tracking-tight ${
+                named ? 'text-[var(--text)]' : 'text-[var(--muted)] italic'
+              }`}
+            >
+              {named || 'Untitled campaign'}
+            </h4>
+            <Badge tone="neutral">draft</Badge>
+          </div>
+
+          <p className="mt-1.5 line-clamp-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-[var(--muted)]">
+            <Target className="mt-0.5 h-3 w-3 shrink-0" />
+            {form.goal.trim() || 'No goal set'}
+          </p>
+
+          {form.targetAudience.trim() ? (
+            <p className="mt-1 flex items-start gap-1.5 text-[11px] leading-relaxed text-[var(--muted)]">
+              <Users className="mt-0.5 h-3 w-3 shrink-0" />
+              <span className="line-clamp-1">{form.targetAudience}</span>
+            </p>
+          ) : null}
+
+          <div className="mt-3 flex items-end justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap gap-1">
+              {form.platforms.slice(0, 4).map(p => (
+                <span
+                  key={p}
+                  className="rounded-md border border-[var(--accent-line)] bg-[var(--accent-soft)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-[var(--accent)]"
+                >
+                  {p}
+                </span>
+              ))}
+              {form.platforms.length > 4 ? (
+                <span className="px-0.5 text-[8px] text-[var(--muted)]">
+                  +{form.platforms.length - 4}
+                </span>
+              ) : null}
+            </div>
+            <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-[var(--muted)]" />
+          </div>
         </div>
-      ) : null}
-      {hint ? <p className="text-[10px] text-[var(--muted)]">{hint}</p> : null}
+      </motion.div>
+
+      {/* Governing constraints */}
+      <AnimatePresence mode="wait">
+        {insight ? (
+          <motion.div
+            key="ins"
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: EASE }}
+            className="mt-2 flex flex-wrap gap-1.5"
+          >
+            <Badge tone="warning">
+              <Type className="h-3 w-3" />
+              {insight.tightestCaption.toLocaleString()} · {insight.tightestCaptionPlatform}
+            </Badge>
+            <Badge>
+              <Images className="h-3 w-3" />
+              {insight.minMedia} media
+            </Badge>
+            {insight.videoOnly.length ? (
+              <Badge tone="accent">
+                <Video className="h-3 w-3" />
+                {insight.videoOnly.length} video-only
+              </Badge>
+            ) : null}
+          </motion.div>
+        ) : (
+          <motion.p
+            key="warn"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="mt-2 flex items-center gap-1.5 rounded-lg border border-danger/30 bg-danger/10 px-2 py-1.5 text-[10px] text-danger"
+          >
+            <TriangleAlert className="h-3 w-3 shrink-0" />
+            Pick at least one platform.
+          </motion.p>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -199,8 +357,6 @@ export default function CampaignForm({ onCreate }) {
         : [...c.platforms, platform]
     }));
 
-  /* Aggregate constraints. For a cross-posted campaign the tightest limit in the
-     selection is the one that actually governs, so that's what gets surfaced. */
   const insight = useMemo(() => {
     if (!form.platforms.length) return null;
     const limits = form.platforms.map(getPlatformCaptionLimit);
@@ -229,6 +385,7 @@ export default function CampaignForm({ onCreate }) {
   }, [form]);
 
   const allSelected = form.platforms.length === platformOptions.length;
+  const canSubmit = Boolean(form.name.trim()) && form.platforms.length > 0 && !busy;
 
   const submit = async event => {
     event.preventDefault();
@@ -245,150 +402,122 @@ export default function CampaignForm({ onCreate }) {
   };
 
   return (
-    <Surface as="form" onSubmit={submit} pad="md" className="space-y-4">
-      {/* Header + readiness meter */}
-      <div>
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight text-[var(--text)]">
-            <Sparkles className="h-4 w-4 text-[var(--accent)]" />
-            Create Campaign
-          </h2>
-          <span className="text-[10px] font-semibold tabular-nums text-[var(--muted)]">
-            {readiness}% ready
-          </span>
-        </div>
-        <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--surface3)]">
-          <motion.div
-            className="h-full rounded-full bg-gradient-to-r from-[#6344F5] to-[#AE48FF]"
-            animate={{ width: `${readiness}%` }}
-            transition={{ duration: 0.5, ease: EASE }}
-          />
-        </div>
-      </div>
-
-      <CountedField
-        id="cf-name"
-        label="Campaign name"
-        value={form.name}
-        onChange={e => set('name', e.target.value)}
-        placeholder="Q3 brand film rollout"
-        max={80}
-        required
-      />
-      <CountedField
-        id="cf-goal"
-        label="Goal"
-        value={form.goal}
-        onChange={e => set('goal', e.target.value)}
-        placeholder="Drive 50k views and 500 saves"
-        max={140}
-      />
-      <CountedField
-        id="cf-audience"
-        label="Target audience"
-        value={form.targetAudience}
-        onChange={e => set('targetAudience', e.target.value)}
-        placeholder="Indie filmmakers, 18–34"
-        max={140}
-        hint="Feeds the AI tone when variants are generated."
+    <form
+      onSubmit={submit}
+      className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 p-4 shadow-[var(--shadow)] backdrop-blur-xl"
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -right-20 -top-20 h-44 w-44 rounded-full bg-[radial-gradient(circle,var(--glow),transparent_70%)] blur-2xl"
       />
 
-      {/* Platforms */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <Label className="text-xs font-medium text-[var(--muted)]">
-            Platforms
-            <Badge tone={form.platforms.length ? 'accent' : 'danger'} className="ml-2">
-              {form.platforms.length}/{platformOptions.length}
-            </Badge>
-          </Label>
-          <button
-            type="button"
-            onClick={() => set('platforms', allSelected ? [] : [...platformOptions])}
-            className="focus-ring inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent-soft)]"
-          >
-            {allSelected ? <XCircle className="h-3 w-3" /> : <CheckCheck className="h-3 w-3" />}
-            {allSelected ? 'Clear all' : 'Select all'}
-          </button>
+      <div className="relative space-y-3.5">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <ReadinessGauge value={readiness} />
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold tracking-tight text-[var(--text)]">
+              New campaign
+            </h2>
+            <p className="text-[10px] text-[var(--muted)]">
+              {readiness === 100 ? 'Brief complete' : 'Fill the brief to sharpen AI output'}
+            </p>
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-1.5">
-          {platformOptions.map(platform => (
-            <PlatformChip
-              key={platform}
-              platform={platform}
-              selected={form.platforms.includes(platform)}
-              onToggle={togglePlatform}
+        <FloatField
+          id="cf-name"
+          label="Campaign name"
+          value={form.name}
+          onChange={e => set('name', e.target.value)}
+          max={80}
+          required
+        />
+        <FloatField
+          id="cf-goal"
+          label="Goal"
+          value={form.goal}
+          onChange={e => set('goal', e.target.value)}
+          max={140}
+        />
+        <FloatField
+          id="cf-audience"
+          label="Target audience"
+          value={form.targetAudience}
+          onChange={e => set('targetAudience', e.target.value)}
+          max={140}
+          textarea
+        />
+
+        {/* Platform tiles */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+              Platforms
+              <Badge tone={form.platforms.length ? 'accent' : 'danger'}>
+                {form.platforms.length}/{platformOptions.length}
+              </Badge>
+            </span>
+            <button
+              type="button"
+              onClick={() => set('platforms', allSelected ? [] : [...platformOptions])}
+              className="focus-ring inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent-soft)]"
+            >
+              {allSelected ? <XCircle className="h-3 w-3" /> : <CheckCheck className="h-3 w-3" />}
+              {allSelected ? 'Clear' : 'All'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-4 gap-1.5">
+            {platformOptions.map(platform => (
+              <PlatformTile
+                key={platform}
+                platform={platform}
+                selected={form.platforms.includes(platform)}
+                onToggle={togglePlatform}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Fills the column: shows exactly what will be created */}
+        <LivePreview form={form} insight={insight} />
+
+        {error ? <Notice tone="danger">{error}</Notice> : null}
+
+        <motion.button
+          type="submit"
+          disabled={!canSubmit}
+          whileHover={canSubmit ? { scale: 1.01 } : undefined}
+          whileTap={canSubmit ? { scale: 0.98 } : undefined}
+          transition={{ type: 'spring', stiffness: 420, damping: 25 }}
+          className={`focus-ring relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${
+            canSubmit
+              ? 'bg-[var(--accent)] text-[var(--accent-fg)] shadow-[0_0_28px_-10px_var(--glow)]'
+              : 'cursor-not-allowed border border-[var(--border)] bg-[var(--surface2)] text-[var(--muted)]'
+          }`}
+        >
+          {canSubmit ? (
+            <motion.span
+              aria-hidden
+              className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent"
+              animate={{ translateX: ['-100%', '200%'] }}
+              transition={{ duration: 2, repeat: Infinity, repeatDelay: 3, ease: 'easeInOut' }}
             />
-          ))}
-        </div>
-
-        {/* Aggregate constraint readout */}
-        <AnimatePresence mode="wait">
-          {insight ? (
-            <motion.div
-              key="insight"
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.22, ease: EASE }}
-              className="space-y-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface2)] p-2.5"
-            >
-              <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-                <Info className="h-3 w-3" />
-                Effective limits
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                <Badge tone="warning">
-                  <Type className="h-3 w-3" />
-                  {insight.tightestCaption.toLocaleString()} chars · {insight.tightestCaptionPlatform}
-                </Badge>
-                <Badge>
-                  <Images className="h-3 w-3" />
-                  {insight.minMedia} media min
-                </Badge>
-              </div>
-              {insight.videoOnly.length ? (
-                <p className="text-[10px] leading-snug text-[var(--muted)]">
-                  Video only: {insight.videoOnly.join(', ')}
-                </p>
-              ) : null}
-            </motion.div>
+          ) : null}
+          {busy ? (
+            <>
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              <span className="relative">Creating…</span>
+            </>
           ) : (
-            <motion.p
-              key="none"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex items-center gap-1.5 rounded-lg border border-danger/30 bg-danger/10 p-2.5 text-[11px] text-danger"
-            >
-              <TriangleAlert className="h-3 w-3 shrink-0" />
-              Pick at least one platform.
-            </motion.p>
+            <>
+              <Plus className="relative h-4 w-4" />
+              <span className="relative">Create campaign</span>
+            </>
           )}
-        </AnimatePresence>
+        </motion.button>
       </div>
-
-      {error ? <Notice tone="danger">{error}</Notice> : null}
-
-      <Button
-        type="submit"
-        variant="primary"
-        disabled={busy || !form.name.trim() || !form.platforms.length}
-        className="w-full"
-      >
-        {busy ? (
-          <>
-            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            Creating…
-          </>
-        ) : (
-          <>
-            <Plus className="h-4 w-4" />
-            Create campaign
-          </>
-        )}
-      </Button>
-    </Surface>
+    </form>
   );
 }
