@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 
 import { Badge, Notice } from '../ds';
+import { AnimatedButton } from '../ui/AnimatedButton';
 import {
   platformOptions,
   formatPlatform,
@@ -458,14 +459,16 @@ export default function CampaignForm({ onCreate }) {
                 {form.platforms.length}/{platformOptions.length}
               </Badge>
             </span>
-            <button
+            <AnimatedButton
               type="button"
+              variant="ghost"
+              size="xs"
               onClick={() => set('platforms', allSelected ? [] : [...platformOptions])}
-              className="focus-ring inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent-soft)]"
+              className="text-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"
             >
               {allSelected ? <XCircle className="h-3 w-3" /> : <CheckCheck className="h-3 w-3" />}
               {allSelected ? 'Clear' : 'All'}
-            </button>
+            </AnimatedButton>
           </div>
 
           <div className="grid grid-cols-4 gap-1.5">
@@ -485,38 +488,23 @@ export default function CampaignForm({ onCreate }) {
 
         {error ? <Notice tone="danger">{error}</Notice> : null}
 
-        <motion.button
+        {/* The hand-rolled shimmer this used to carry now lives in AnimatedButton,
+            so the CTA stays in step with every other primary on the platform. */}
+        <AnimatedButton
           type="submit"
+          size="lg"
+          variant={canSubmit ? 'primary' : 'secondary'}
           disabled={!canSubmit}
-          whileHover={canSubmit ? { scale: 1.01 } : undefined}
-          whileTap={canSubmit ? { scale: 0.98 } : undefined}
-          transition={{ type: 'spring', stiffness: 420, damping: 25 }}
-          className={`focus-ring relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${
-            canSubmit
-              ? 'bg-[var(--accent)] text-[var(--accent-fg)] shadow-[0_0_28px_-10px_var(--glow)]'
-              : 'cursor-not-allowed border border-[var(--border)] bg-[var(--surface2)] text-[var(--muted)]'
-          }`}
+          loading={busy}
+          className="w-full"
         >
-          {canSubmit ? (
-            <motion.span
-              aria-hidden
-              className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent"
-              animate={{ translateX: ['-100%', '200%'] }}
-              transition={{ duration: 2, repeat: Infinity, repeatDelay: 3, ease: 'easeInOut' }}
-            />
-          ) : null}
-          {busy ? (
+          {busy ? 'Creating…' : (
             <>
-              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              <span className="relative">Creating…</span>
-            </>
-          ) : (
-            <>
-              <Plus className="relative h-4 w-4" />
-              <span className="relative">Create campaign</span>
+              <Plus className="h-4 w-4" />
+              Create campaign
             </>
           )}
-        </motion.button>
+        </AnimatedButton>
       </div>
     </form>
   );

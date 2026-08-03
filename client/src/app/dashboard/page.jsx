@@ -24,6 +24,7 @@ import { getUser } from '../../lib/auth';
 
 import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
 import { GlareStat } from '../../components/ds';
+import { AnimatedButton } from '@/components/ui/AnimatedButton';
 import { TextGenerateEffect } from '@/components/ui/text-generate-effect';
 import { Meteors } from '@/components/ui/meteors';
 
@@ -97,10 +98,6 @@ export default function DashboardPage() {
       transition: { duration: reduceMotion ? 0.3 : 0.85, ease: easeOutExpo }
     }
   };
-
-  const springHover = reduceMotion
-    ? undefined
-    : { scale: 1.02, transition: { type: 'spring', stiffness: 380, damping: 24 } };
 
   const METRICS = [
     { icon: GitBranch,     label: 'Campaigns',      value: stats.campaigns, tint: 'from-[#6344F5]/40' },
@@ -279,16 +276,16 @@ export default function DashboardPage() {
                     Unsupported or unsynced metrics stay unavailable.
                   </p>
                 </div>
-                <motion.button
+                <AnimatedButton
                   id="dashboard-stats-snapshot-btn"
+                  variant="primary"
+                  size="lg"
                   onClick={snapshot}
-                  whileHover={springHover}
-                  whileTap={reduceMotion ? undefined : { scale: 0.97 }}
-                  className="focus-ring group inline-flex items-center gap-2 rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[var(--accent-fg)] shadow-[0_0_32px_-10px_var(--glow)] transition-shadow hover:shadow-[0_0_48px_-8px_var(--glow)]"
+                  className="group shrink-0"
                 >
                   Create application snapshot
                   <ArrowUpRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                </motion.button>
+                </AnimatedButton>
               </div>
             </div>
 

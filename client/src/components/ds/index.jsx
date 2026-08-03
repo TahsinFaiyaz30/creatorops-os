@@ -17,6 +17,7 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { cn } from '../../lib/utils';
 import { GlareCard } from '../ui/glare-card';
+import { AnimatedButton } from '../ui/AnimatedButton';
 
 /* ── Motion presets ───────────────────────────────────────────────────────── */
 
@@ -137,59 +138,19 @@ export function Section({ title, description, actions, children, className }) {
 
 /* ── Button ───────────────────────────────────────────────────────────────── */
 
-const BUTTON_VARIANTS = {
-  primary:
-    'bg-[var(--accent)] text-[var(--accent-fg)] hover:brightness-110 shadow-[0_0_24px_-10px_var(--glow)]',
-  secondary:
-    'border border-[var(--border)] bg-[var(--surface2)] text-[var(--text)] hover:border-[var(--border-strong)] hover:bg-[var(--surface3)]',
-  ghost: 'text-[var(--muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)]',
-  danger: 'bg-danger text-white hover:brightness-110',
-  outline:
-    'border border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)] hover:brightness-110'
-};
+/*
+ * One button engine for the whole app.
+ *
+ * `Button` keeps its existing API — variant / size / as / className — but the
+ * surface, physics and shimmer now come from AnimatedButton. Routing through it
+ * rather than swapping call sites means every existing <Button> upgrades at
+ * once; the alternative was two competing button styles sitting side by side in
+ * the same panels.
+ */
+export { AnimatedButton };
 
-const BUTTON_SIZES = {
-  sm: 'px-2.5 py-1.5 text-xs gap-1.5',
-  md: 'px-3.5 py-2 text-sm gap-2',
-  lg: 'px-5 py-2.5 text-sm gap-2'
-};
-
-/* Motion components are created once at module scope. Calling `motion(Tag)`
-   inside render returns a brand-new component type on every render, which makes
-   React unmount and remount the node — losing focus, state and animation. */
-const MOTION_TAGS = {
-  button: motion.button,
-  a: motion.a,
-  div: motion.div,
-  span: motion.span
-};
-
-export function Button({
-  as: Tag = 'button',
-  variant = 'secondary',
-  size = 'md',
-  className,
-  children,
-  ...rest
-}) {
-  const reduce = useReducedMotion();
-  const Comp = typeof Tag === 'string' ? MOTION_TAGS[Tag] ?? motion.button : Tag;
-  return (
-    <Comp
-      whileHover={reduce ? undefined : { scale: 1.02 }}
-      whileTap={reduce ? undefined : { scale: 0.98 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-      className={cn(
-        'focus-ring inline-flex items-center justify-center rounded-lg font-semibold transition-colors disabled:pointer-events-none disabled:opacity-50',
-        BUTTON_VARIANTS[variant],
-        BUTTON_SIZES[size],
-        className
-      )}
-      {...rest}
-    >
-      {children}
-    </Comp>
-  );
+export function Button(props) {
+  return <AnimatedButton {...props} />;
 }
 
 /* ── Form fields ──────────────────────────────────────────────────────────── */

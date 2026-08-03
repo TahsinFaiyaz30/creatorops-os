@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 
 import { SidebarLink } from '../ui/sidebar';
+import { AnimatedButton } from '../ui/AnimatedButton';
 import { ROLES, hasRole, getRoleLabel } from '../../lib/roles';
 
 export const NAV_GROUPS = [
@@ -167,16 +168,19 @@ function ProfileFooter({ user, expanded, onSignOut }) {
         </motion.span>
       </Link>
 
-      <button
-        type="button"
+      {/* `justify-start` overrides the centred default so the icon stays put on
+          the 60px collapsed rail while the label fades in and out beside it. */}
+      <AnimatedButton
+        variant="ghost"
+        size="sm"
         onClick={onSignOut}
-        className="focus-ring mt-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-[var(--muted)] transition-colors hover:bg-danger/10 hover:text-danger"
+        className="mt-1 w-full justify-start gap-2.5 px-2.5 text-sm hover:bg-danger/10 hover:text-danger"
       >
         <LogOut size={18} className="shrink-0" />
         <motion.span animate={{ opacity: expanded ? 1 : 0 }} className="whitespace-nowrap">
           Sign out
         </motion.span>
-      </button>
+      </AnimatedButton>
     </div>
   );
 }
