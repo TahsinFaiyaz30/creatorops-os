@@ -222,3 +222,6 @@ Thumbs.db
 agent-context
 docs
 scratch
+
+.playwright-cli
+output
