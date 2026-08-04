@@ -22,15 +22,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
   LayoutDashboard, GitBranch, Edit3, Bot, Images, ShieldCheck,
   RadioTower, Ruler, Send, BarChart3, Rss, MessagesSquare,
   BriefcaseBusiness, ClipboardList, Building2, Activity, Network,
-  ServerCog, LogOut
+  ServerCog, LogOut, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 
-import { SidebarLink } from '../ui/sidebar';
 import { AnimatedButton } from '../ui/AnimatedButton';
 import { ROLES, hasRole, getRoleLabel } from '../../lib/roles';
 
@@ -96,50 +95,79 @@ export function visibleGroupsFor(user) {
     .filter(g => g.items.length > 0);
 }
 
-/* ── One nav link with a glowing active state ─────────────────────────────── */
+/* ── One nav link — solid pill that slides between rows ───────────────────── */
 
 function NavRow({ item, active, expanded }) {
+  const reduce = useReducedMotion();
   const Icon = item.icon;
+
   return (
-    <div className="relative">
-      {/* Active glow — a shared layoutId slides it between links */}
-      {active && (
+    <motion.div whileHover={reduce || active ? undefined : { x: 2 }} transition={{ duration: 0.18 }}>
+      <Link
+        href={item.href}
+        aria-current={active ? 'page' : undefined}
+        /* `isolate` pins a stacking context to the row so the pill's z-0 and the
+           content's z-10 are compared against each other and nothing else. */
+        className="focus-ring relative isolate flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors"
+      >
+        {/*
+          One shared layoutId across every row, so switching routes slides the
+          pill from the old item to the new one instead of cross-fading two.
+
+          z-0 / z-10 is load-bearing, not tidiness: motion promotes a
+          layout-animating element with a transform, which gives it its own
+          stacking context. At z-auto the pill then painted OVER the icon and
+          label mid-slide, so the row you just selected went blank.
+        */}
+        {active ? (
+          <motion.span
+            layoutId="nav-active-pill"
+            transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+            className="absolute inset-0 z-0 rounded-xl bg-gradient-to-r from-[#5B34E8] to-[#9333EA] shadow-[0_10px_28px_-12px_var(--glow)]"
+          />
+        ) : null}
+
         <motion.span
-          layoutId="nav-active-glow"
-          transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-          className="pointer-events-none absolute inset-0 rounded-lg border border-[var(--accent-line)] bg-[var(--accent-soft)] shadow-[0_0_18px_-6px_var(--glow)]"
-        />
-      )}
-      {/* Left rail tick — stays legible when the rail is collapsed to icons */}
-      {active && (
-        <span className="pointer-events-none absolute left-0 top-1/2 z-10 h-4 w-[2px] -translate-y-1/2 rounded-full bg-[var(--accent)]" />
-      )}
-      <SidebarLink
-        link={{
-          href: item.href,
-          label: item.label,
-          icon: (
-            <Icon
-              size={18}
-              className={`shrink-0 transition-colors ${
-                active ? 'text-[var(--accent)]' : 'text-[var(--muted)] group-hover/sidebar:text-[var(--text)]'
-              }`}
-            />
-          )
-        }}
-        className={`relative z-10 rounded-lg px-2.5 py-1.5 transition-colors ${
-          active
-            ? 'font-semibold text-[var(--accent)]'
-            : 'text-[var(--text-2)] hover:bg-[var(--surface2)]'
-        }`}
-      />
-    </div>
+          className="relative z-10 flex shrink-0"
+          animate={reduce ? undefined : { scale: active ? 1.08 : 1 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+        >
+          <Icon
+            size={19}
+            strokeWidth={1.75}
+            className={`transition-colors ${
+              active ? 'text-white' : 'text-[var(--muted)] group-hover/sidebar:text-[var(--text)]'
+            }`}
+          />
+        </motion.span>
+
+        <motion.span
+          animate={{ opacity: expanded ? 1 : 0 }}
+          transition={{ duration: 0.18 }}
+          className={`relative z-10 min-w-0 truncate whitespace-nowrap text-sm transition-colors ${
+            active ? 'font-semibold text-white' : 'text-[var(--text-2)]'
+          }`}
+        >
+          {item.label}
+        </motion.span>
+
+        {/* Trailing dot marks the current row once the label has faded out. */}
+        {active && expanded ? (
+          <motion.span
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.15, duration: 0.25 }}
+            className="relative z-10 ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-white/80"
+          />
+        ) : null}
+      </Link>
+    </motion.div>
   );
 }
 
 /* ── Footer: profile + sign out ───────────────────────────────────────────── */
 
-function ProfileFooter({ user, expanded, onSignOut }) {
+function ProfileFooter({ user, expanded, onSignOut, pinned, onTogglePin }) {
   /* Name comes from the authenticated session, not a constant — hardcoding a
      name would mislabel whoever is actually signed in. */
   const name = user?.name || 'Account';
@@ -148,46 +176,100 @@ function ProfileFooter({ user, expanded, onSignOut }) {
   const profileHref = user?._id || user?.id ? `/profile/${user._id || user.id}` : '/profile/edit';
 
   return (
-    <div className="mt-2 shrink-0 border-t border-[var(--border)] pt-3">
-      <Link
-        href={profileHref}
-        className="focus-ring group flex items-center gap-2.5 rounded-lg p-1.5 transition-colors hover:bg-[var(--surface2)]"
+    <div className="mt-2 shrink-0">
+      {/*
+        The old footer was three stacked full-width rows that read as three more
+        nav items. It is one card now: identity on top, actions as icon buttons
+        underneath, so the rail ends with a clear base rather than trailing off.
+      */}
+      <motion.div
+        layout
+        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+        className="rounded-2xl border border-[var(--border)] bg-[var(--bg)]/60 p-1.5"
       >
-        <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#6344F5] to-[#AE48FF] text-[11px] font-bold text-white shadow-[0_0_16px_-6px_var(--glow)]">
-          {initials}
-          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--surface)] bg-success" />
-        </span>
-        <motion.span
-          animate={{ opacity: expanded ? 1 : 0 }}
-          className="min-w-0 flex-1 overflow-hidden text-left"
+        <Link
+          href={profileHref}
+          className="focus-ring group flex items-center gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-[var(--surface2)]"
         >
-          <span className="block truncate text-xs font-semibold text-[var(--text)]">{name}</span>
-          <span className="block truncate text-[10px] text-[var(--muted)]">
-            {user ? getRoleLabel(user.role) : 'Signed out'}
+          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#5B34E8] to-[#9333EA] text-[11px] font-bold text-white shadow-[0_8px_20px_-8px_var(--glow)]">
+            {initials}
+            <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full border-2 border-[var(--surface)] bg-success">
+              <span className="absolute h-full w-full animate-ping rounded-full bg-success opacity-60" />
+            </span>
           </span>
-        </motion.span>
-      </Link>
 
-      {/* `justify-start` overrides the centred default so the icon stays put on
-          the 60px collapsed rail while the label fades in and out beside it. */}
-      <AnimatedButton
-        variant="ghost"
-        size="sm"
-        onClick={onSignOut}
-        className="mt-1 w-full justify-start gap-2.5 px-2.5 text-sm hover:bg-danger/10 hover:text-danger"
-      >
-        <LogOut size={18} className="shrink-0" />
-        <motion.span animate={{ opacity: expanded ? 1 : 0 }} className="whitespace-nowrap">
-          Sign out
-        </motion.span>
-      </AnimatedButton>
+          <motion.span
+            animate={{ opacity: expanded ? 1 : 0 }}
+            transition={{ duration: 0.18 }}
+            className="min-w-0 flex-1 overflow-hidden text-left"
+          >
+            <span className="block truncate text-xs font-semibold text-[var(--text)]">{name}</span>
+            <span className="block truncate text-[10px] text-[var(--muted)]">
+              {user ? getRoleLabel(user.role) : 'Signed out'}
+            </span>
+          </motion.span>
+        </Link>
+
+        <AnimatePresence initial={false}>
+          {expanded ? (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="mt-1.5 flex gap-1.5 border-t border-[var(--border)] pt-1.5">
+                {/* Pin the rail open. Without this it only widens on hover, so it
+                    collapsed the moment the pointer moved to the page. */}
+                <AnimatedButton
+                  variant="ghost"
+                  size="sm"
+                  onClick={onTogglePin}
+                  aria-pressed={pinned}
+                  title={pinned ? 'Collapse sidebar' : 'Keep sidebar expanded'}
+                  className="flex-1 gap-2"
+                >
+                  {pinned ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+                  <span className="whitespace-nowrap text-xs">{pinned ? 'Collapse' : 'Pin open'}</span>
+                </AnimatedButton>
+
+                <AnimatedButton
+                  variant="ghost"
+                  size="icon"
+                  onClick={onSignOut}
+                  aria-label="Sign out"
+                  title="Sign out"
+                  className="shrink-0 hover:bg-danger/10 hover:text-danger"
+                >
+                  <LogOut size={16} />
+                </AnimatedButton>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </motion.div>
+
+      {/* Collapsed rail keeps sign-out reachable without the label row. */}
+      {!expanded ? (
+        <AnimatedButton
+          variant="ghost"
+          size="sm"
+          onClick={onSignOut}
+          aria-label="Sign out"
+          title="Sign out"
+          className="mt-1 w-full justify-start px-2.5 hover:bg-danger/10 hover:text-danger"
+        >
+          <LogOut size={18} className="shrink-0" />
+        </AnimatedButton>
+      ) : null}
     </div>
   );
 }
 
 /* ── Public: the rail's inner content ─────────────────────────────────────── */
 
-export default function Sidebar({ user, expanded, onSignOut }) {
+export default function Sidebar({ user, expanded, onSignOut, pinned, onTogglePin }) {
   const pathname = usePathname();
   const groups = visibleGroupsFor(user);
 
@@ -195,8 +277,10 @@ export default function Sidebar({ user, expanded, onSignOut }) {
     <>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
         {/* Brand */}
-        <Link href="/dashboard" className="mb-5 flex items-center gap-2.5 px-1.5">
-          <img src="/logo.jpeg" alt="" width={26} height={26} className="shrink-0 rounded-md" />
+        <Link href="/dashboard" className="focus-ring mb-4 flex items-center gap-2.5 rounded-xl px-1 py-1">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface2)]">
+            <img src="/logo.jpeg" alt="" width={26} height={26} className="rounded-lg" />
+          </span>
           <motion.span
             animate={{ opacity: expanded ? 1 : 0 }}
             className="min-w-0 overflow-hidden whitespace-nowrap"
@@ -210,29 +294,51 @@ export default function Sidebar({ user, expanded, onSignOut }) {
           </motion.span>
         </Link>
 
-        {groups.map(group => (
-          <div key={group.label} className="mb-3.5">
-            <motion.p
-              animate={{ opacity: expanded ? 1 : 0 }}
-              className="mb-1 whitespace-nowrap px-2.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]"
-            >
-              {group.label}
-            </motion.p>
-            <div className="flex flex-col gap-0.5">
-              {group.items.map(item => (
-                <NavRow
-                  key={item.href}
-                  item={item}
-                  expanded={expanded}
-                  active={pathname === item.href || pathname.startsWith(item.href + '/')}
-                />
-              ))}
+        {groups.map((group, groupIndex) => {
+          const isActiveGroup = group.items.some(
+            i => pathname === i.href || pathname.startsWith(i.href + '/')
+          );
+          return (
+            <div key={group.label}>
+              {/* A hairline instead of an uppercase header. Seven stacked
+                  section labels turned the rail into a wall of text; the
+                  reference carries none, and grouping still reads from the
+                  spacing plus the active well. */}
+              {groupIndex > 0 ? (
+                <div aria-hidden className="mx-3 my-1.5 h-px bg-[var(--border)]" />
+              ) : null}
+
+              {/* The section you are working in recesses into a well, so the rail
+                  reads as "you are here" even collapsed to 60px of icons. */}
+              <div
+                aria-label={group.label}
+                className={`rounded-2xl p-1.5 transition-colors ${
+                  isActiveGroup ? 'bg-[var(--bg)]/60 ring-1 ring-inset ring-[var(--border)]' : ''
+                }`}
+              >
+                <div className="flex flex-col gap-1">
+                  {group.items.map(item => (
+                    <NavRow
+                      key={item.href}
+                      item={item}
+                      expanded={expanded}
+                      active={pathname === item.href || pathname.startsWith(item.href + '/')}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      <ProfileFooter user={user} expanded={expanded} onSignOut={onSignOut} />
+      <ProfileFooter
+        user={user}
+        expanded={expanded}
+        onSignOut={onSignOut}
+        pinned={pinned}
+        onTogglePin={onTogglePin}
+      />
     </>
   );
 }

@@ -25,6 +25,7 @@ import { getUser } from '../../lib/auth';
 import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
 import { GlareStat } from '../../components/ds';
 import { AnimatedButton } from '@/components/ui/AnimatedButton';
+import { BackgroundBeams } from '@/components/ui/background-beams';
 import { TextGenerateEffect } from '@/components/ui/text-generate-effect';
 import { Meteors } from '@/components/ui/meteors';
 
@@ -112,6 +113,15 @@ export default function DashboardPage() {
       {/* `dark` is explicit: ThemeProvider only adds it in a mount effect, so the
           Aceternity components' dark: variants would flash light on first paint. */}
       <div className="relative isolate min-h-screen overflow-hidden bg-[var(--surface)]">
+        {/* Beams sit furthest back and are masked toward the top so they read as
+            ambient light behind the bento grid rather than competing with it. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -z-20 overflow-hidden [mask-image:radial-gradient(ellipse_at_top,black_10%,transparent_75%)]"
+        >
+          <BackgroundBeams className="opacity-30 dark:opacity-60" />
+        </div>
+
         {/* Ambient grid, radially masked so it fades out at the edges */}
         <div
           aria-hidden

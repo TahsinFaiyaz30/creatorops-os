@@ -1,14 +1,16 @@
 'use client';
 
+/** Signup — converted from .tsx to .jsx by hand, types stripped. */
+
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'motion/react';
 import { Eye, EyeOff, UserPlus } from 'lucide-react';
 
-import { AuthShell, Field } from '../../components/auth/auth-shell';
-import { Button as StatefulButton } from '../../components/ui/stateful-button';
-import { Label } from '../../components/ui/label';
+import { AuthSplitShell } from '../../components/auth/auth-split-shell';
+import { Field } from '../../components/auth/auth-shell';
+import { AnimatedButton } from '../../components/ui/AnimatedButton';
 import { api } from '../../lib/api';
 import { saveSession } from '../../lib/auth';
 import { ROLES, homePathForUser } from '../../lib/roles';
@@ -17,13 +19,13 @@ const ROLE_CHOICES = [
   {
     value: ROLES.CONTENT_CREATOR,
     title: 'Content Creator',
-    blurb: 'Manage the full creator workflow — scripting, repurposing, publishing.',
+    blurb: 'Manage the full creator workflow — scripting, repurposing, publishing.'
   },
   {
     value: ROLES.BRAND_REP,
     title: 'Brand Representative',
-    blurb: 'Manage circulars, connected accounts, and campaign publishing.',
-  },
+    blurb: 'Manage circulars, connected accounts, and campaign publishing.'
+  }
 ];
 
 export default function SignupPage() {
@@ -41,11 +43,11 @@ export default function SignupPage() {
   const doSignup = async () => {
     if (password !== confirm) {
       setError('Passwords do not match.');
-      throw new Error('mismatch');
+      return;
     }
     if (password.length < 8) {
       setError('Password must be at least 8 characters.');
-      throw new Error('too-short');
+      return;
     }
 
     setBusy(true);
@@ -57,20 +59,19 @@ export default function SignupPage() {
       const payload = await api.post('/api/auth/login', { email, password });
       saveSession(payload);
       router.push(homePathForUser(payload.user));
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || 'Registration failed.');
-      throw err;
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <AuthShell
+    <AuthSplitShell
       title="Create your account"
       subtitle="Start your creator workflow in seconds."
       footer={
-        <p className="mt-6 text-center text-sm text-[var(--muted)]">
+        <p className="mt-4 text-center text-[13px] text-[var(--muted)]">
           Already have an account?{' '}
           <Link href="/login" className="font-semibold text-[var(--accent)] hover:underline">
             Sign in
@@ -79,11 +80,11 @@ export default function SignupPage() {
       }
     >
       <form
-        onSubmit={e => {
-          e.preventDefault();
-          doSignup().catch(() => {});
+        onSubmit={event => {
+          event.preventDefault();
+          doSignup();
         }}
-        className="mt-5 space-y-4"
+        className="mt-4 space-y-3"
       >
         <Field
           id="signup-name"
@@ -93,7 +94,7 @@ export default function SignupPage() {
           autoComplete="name"
           placeholder="Your name"
           value={name}
-          onChange={e => setName(e.target.value)}
+          onChange={event => setName(event.target.value)}
         />
 
         <Field
@@ -104,7 +105,7 @@ export default function SignupPage() {
           autoComplete="email"
           placeholder="you@example.com"
           value={email}
-          onChange={e => setEmail(e.target.value)}
+          onChange={event => setEmail(event.target.value)}
         />
 
         <div className="relative">
@@ -116,18 +117,20 @@ export default function SignupPage() {
             autoComplete="new-password"
             placeholder="Min. 8 characters"
             value={password}
-            onChange={e => setPassword(e.target.value)}
+            onChange={event => setPassword(event.target.value)}
             className="pr-11"
           />
-          <button
+          <AnimatedButton
             type="button"
-            onClick={() => setShowPassword(s => !s)}
+            variant="ghost"
+            size="icon"
             tabIndex={-1}
+            onClick={() => setShowPassword(value => !value)}
             aria-label={showPassword ? 'Hide password' : 'Show password'}
-            className="absolute right-3 top-[2.1rem] text-[var(--muted)] transition-colors hover:text-[var(--text)]"
+            className="absolute right-2 top-[1.95rem] z-10 rounded-full"
           >
-            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-          </button>
+            {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+          </AnimatedButton>
         </div>
 
         <Field
@@ -138,14 +141,14 @@ export default function SignupPage() {
           autoComplete="new-password"
           placeholder="Repeat password"
           value={confirm}
-          onChange={e => setConfirm(e.target.value)}
+          onChange={event => setConfirm(event.target.value)}
         />
 
         {/* Role picker — animated selectable cards */}
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="signup-role" className="text-xs font-medium text-[var(--muted)]">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="signup-role" className="text-xs font-medium text-[var(--muted)]">
             I am a…
-          </Label>
+          </label>
           <div id="signup-role" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {ROLE_CHOICES.map(choice => {
               const active = role === choice.value;
@@ -157,19 +160,19 @@ export default function SignupPage() {
                   aria-pressed={active}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  className={`focus-ring relative overflow-hidden rounded-xl border p-3 text-left transition-colors ${
+                  className={`focus-ring relative overflow-hidden rounded-xl border p-2.5 text-left transition-colors ${
                     active
                       ? 'border-[var(--accent-line)] bg-[var(--accent-soft)]'
                       : 'border-[var(--border)] bg-[var(--surface2)] hover:border-[var(--border-strong)]'
                   }`}
                 >
-                  {active && (
+                  {active ? (
                     <motion.span
                       layoutId="role-glow"
                       className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_0%,rgba(174,72,255,0.22),transparent_70%)]"
                       transition={{ type: 'spring', stiffness: 300, damping: 28 }}
                     />
-                  )}
+                  ) : null}
                   <span className="relative block text-sm font-semibold text-[var(--text)]">
                     {choice.title}
                   </span>
@@ -182,7 +185,7 @@ export default function SignupPage() {
           </div>
         </div>
 
-        {error && (
+        {error ? (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -190,8 +193,9 @@ export default function SignupPage() {
           >
             {error}
           </motion.div>
-        )}
-        {notice && (
+        ) : null}
+
+        {notice ? (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -199,23 +203,25 @@ export default function SignupPage() {
           >
             {notice}
           </motion.div>
-        )}
+        ) : null}
 
-        <StatefulButton
+        <AnimatedButton
           id="signup-submit"
           type="submit"
+          variant="primary"
+          size="lg"
           disabled={busy}
-          onClick={async e => {
-            e.preventDefault();
-            await doSignup();
-          }}
-          className="w-full bg-[var(--accent)] text-[var(--accent-fg)] hover:brightness-110 hover:ring-[var(--ring)]"
+          loading={busy}
+          className="w-full rounded-full"
         >
-          <span className="flex items-center gap-2">
-            <UserPlus size={15} /> Create account
-          </span>
-        </StatefulButton>
+          {busy ? 'Creating account…' : (
+            <>
+              <UserPlus size={15} />
+              Create account
+            </>
+          )}
+        </AnimatedButton>
       </form>
-    </AuthShell>
+    </AuthSplitShell>
   );
 }

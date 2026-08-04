@@ -113,7 +113,7 @@ export function AnimatedButton({
   const interaction = reduce || isInert
     ? {}
     : {
-        whileHover: { scale: 1.02 },
+        whileHover: { scale: 1.03 },
         whileTap: { scale: 0.95 }
       };
 

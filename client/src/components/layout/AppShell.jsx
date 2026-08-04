@@ -63,6 +63,9 @@ export default function AppShell({ children }) {
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  /* Pinned wins over hover: the primitive fires setOpen(false) on mouse-leave,
+     so without this the rail snaps shut the moment the pointer reaches the page. */
+  const [pinned, setPinned] = useState(false);
 
   useEffect(() => { setNavOpen(false); }, [pathname]);
 
@@ -109,13 +112,19 @@ export default function AppShell({ children }) {
 
   return (
     <div className="flex min-h-screen w-full bg-[var(--bg)]">
-      <SidebarProvider open={navOpen} setOpen={setNavOpen}>
+      <SidebarProvider open={pinned || navOpen} setOpen={value => setNavOpen(pinned ? true : value)}>
         {/* Desktop rail. `dark:bg-[var(--surface)]` is required alongside the
             unprefixed class: upstream sets dark:bg-neutral-800 and twMerge keeps
             a dark:-prefixed utility next to an unprefixed one, so neutral-800
             would win in dark mode. */}
-        <DesktopSidebar className="sticky top-0 h-screen justify-between gap-4 border-r border-[var(--border)] bg-[var(--surface)] px-3 py-4 dark:bg-[var(--surface)]">
-          <SidebarNav user={user} expanded={navOpen} onSignOut={signOut} />
+        <DesktopSidebar className="sticky top-3 my-3 ml-3 h-[calc(100vh-1.5rem)] justify-between gap-4 rounded-3xl border border-[var(--border)] bg-[var(--surface)] px-3 py-4 shadow-[var(--shadow)] dark:bg-[var(--surface)]">
+          <SidebarNav
+            user={user}
+            expanded={pinned || navOpen}
+            onSignOut={signOut}
+            pinned={pinned}
+            onTogglePin={() => setPinned(value => !value)}
+          />
         </DesktopSidebar>
 
         {/* Mobile sheet */}

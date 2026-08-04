@@ -1,5 +1,15 @@
 'use client';
 
+/**
+ * Login — converted from .tsx to .jsx by hand, types stripped.
+ *
+ * Every control on this page is an AnimatedButton now: the demo-account chips,
+ * the password reveal and the submit. The submit previously used Aceternity's
+ * StatefulButton, which ran its own spinner→check animation off the click
+ * promise; that meant two different loading languages on one screen. It now
+ * uses the shared `loading` state so the page matches the rest of the app.
+ */
+
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -7,7 +17,7 @@ import { motion } from 'motion/react';
 import { Eye, EyeOff, LogIn } from 'lucide-react';
 
 import { AuthShell, Field } from '../../components/auth/auth-shell';
-import { Button as StatefulButton } from '../../components/ui/stateful-button';
+import { AnimatedButton } from '../../components/ui/AnimatedButton';
 import { HoverBorderGradient } from '../../components/ui/hover-border-gradient';
 import { api } from '../../lib/api';
 import { saveSession } from '../../lib/auth';
@@ -18,7 +28,7 @@ const DEMO_ACCOUNTS = [
   { label: 'Brand Rep',      email: 'brand@creatorops.dev',   password: 'password123' },
   { label: 'Admin',          email: 'admin@creatorops.dev',   password: 'password123' },
   { label: 'Creator Admin',  email: 'creator.admin@creatorops.dev', password: 'password123' },
-  { label: 'Brand Admin',    email: 'brand.admin@creatorops.dev', password: 'password123' },
+  { label: 'Brand Admin',    email: 'brand.admin@creatorops.dev', password: 'password123' }
 ];
 
 export default function LoginPage() {
@@ -27,23 +37,23 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState('');
 
-  const doLogin = async (creds: { email: string; password: string }) => {
-    setBusy(true);
+  const doLogin = async creds => {
+    setBusy(creds.email);
     setError('');
     try {
       const payload = await api.post('/api/auth/login', creds);
       saveSession(payload);
       router.push(homePathForUser(payload.user));
-    } catch (err: any) {
+    } catch (err) {
       setError(err?.message || 'Login failed. Check your credentials.');
-      // Re-thrown so <StatefulButton> can reset out of its loading state.
-      throw err;
     } finally {
-      setBusy(false);
+      setBusy('');
     }
   };
+
+  const anyBusy = Boolean(busy);
 
   return (
     <AuthShell
@@ -51,30 +61,34 @@ export default function LoginPage() {
       subtitle="Sign in to your CreatorOps workspace."
       footer={
         <>
-          {/* Demo accounts */}
           <div className="mt-5">
             <div className="flex items-center gap-3">
               <div className="h-px flex-1 bg-[var(--surface3)]" />
               <span className="text-xs text-[var(--muted)]">Demo accounts</span>
               <div className="h-px flex-1 bg-[var(--surface3)]" />
             </div>
+
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {DEMO_ACCOUNTS.map((d, i) => (
-                <motion.button
-                  key={d.email}
-                  id={`demo-${d.label.toLowerCase().replace(/\s+/g, '-')}`}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => doLogin(d).catch(() => {})}
+              {DEMO_ACCOUNTS.map((account, i) => (
+                <motion.div
+                  key={account.email}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.35 + i * 0.05, duration: 0.5 }}
-                  whileHover={{ scale: 1.04 }}
-                  whileTap={{ scale: 0.96 }}
-                  className="focus-ring rounded-xl border border-[var(--border)] bg-[var(--surface2)] py-2.5 text-xs font-medium text-[var(--muted)] transition-colors hover:border-[var(--accent-line)] hover:text-[var(--accent)] disabled:opacity-40"
                 >
-                  {d.label}
-                </motion.button>
+                  <AnimatedButton
+                    id={`demo-${account.label.toLowerCase().replace(/\s+/g, '-')}`}
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={anyBusy}
+                    loading={busy === account.email}
+                    onClick={() => doLogin(account)}
+                    className="w-full rounded-full py-2.5 hover:border-[var(--accent-line)] hover:text-[var(--accent)]"
+                  >
+                    {busy === account.email ? null : account.label}
+                  </AnimatedButton>
+                </motion.div>
               ))}
             </div>
           </div>
@@ -89,9 +103,9 @@ export default function LoginPage() {
       }
     >
       <form
-        onSubmit={e => {
-          e.preventDefault();
-          doLogin({ email, password }).catch(() => {});
+        onSubmit={event => {
+          event.preventDefault();
+          doLogin({ email, password });
         }}
         className="mt-5 space-y-4"
       >
@@ -103,7 +117,7 @@ export default function LoginPage() {
           autoComplete="email"
           placeholder="you@example.com"
           value={email}
-          onChange={e => setEmail(e.target.value)}
+          onChange={event => setEmail(event.target.value)}
         />
 
         <div className="relative">
@@ -115,21 +129,24 @@ export default function LoginPage() {
             autoComplete="current-password"
             placeholder="••••••••"
             value={password}
-            onChange={e => setPassword(e.target.value)}
+            onChange={event => setPassword(event.target.value)}
             className="pr-11"
           />
-          <button
+          {/* top-[1.85rem] clears the label row; the field itself is 38px tall. */}
+          <AnimatedButton
             type="button"
-            onClick={() => setShowPassword(s => !s)}
+            variant="ghost"
+            size="icon"
             tabIndex={-1}
+            onClick={() => setShowPassword(value => !value)}
             aria-label={showPassword ? 'Hide password' : 'Show password'}
-            className="absolute right-3 top-[2.1rem] text-[var(--muted)] transition-colors hover:text-[var(--text)]"
+            className="absolute right-2 top-[1.95rem] z-10 rounded-full"
           >
-            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-          </button>
+            {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+          </AnimatedButton>
         </div>
 
-        {error && (
+        {error ? (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -137,25 +154,24 @@ export default function LoginPage() {
           >
             {error}
           </motion.div>
-        )}
+        ) : null}
 
-        {/* Aceternity stateful button — spinner → check, driven by the real request.
-            preventDefault stops the native submit so clicking runs this handler
-            only, while the Enter key still goes through the form's onSubmit. */}
-        <StatefulButton
+        <AnimatedButton
           id="login-submit"
           type="submit"
-          disabled={busy}
-          onClick={async e => {
-            e.preventDefault();
-            await doLogin({ email, password });
-          }}
-          className="w-full bg-[var(--accent)] text-[var(--accent-fg)] hover:brightness-110 hover:ring-[var(--ring)]"
+          variant="primary"
+          size="lg"
+          disabled={anyBusy}
+          loading={busy === email && Boolean(email)}
+          className="w-full rounded-full"
         >
-          <span className="flex items-center gap-2">
-            <LogIn size={15} /> Sign in
-          </span>
-        </StatefulButton>
+          {busy === email && email ? 'Signing in…' : (
+            <>
+              <LogIn size={15} />
+              Sign in
+            </>
+          )}
+        </AnimatedButton>
       </form>
 
       <div className="mt-5 flex justify-center">
