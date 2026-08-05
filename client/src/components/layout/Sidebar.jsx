@@ -2,11 +2,16 @@
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- * Sidebar — CreatorOps.OS command rail.
+ * Sidebar — CreatorOps.OS command rail (redesigned).
  *
- * Nav lives here; AppShell owns layout + auth. Built on the Aceternity Sidebar
- * primitive (icon rail that expands on hover; controlled `open` state so the
- * mobile sheet shares one source of truth).
+ * Premium glassmorphic sidebar with:
+ *   · Visible gradient section headers (PLAN · CREATE · REVIEW …)
+ *   · Dynamic animated page icons with staggered entrance
+ *   · Glowing active pill with shifting gradient + shimmer
+ *   · Glassmorphic active-group wells
+ *   · Animated profile footer with rotating avatar ring
+ *   · Breathing logo glow
+ *   · Collapsed-state icon glow feedback
  *
  * Hierarchy is the brief's, verbatim:
  *   PLAN · CREATE · REVIEW · DISTRIBUTE · MEASURE · MARKETPLACE · SYSTEM
@@ -32,6 +37,17 @@ import {
 
 import { AnimatedButton } from '../ui/AnimatedButton';
 import { ROLES, hasRole, getRoleLabel } from '../../lib/roles';
+
+/* ── Group accent colours — each section gets a unique gradient tint ──────── */
+const GROUP_ACCENTS = {
+  Plan:        { from: '#818CF8', to: '#6366F1' },
+  Create:      { from: '#F472B6', to: '#EC4899' },
+  Review:      { from: '#34D399', to: '#10B981' },
+  Distribute:  { from: '#38BDF8', to: '#0EA5E9' },
+  Measure:     { from: '#FBBF24', to: '#F59E0B' },
+  Marketplace: { from: '#C084FC', to: '#A855F7' },
+  System:      { from: '#94A3B8', to: '#64748B' }
+};
 
 export const NAV_GROUPS = [
   {
@@ -95,72 +111,175 @@ export function visibleGroupsFor(user) {
     .filter(g => g.items.length > 0);
 }
 
-/* ── One nav link — solid pill that slides between rows ───────────────────── */
+/* ── Stagger variants for group entrance ─────────────────────────────────── */
+const groupContainerVariants = {
+  hidden: {},
+  visible: {
+    transition: { staggerChildren: 0.06, delayChildren: 0.04 }
+  }
+};
 
-function NavRow({ item, active, expanded }) {
+const groupItemVariants = {
+  hidden: { opacity: 0, x: -8, scale: 0.95 },
+  visible: {
+    opacity: 1,
+    x: 0,
+    scale: 1,
+    transition: { type: 'spring', stiffness: 380, damping: 26, mass: 0.8 }
+  }
+};
+
+/* ── Section header — visible gradient label ─────────────────────────────── */
+
+function SectionHeader({ label, expanded, accent }) {
+  const reduce = useReducedMotion();
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5">
+      {/* Accent dot — always visible, acts as section marker when collapsed */}
+      <motion.span
+        layout
+        className="flex h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{
+          background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`
+        }}
+        animate={reduce ? undefined : { scale: [1, 1.3, 1] }}
+        transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
+      />
+
+      {/* Label — fades in when expanded */}
+      <motion.span
+        animate={{ opacity: expanded ? 1 : 0, width: expanded ? 'auto' : 0 }}
+        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+        className="overflow-hidden whitespace-nowrap"
+      >
+        <span
+          className="text-[10px] font-bold uppercase tracking-[0.18em]"
+          style={{
+            background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text'
+          }}
+        >
+          {label}
+        </span>
+      </motion.span>
+    </div>
+  );
+}
+
+/* ── One nav link — with dynamic icon animation ──────────────────────────── */
+
+function NavRow({ item, active, expanded, index }) {
   const reduce = useReducedMotion();
   const Icon = item.icon;
 
   return (
-    <motion.div whileHover={reduce || active ? undefined : { x: 2 }} transition={{ duration: 0.18 }}>
+    <motion.div
+      variants={groupItemVariants}
+      whileHover={reduce || active ? undefined : { x: 3 }}
+      transition={{ duration: 0.18 }}
+      className="relative"
+    >
       <Link
         href={item.href}
         aria-current={active ? 'page' : undefined}
-        /* `isolate` pins a stacking context to the row so the pill's z-0 and the
-           content's z-10 are compared against each other and nothing else. */
-        className="focus-ring relative isolate flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors"
+        className="focus-ring group/navrow relative isolate flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors"
       >
-        {/*
-          One shared layoutId across every row, so switching routes slides the
-          pill from the old item to the new one instead of cross-fading two.
-
-          z-0 / z-10 is load-bearing, not tidiness: motion promotes a
-          layout-animating element with a transform, which gives it its own
-          stacking context. At z-auto the pill then painted OVER the icon and
-          label mid-slide, so the row you just selected went blank.
-        */}
+        {/* Active pill — glowing gradient with shimmer */}
         {active ? (
           <motion.span
             layoutId="nav-active-pill"
             transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-            className="absolute inset-0 z-0 rounded-xl bg-gradient-to-r from-[#5B34E8] to-[#9333EA] shadow-[0_10px_28px_-12px_var(--glow)]"
-          />
+            className="absolute inset-0 z-0 overflow-hidden rounded-xl sidebar-active-pill shadow-[0_8px_32px_-8px_var(--glow)]"
+          >
+            {/* Top-edge shimmer highlight */}
+            <span className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
+            {/* Moving sheen */}
+            {!reduce && (
+              <motion.span
+                className="absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                initial={{ x: '-60%' }}
+                animate={{ x: '360%' }}
+                transition={{
+                  duration: 2.8,
+                  ease: 'easeInOut',
+                  repeat: Infinity,
+                  repeatDelay: 2
+                }}
+              />
+            )}
+          </motion.span>
         ) : null}
 
+        {/* Icon container with glow ring on active */}
         <motion.span
-          className="relative z-10 flex shrink-0"
-          animate={reduce ? undefined : { scale: active ? 1.08 : 1 }}
+          className="relative z-10 flex shrink-0 items-center justify-center"
+          animate={reduce ? undefined : {
+            scale: active ? 1.15 : 1,
+          }}
+          whileHover={reduce || active ? undefined : { scale: 1.12 }}
           transition={{ type: 'spring', stiffness: 400, damping: 22 }}
         >
+          {/* Glow ring behind active icon */}
+          {active && !reduce ? (
+            <span className="absolute inset-[-4px] sidebar-icon-glow rounded-lg" />
+          ) : null}
           <Icon
             size={19}
             strokeWidth={1.75}
-            className={`transition-colors ${
-              active ? 'text-white' : 'text-[var(--muted)] group-hover/sidebar:text-[var(--text)]'
+            className={`relative transition-colors duration-200 ${
+              active
+                ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.4)]'
+                : 'text-[var(--muted)] group-hover/navrow:text-[var(--accent)]'
             }`}
           />
         </motion.span>
 
+        {/* Label — slides in with spring */}
         <motion.span
-          animate={{ opacity: expanded ? 1 : 0 }}
-          transition={{ duration: 0.18 }}
+          animate={{
+            opacity: expanded ? 1 : 0,
+            x: expanded ? 0 : -4
+          }}
+          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
           className={`relative z-10 min-w-0 truncate whitespace-nowrap text-sm transition-colors ${
-            active ? 'font-semibold text-white' : 'text-[var(--text-2)]'
+            active ? 'font-semibold text-white' : 'text-[var(--text-2)] group-hover/navrow:text-[var(--text)]'
           }`}
         >
           {item.label}
         </motion.span>
 
-        {/* Trailing dot marks the current row once the label has faded out. */}
+        {/* Trailing active dot — pulses */}
         {active && expanded ? (
           <motion.span
             initial={{ opacity: 0, scale: 0.5 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.15, duration: 0.25 }}
-            className="relative z-10 ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-white/80"
-          />
+            className="relative z-10 ml-auto flex h-2 w-2 shrink-0"
+          >
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-white/90" />
+          </motion.span>
+        ) : null}
+
+        {/* Collapsed hover tooltip peek */}
+        {!expanded && !active ? (
+          <span className="pointer-events-none absolute left-full z-50 ml-2 hidden rounded-lg border border-[var(--border)] bg-[var(--surface2)] px-2.5 py-1.5 text-xs font-medium text-[var(--text)] shadow-lg group-hover/navrow:block">
+            {item.label}
+          </span>
         ) : null}
       </Link>
+
+      {/* Collapsed active indicator — subtle glow dot on the left edge */}
+      {active && !expanded ? (
+        <motion.span
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          className="absolute -left-1 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-gradient-to-b from-[#5B34E8] to-[#9333EA] shadow-[0_0_10px_2px_var(--glow)]"
+        />
+      ) : null}
     </motion.div>
   );
 }
@@ -168,8 +287,7 @@ function NavRow({ item, active, expanded }) {
 /* ── Footer: profile + sign out ───────────────────────────────────────────── */
 
 function ProfileFooter({ user, expanded, onSignOut, pinned, onTogglePin }) {
-  /* Name comes from the authenticated session, not a constant — hardcoding a
-     name would mislabel whoever is actually signed in. */
+  const reduce = useReducedMotion();
   const name = user?.name || 'Account';
   const initials =
     name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || 'CO';
@@ -177,24 +295,27 @@ function ProfileFooter({ user, expanded, onSignOut, pinned, onTogglePin }) {
 
   return (
     <div className="mt-2 shrink-0">
-      {/*
-        The old footer was three stacked full-width rows that read as three more
-        nav items. It is one card now: identity on top, actions as icon buttons
-        underneath, so the rail ends with a clear base rather than trailing off.
-      */}
       <motion.div
         layout
         transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-        className="rounded-2xl border border-[var(--border)] bg-[var(--bg)]/60 p-1.5"
+        className="rounded-2xl border border-[var(--border)] bg-[var(--surface)]/40 p-1.5 backdrop-blur-md"
       >
         <Link
           href={profileHref}
-          className="focus-ring group flex items-center gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-[var(--surface2)]"
+          className="focus-ring group flex items-center gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-[var(--surface2)]/60"
         >
-          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#5B34E8] to-[#9333EA] text-[11px] font-bold text-white shadow-[0_8px_20px_-8px_var(--glow)]">
-            {initials}
-            <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full border-2 border-[var(--surface)] bg-success">
-              <span className="absolute h-full w-full animate-ping rounded-full bg-success opacity-60" />
+          {/* Avatar with animated gradient ring */}
+          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center">
+            {/* Rotating gradient ring */}
+            {!reduce && (
+              <span className="absolute inset-[-2px] rounded-[14px] sidebar-avatar-ring" />
+            )}
+            <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#5B34E8] to-[#9333EA] text-[11px] font-bold text-white shadow-[0_8px_20px_-8px_var(--glow)]">
+              {initials}
+              {/* Online status dot */}
+              <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full border-2 border-[var(--surface)] bg-success">
+                <span className="absolute h-full w-full animate-ping rounded-full bg-success opacity-60" />
+              </span>
             </span>
           </span>
 
@@ -220,8 +341,6 @@ function ProfileFooter({ user, expanded, onSignOut, pinned, onTogglePin }) {
               className="overflow-hidden"
             >
               <div className="mt-1.5 flex gap-1.5 border-t border-[var(--border)] pt-1.5">
-                {/* Pin the rail open. Without this it only widens on hover, so it
-                    collapsed the moment the pointer moved to the page. */}
                 <AnimatedButton
                   variant="ghost"
                   size="sm"
@@ -271,14 +390,15 @@ function ProfileFooter({ user, expanded, onSignOut, pinned, onTogglePin }) {
 
 export default function Sidebar({ user, expanded, onSignOut, pinned, onTogglePin }) {
   const pathname = usePathname();
+  const reduce = useReducedMotion();
   const groups = visibleGroupsFor(user);
 
   return (
     <>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
-        {/* Brand */}
-        <Link href="/dashboard" className="focus-ring mb-4 flex items-center gap-2.5 rounded-xl px-1 py-1">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface2)]">
+        {/* Brand — with breathing glow */}
+        <Link href="/dashboard" className="focus-ring mb-5 flex items-center gap-2.5 rounded-xl px-1 py-1">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface2)] ${!reduce ? 'sidebar-logo-breathe' : ''}`}>
             <img src="/logo.jpeg" alt="" width={26} height={26} className="rounded-lg" />
           </span>
           <motion.span
@@ -294,42 +414,69 @@ export default function Sidebar({ user, expanded, onSignOut, pinned, onTogglePin
           </motion.span>
         </Link>
 
-        {groups.map((group, groupIndex) => {
-          const isActiveGroup = group.items.some(
-            i => pathname === i.href || pathname.startsWith(i.href + '/')
-          );
-          return (
-            <div key={group.label}>
-              {/* A hairline instead of an uppercase header. Seven stacked
-                  section labels turned the rail into a wall of text; the
-                  reference carries none, and grouping still reads from the
-                  spacing plus the active well. */}
-              {groupIndex > 0 ? (
-                <div aria-hidden className="mx-3 my-1.5 h-px bg-[var(--border)]" />
-              ) : null}
+        {/* Navigation groups with staggered entrance */}
+        <motion.div
+          variants={groupContainerVariants}
+          initial="hidden"
+          animate="visible"
+          className="flex flex-col gap-0.5"
+        >
+          {groups.map((group, groupIndex) => {
+            const isActiveGroup = group.items.some(
+              i => pathname === i.href || pathname.startsWith(i.href + '/')
+            );
+            const accent = GROUP_ACCENTS[group.label] || GROUP_ACCENTS.System;
 
-              {/* The section you are working in recesses into a well, so the rail
-                  reads as "you are here" even collapsed to 60px of icons. */}
-              <div
-                aria-label={group.label}
-                className={`rounded-2xl p-1.5 transition-colors ${
-                  isActiveGroup ? 'bg-[var(--bg)]/60 ring-1 ring-inset ring-[var(--border)]' : ''
-                }`}
+            return (
+              <motion.div
+                key={group.label}
+                variants={groupItemVariants}
               >
-                <div className="flex flex-col gap-1">
-                  {group.items.map(item => (
-                    <NavRow
-                      key={item.href}
-                      item={item}
-                      expanded={expanded}
-                      active={pathname === item.href || pathname.startsWith(item.href + '/')}
+                {/* Separator between groups — subtle gradient line */}
+                {groupIndex > 0 ? (
+                  <div aria-hidden className="mx-3 my-1 h-px">
+                    <div
+                      className="h-full w-full opacity-30"
+                      style={{
+                        background: `linear-gradient(90deg, transparent, ${accent.from}40, transparent)`
+                      }}
                     />
-                  ))}
+                  </div>
+                ) : null}
+
+                {/* Section header — gradient label */}
+                <SectionHeader label={group.label} expanded={expanded} accent={accent} />
+
+                {/* Group well — glassmorphic when active */}
+                <div
+                  aria-label={group.label}
+                  className={`rounded-2xl p-1 transition-all duration-300 ${
+                    isActiveGroup
+                      ? 'sidebar-glass-well'
+                      : ''
+                  }`}
+                >
+                  <motion.div
+                    variants={groupContainerVariants}
+                    initial="hidden"
+                    animate="visible"
+                    className="flex flex-col gap-0.5"
+                  >
+                    {group.items.map((item, itemIndex) => (
+                      <NavRow
+                        key={item.href}
+                        item={item}
+                        expanded={expanded}
+                        active={pathname === item.href || pathname.startsWith(item.href + '/')}
+                        index={itemIndex}
+                      />
+                    ))}
+                  </motion.div>
                 </div>
-              </div>
-            </div>
-          );
-        })}
+              </motion.div>
+            );
+          })}
+        </motion.div>
       </div>
 
       <ProfileFooter
