@@ -109,7 +109,10 @@ function BarChart({ data, width, height, metric, chartId, onHover, hovered }) {
                 initial={reduce ? false : { y: h, height: 0 }}
                 animate={{ y: h - bh, height: bh }}
                 transition={{ duration: 0.7, ease: EASE, delay: i * 0.05 }}
-                style={{ opacity: hovered === null || active ? 1 : 0.45 }}
+                style={{ 
+                  opacity: hovered === null || active ? 1 : 0.45,
+                  filter: active ? 'drop-shadow(0 0 12px var(--glow))' : 'none'
+                }}
                 pointerEvents="none"
               />
               <text
@@ -368,18 +371,29 @@ export default function StatsChart({ data = [], metric = 'views', title, subtitl
         <AnimatePresence>
           {active ? (
             <motion.div
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 6 }}
-              transition={{ duration: 0.18 }}
-              className="pointer-events-none absolute right-3 top-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]/95 px-3 py-2 shadow-[var(--shadow)] backdrop-blur-xl"
+              initial={{ opacity: 0, y: 6, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.95 }}
+              transition={{ duration: 0.2, ease: EASE }}
+              className="pointer-events-none absolute right-3 top-3 rounded-xl border border-[var(--border-strong)] bg-[var(--surface)]/95 px-4 py-3 shadow-2xl backdrop-blur-xl"
             >
-              <p className="text-[10px] uppercase tracking-wider text-[var(--muted)]">{active.label}</p>
-              <p className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-[var(--text)]">
-                <span className="h-2 w-2 rounded-full" style={{ background: 'var(--viz-series-1)' }} />
-                {fmt(active[metric] || 0)}
-                <span className="text-[10px] font-medium capitalize text-[var(--muted)]">{metric}</span>
-              </p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text)]">{active.label}</p>
+              
+              <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
+                {Object.keys(active)
+                  .filter(k => !['label', 'value', 'i', 'cumulative'].includes(k))
+                  .map(m => (
+                  <div key={m} className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`h-1.5 w-1.5 rounded-full ${m === metric ? 'bg-[var(--viz-series-1)]' : 'bg-[var(--surface3)]'}`} />
+                      <span className={`text-[10px] capitalize ${m === metric ? 'font-medium text-[var(--text)]' : 'text-[var(--muted)]'}`}>{m}</span>
+                    </div>
+                    <span className={`text-xs tabular-nums font-semibold ${m === metric ? 'text-[var(--text)]' : 'text-[var(--text-2)]'}`}>
+                      {fmt(active[m] || 0)}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </motion.div>
           ) : null}
         </AnimatePresence>

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -66,6 +66,8 @@
   --grid-line: rgba(255, 255, 255, 0.035);
 
   color-scheme: dark;
+  --font-heading: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
 }
 
 .light {
@@ -106,6 +108,8 @@
   --grid-line: rgba(9, 9, 11, 0.05);
 
   color-scheme: light;
+  --font-heading: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
 }
 
 /* ── Base ──────────────────────────────────────────────────────────────────── */
@@ -125,6 +129,11 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.2s, color 0.2s;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  letter-spacing: -0.02em;
 }
 
 button, input, textarea, select { font: inherit; }
@@ -175,6 +184,35 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .card-hover:hover {
   border-color: var(--border-strong);
   background: var(--surface2);
+}
+
+/* ── Enhanced interactive elements ─────────────────────────────────────────── */
+.btn-glow {
+  position: relative;
+  overflow: hidden;
+}
+.btn-glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.08) 50%, transparent 60%);
+  background-size: 250% 250%;
+  background-position: 100% 100%;
+  transition: background-position 0.5s ease;
+}
+.btn-glow:hover::after {
+  background-position: 0% 0%;
+}
+
+.card-lift {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.2s,
+              box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.3);
 }
 
 /* Faint blueprint grid used behind hero / dashboard surfaces */

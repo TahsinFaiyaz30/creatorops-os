@@ -83,7 +83,7 @@ function BrandPanel() {
           side so the two halves meet with no seam. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 right-0 z-[5] w-40 bg-gradient-to-r from-transparent to-[var(--bg)]"
+        className="pointer-events-none absolute inset-y-0 right-0 z-[5] w-64 bg-gradient-to-r from-transparent via-[var(--bg)]/50 to-[var(--bg)]"
       />
 
       <motion.div
@@ -199,6 +199,14 @@ function GlassCard({ className, children }) {
           animate={{ opacity: hovering && !reduce ? 1 : 0 }}
           transition={{ duration: 0.3 }}
         />
+        {/* Animated border glow on hover */}
+        <motion.div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-0 rounded-[28px] border border-[var(--accent)]/50"
+          initial={false}
+          animate={{ opacity: hovering && !reduce ? 1 : 0, boxShadow: hovering && !reduce ? '0 0 20px 2px rgba(174,72,255,0.15) inset, 0 0 20px 2px rgba(174,72,255,0.15)' : 'none' }}
+          transition={{ duration: 0.4 }}
+        />
         {/* Lit top seam — reads as a light source above the card. */}
         <span
           aria-hidden
@@ -218,11 +226,12 @@ export function AuthShell({ title, subtitle, children, footer }) {
       initial={{ opacity: 0, scale: 0.985 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.8, ease: easeOutExpo }}
-      className="grid min-h-screen grid-cols-1 bg-[var(--bg)] lg:grid-cols-[46%_1fr]"
+      className="grid min-h-screen grid-cols-1 gap-0 border-none bg-[var(--bg)] lg:grid-cols-[46%_1fr]"
     >
       <BrandPanel />
 
       <div className="relative flex flex-col items-center justify-center overflow-hidden px-6 py-12 sm:px-10">
+        <StarsBackground className="absolute inset-0 z-0" starDensity={0.00012} />
         <Spotlight
           gradientFirst="radial-gradient(68.54% 68.72% at 55.02% 31.46%, hsla(268, 100%, 70%, 0.08) 0, hsla(268, 100%, 55%, 0.03) 50%, transparent 80%)"
           translateY={-260}
@@ -242,8 +251,8 @@ export function AuthShell({ title, subtitle, children, footer }) {
           className="relative z-10 w-full max-w-md"
         >
           <GlassCard>
-            <h1 className="text-xl font-bold tracking-tight text-[var(--text)]">{title}</h1>
-            <p className="mt-1 text-sm text-[var(--muted)]">{subtitle}</p>
+            <h1 className="bg-gradient-to-br from-[var(--text)] to-[var(--accent)] bg-clip-text text-2xl font-bold tracking-tight text-transparent">{title}</h1>
+            <p className="mt-1 text-[15px] text-[var(--muted)]">{subtitle}</p>
             {children}
           </GlassCard>
           {footer}
@@ -266,7 +275,7 @@ export function Field({ id, label, hint, className, ...props }) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="px-1 text-xs font-medium text-[var(--muted)]">
+      <label htmlFor={id} className="px-1 text-xs font-medium text-[var(--text-2)]">
         {label}
       </label>
 
