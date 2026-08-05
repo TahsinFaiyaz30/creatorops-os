@@ -498,6 +498,41 @@ Default URLs:
 - API: `http://localhost:5000`
 - Health check: `http://localhost:5000/health`
 
+## Deploying
+
+The client and the API deploy to different places. Vercel can host the Next.js
+client; it cannot host the API, which is a long-lived Express process with a
+Socket.IO server, a `setInterval` publishing worker and a MongoDB connection.
+Put the API on a host that runs a persistent Node process (Render, Railway, Fly,
+a VM) with a MongoDB Atlas URI, then point the client at it.
+
+### Client (Vercel)
+
+Set **Root Directory** to `client` in the project settings, then add environment
+variables. `client/.env` is gitignored and never reaches the host, so a build
+made without these has no API to talk to.
+
+Pick one wiring option:
+
+| | Variable | Notes |
+|---|---|---|
+| **A — proxy (recommended)** | `API_ORIGIN=https://your-api-host` | Browser calls the site's own origin; `next.config.mjs` forwards `/api/*`. No CORS setup, no mixed content, read at runtime. |
+| **B — direct** | `NEXT_PUBLIC_API_URL=https://your-api-host` | Browser calls the API host directly. Must be HTTPS, and the API's `CLIENT_URL` / `CLIENT_URLS` must list the site's origin. |
+
+`NEXT_PUBLIC_*` values are inlined at **build** time — changing one in the
+dashboard does nothing until you redeploy.
+
+Realtime is optional. Socket.IO needs a direct long-lived connection, so it
+cannot use the proxy and will not work against a serverless host. Leave
+`NEXT_PUBLIC_SOCKET_URL` unset unless the API supports WebSockets; every live
+view falls back to polling on its own.
+
+### API
+
+Set at minimum `MONGO_URI`, `JWT_SECRET`, `ENCRYPTION_KEY`, and `CLIENT_URL` /
+`CLIENT_URLS` (the deployed client origin — needed for CORS under option B and
+for the OAuth callback redirect either way). See `server/.env.example`.
+
 ## Verification
 
 Useful checks:

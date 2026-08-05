@@ -1,311 +1,188 @@
 'use client';
 
+/**
+ * Login — converted from .tsx to .jsx by hand, types stripped.
+ *
+ * Every control on this page is an AnimatedButton now: the demo-account chips,
+ * the password reveal and the submit. The submit previously used Aceternity's
+ * StatefulButton, which ran its own spinner→check animation off the click
+ * promise; that meant two different loading languages on one screen. It now
+ * uses the shared `loading` state so the page matches the rest of the app.
+ */
+
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Loader2, LogIn, UserPlus, Zap } from 'lucide-react';
-import SiteLogo from '../../components/layout/SiteLogo';
+import { motion } from 'motion/react';
+import { Eye, EyeOff, LogIn } from 'lucide-react';
+
+import { AuthShell, Field } from '../../components/auth/auth-shell';
+import { AnimatedButton } from '../../components/ui/AnimatedButton';
+import { HoverBorderGradient } from '../../components/ui/hover-border-gradient';
 import { api } from '../../lib/api';
 import { saveSession } from '../../lib/auth';
-import { ROLES, homePathForUser } from '../../lib/roles';
+import { homePathForUser } from '../../lib/roles';
 
 const DEMO_ACCOUNTS = [
   { label: 'Content Creator', email: 'creator@creatorops.dev', password: 'password123' },
   { label: 'Brand Rep',      email: 'brand@creatorops.dev',   password: 'password123' },
   { label: 'Admin',          email: 'admin@creatorops.dev',   password: 'password123' },
   { label: 'Creator Admin',  email: 'creator.admin@creatorops.dev', password: 'password123' },
-  { label: 'Brand Admin',    email: 'brand.admin@creatorops.dev', password: 'password123' },
+  { label: 'Brand Admin',    email: 'brand.admin@creatorops.dev', password: 'password123' }
 ];
-
-const FEATURES = [
-  'AI-powered multi-platform content generation',
-  'Creator review workflow (RBAC)',
-  'Real OAuth platform connections',
-  'Live publishing pipeline with validation',
-  'Brand circulars & creator applications',
-  'Real-time workflow event feed',
-];
-
-function PasswordInput({ value, onChange, placeholder, id }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative">
-      <input
-        id={id}
-        type={show ? 'text' : 'password'}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        autoComplete={id === 'signup-password' ? 'new-password' : 'current-password'}
-        required
-        className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-4 py-3 pr-11 text-sm text-[var(--text)] placeholder-[var(--muted)] transition focus:border-mint"
-      />
-      <button
-        type="button"
-        onClick={() => setShow(s => !s)}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--text)]"
-        tabIndex={-1}
-        aria-label={show ? 'Hide password' : 'Show password'}
-      >
-        {show ? <EyeOff size={16} /> : <Eye size={16} />}
-      </button>
-    </div>
-  );
-}
 
 export default function LoginPage() {
   const router = useRouter();
-  const [tab, setTab] = useState('login'); // 'login' | 'signup'
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState('');
 
-  // Login state
-  const [loginEmail,    setLoginEmail]    = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-
-  // Signup state
-  const [signupName,     setSignupName]     = useState('');
-  const [signupEmail,    setSignupEmail]    = useState('');
-  const [signupPassword, setSignupPassword] = useState('');
-  const [signupConfirm,  setSignupConfirm]  = useState('');
-  const [signupRole,     setSignupRole]     = useState(ROLES.CONTENT_CREATOR);
-
-  const [error,  setError]  = useState('');
-  const [busy,   setBusy]   = useState(false);
-  const [notice, setNotice] = useState('');
-
-  const doLogin = async (creds) => {
-    setBusy(true); setError(''); setNotice('');
+  const doLogin = async creds => {
+    setBusy(creds.email);
+    setError('');
     try {
       const payload = await api.post('/api/auth/login', creds);
       saveSession(payload);
       router.push(homePathForUser(payload.user));
     } catch (err) {
-      setError(err.message || 'Login failed. Check your credentials.');
-    } finally { setBusy(false); }
+      setError(err?.message || 'Login failed. Check your credentials.');
+    } finally {
+      setBusy('');
+    }
   };
 
-  const doSignup = async (e) => {
-    e.preventDefault();
-    if (signupPassword !== signupConfirm) { setError('Passwords do not match.'); return; }
-    if (signupPassword.length < 8) { setError('Password must be at least 8 characters.'); return; }
-    setBusy(true); setError(''); setNotice('');
-    try {
-      await api.post('/api/auth/register', {
-        name: signupName, email: signupEmail,
-        password: signupPassword, role: signupRole,
-      });
-      setNotice('Account created! Signing you in…');
-      await doLogin({ email: signupEmail, password: signupPassword });
-    } catch (err) {
-      setError(err.message || 'Registration failed.');
-    } finally { setBusy(false); }
-  };
+  const anyBusy = Boolean(busy);
 
   return (
-    <main className="flex min-h-screen bg-[var(--bg)]">
-      {/* ── Left branding panel (hidden on small screens) ─────────────────── */}
-      <div className="hidden lg:flex lg:w-[46%] flex-col justify-between bg-gradient-to-br from-[#05130d] via-[#0a2318] to-[#061811] p-12 text-white">
-        <SiteLogo size="lg" />
-
-        <div>
-          <h1 className="text-3xl font-bold leading-snug text-white">
-            The Operating System<br />for Creator Teams
-          </h1>
-          <p className="mt-4 text-base text-slate-400 leading-relaxed max-w-sm">
-            One raw idea → platform-ready content → creator review → live publishing. All in one workflow.
-          </p>
-          <ul className="mt-8 space-y-3">
-            {FEATURES.map(f => (
-              <li key={f} className="flex items-center gap-3 text-sm text-slate-300">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-mint/20 text-mint">
-                  <Zap size={11} />
-                </span>
-                {f}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <p className="text-xs text-slate-600">UIU Developers HUB Hackathon 2026</p>
-      </div>
-
-      {/* ── Right auth panel ───────────────────────────────────────────────── */}
-      <div className="flex flex-1 flex-col items-center justify-center p-6 sm:p-10">
-        {/* Mobile logo */}
-        <SiteLogo size="md" className="mb-8 justify-center lg:hidden" />
-
-        <div className="w-full max-w-md animate-fade-in">
-          {/* Tab switcher */}
-          <div className="mb-6 flex rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1">
-            {[
-              { key: 'login',  label: 'Sign In',  Icon: LogIn },
-              { key: 'signup', label: 'Sign Up',  Icon: UserPlus },
-            ].map(({ key, label, Icon }) => (
-              <button
-                key={key}
-                id={`auth-tab-${key}`}
-                type="button"
-                onClick={() => { setTab(key); setError(''); setNotice(''); }}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold transition-all
-                  ${tab === key
-                    ? 'bg-mint text-[#05130d] shadow'
-                    : 'text-[var(--muted)] hover:text-[var(--text)]'
-                  }`}
-              >
-                <Icon size={15} /> {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Card */}
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-7 shadow-soft">
-            <h2 className="text-xl font-bold text-[var(--text)]">
-              {tab === 'login' ? 'Welcome back' : 'Create your account'}
-            </h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">
-              {tab === 'login'
-                ? 'Sign in to your CreatorOps workspace.'
-                : 'Start your creator workflow in seconds.'}
-            </p>
-
-            {error  && <div className="mt-4 rounded-lg border border-rose/30 bg-rose/10 px-4 py-2.5 text-sm text-rose">{error}</div>}
-            {notice && <div className="mt-4 rounded-lg border border-mint/30 bg-mint/10 px-4 py-2.5 text-sm text-mint">{notice}</div>}
-
-            {/* ── Login form ─────────────────────────────────────────────── */}
-            {tab === 'login' && (
-              <form
-                onSubmit={e => { e.preventDefault(); doLogin({ email: loginEmail, password: loginPassword }); }}
-                className="mt-5 space-y-4"
-              >
-                <div>
-                  <label htmlFor="login-email" className="mb-1.5 block text-xs font-medium text-[var(--muted)]">Email address</label>
-                  <input
-                    id="login-email"
-                    type="email"
-                    required
-                    autoComplete="email"
-                    value={loginEmail}
-                    onChange={e => setLoginEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-4 py-3 text-sm text-[var(--text)] placeholder-[var(--muted)] transition focus:border-mint"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="login-password" className="mb-1.5 block text-xs font-medium text-[var(--muted)]">Password</label>
-                  <PasswordInput
-                    id="login-password"
-                    value={loginPassword}
-                    onChange={e => setLoginPassword(e.target.value)}
-                    placeholder="••••••••"
-                  />
-                </div>
-                <button
-                  id="login-submit"
-                  type="submit"
-                  disabled={busy}
-                  className="focus-ring mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-mint py-3 text-sm font-bold text-[#05130d] shadow transition hover:brightness-110 disabled:opacity-50"
-                >
-                  {busy ? <Loader2 size={16} className="animate-spin-slow" /> : <LogIn size={16} />}
-                  {busy ? 'Signing in…' : 'Sign in'}
-                </button>
-              </form>
-            )}
-
-            {/* ── Sign up form ───────────────────────────────────────────── */}
-            {tab === 'signup' && (
-              <form onSubmit={doSignup} className="mt-5 space-y-4">
-                <div>
-                  <label htmlFor="signup-name" className="mb-1.5 block text-xs font-medium text-[var(--muted)]">Full name</label>
-                  <input
-                    id="signup-name"
-                    type="text"
-                    required
-                    autoComplete="name"
-                    value={signupName}
-                    onChange={e => setSignupName(e.target.value)}
-                    placeholder="Your name"
-                    className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-4 py-3 text-sm text-[var(--text)] placeholder-[var(--muted)] transition focus:border-mint"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="signup-email" className="mb-1.5 block text-xs font-medium text-[var(--muted)]">Email address</label>
-                  <input
-                    id="signup-email"
-                    type="email"
-                    required
-                    autoComplete="email"
-                    value={signupEmail}
-                    onChange={e => setSignupEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-4 py-3 text-sm text-[var(--text)] placeholder-[var(--muted)] transition focus:border-mint"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="signup-password" className="mb-1.5 block text-xs font-medium text-[var(--muted)]">Password</label>
-                  <PasswordInput
-                    id="signup-password"
-                    value={signupPassword}
-                    onChange={e => setSignupPassword(e.target.value)}
-                    placeholder="Min. 8 characters"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="signup-confirm" className="mb-1.5 block text-xs font-medium text-[var(--muted)]">Confirm password</label>
-                  <PasswordInput
-                    id="signup-confirm"
-                    value={signupConfirm}
-                    onChange={e => setSignupConfirm(e.target.value)}
-                    placeholder="Repeat password"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="signup-role" className="mb-1.5 block text-xs font-medium text-[var(--muted)]">I am a…</label>
-                  <select
-                    id="signup-role"
-                    value={signupRole}
-                    onChange={e => setSignupRole(e.target.value)}
-                    className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-4 py-3 text-sm text-[var(--text)] transition focus:border-mint"
-                  >
-                    <option value={ROLES.CONTENT_CREATOR}>Content Creator</option>
-                    <option value={ROLES.BRAND_REP}>Brand Representative</option>
-                  </select>
-                  <p className="mt-1.5 text-xs text-[var(--muted)]">Content creators manage the full creator workflow. Brand representatives manage circulars, accounts, and publishing.</p>
-                </div>
-                <button
-                  id="signup-submit"
-                  type="submit"
-                  disabled={busy}
-                  className="focus-ring mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-mint py-3 text-sm font-bold text-[#05130d] shadow transition hover:brightness-110 disabled:opacity-50"
-                >
-                  {busy ? <Loader2 size={16} className="animate-spin-slow" /> : <UserPlus size={16} />}
-                  {busy ? 'Creating account…' : 'Create account'}
-                </button>
-              </form>
-            )}
-          </div>
-
-          {/* Demo accounts */}
+    <AuthShell
+      title="Welcome back"
+      subtitle="Sign in to your CreatorOps workspace."
+      footer={
+        <>
           <div className="mt-5">
             <div className="flex items-center gap-3">
-              <div className="h-px flex-1 bg-[var(--border)]" />
+              <div className="h-px flex-1 bg-[var(--surface3)]" />
               <span className="text-xs text-[var(--muted)]">Demo accounts</span>
-              <div className="h-px flex-1 bg-[var(--border)]" />
+              <div className="h-px flex-1 bg-[var(--surface3)]" />
             </div>
+
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {DEMO_ACCOUNTS.map(d => (
-                <button
-                  key={d.email}
-                  id={`demo-${d.label.toLowerCase().replace(/\s+/g, '-')}`}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => doLogin(d)}
-                  className="focus-ring rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 text-xs font-medium text-[var(--muted)] transition hover:border-mint/50 hover:text-mint disabled:opacity-40"
+              {DEMO_ACCOUNTS.map((account, i) => (
+                <motion.div
+                  key={account.email}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.35 + i * 0.05, duration: 0.5 }}
                 >
-                  {d.label}
-                </button>
+                  <AnimatedButton
+                    id={`demo-${account.label.toLowerCase().replace(/\s+/g, '-')}`}
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={anyBusy}
+                    loading={busy === account.email}
+                    onClick={() => doLogin(account)}
+                    className="w-full rounded-full py-2.5 hover:border-[var(--accent-line)] hover:text-[var(--accent)]"
+                  >
+                    {busy === account.email ? null : account.label}
+                  </AnimatedButton>
+                </motion.div>
               ))}
             </div>
           </div>
+
+          <p className="mt-6 text-center text-sm text-[var(--muted)]">
+            New here?{' '}
+            <Link href="/signup" className="font-semibold text-[var(--accent)] hover:underline">
+              Create an account
+            </Link>
+          </p>
+        </>
+      }
+    >
+      <form
+        onSubmit={event => {
+          event.preventDefault();
+          doLogin({ email, password });
+        }}
+        className="mt-5 space-y-4"
+      >
+        <Field
+          id="login-email"
+          label="Email address"
+          type="email"
+          required
+          autoComplete="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={event => setEmail(event.target.value)}
+        />
+
+        <div className="relative">
+          <Field
+            id="login-password"
+            label="Password"
+            type={showPassword ? 'text' : 'password'}
+            required
+            autoComplete="current-password"
+            placeholder="••••••••"
+            value={password}
+            onChange={event => setPassword(event.target.value)}
+            className="pr-11"
+          />
+          {/* top-[1.85rem] clears the label row; the field itself is 38px tall. */}
+          <AnimatedButton
+            type="button"
+            variant="ghost"
+            size="icon"
+            tabIndex={-1}
+            onClick={() => setShowPassword(value => !value)}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            className="absolute right-2 top-[1.95rem] z-10 rounded-full"
+          >
+            {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+          </AnimatedButton>
         </div>
+
+        {error ? (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="rounded-lg border border-danger/30 bg-danger/10 px-4 py-2.5 text-sm text-danger"
+          >
+            {error}
+          </motion.div>
+        ) : null}
+
+        <AnimatedButton
+          id="login-submit"
+          type="submit"
+          variant="primary"
+          size="lg"
+          disabled={anyBusy}
+          loading={busy === email && Boolean(email)}
+          className="w-full rounded-full"
+        >
+          {busy === email && email ? 'Signing in…' : (
+            <>
+              <LogIn size={15} />
+              Sign in
+            </>
+          )}
+        </AnimatedButton>
+      </form>
+
+      <div className="mt-5 flex justify-center">
+        <HoverBorderGradient
+          as="div"
+          containerClassName="rounded-full"
+          className="bg-[var(--surface)] px-4 py-1.5 text-[11px] text-[var(--muted)]"
+        >
+          Protected workspace · roles enforced server-side
+        </HoverBorderGradient>
       </div>
-    </main>
+    </AuthShell>
   );
 }

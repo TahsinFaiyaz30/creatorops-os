@@ -79,7 +79,7 @@ export default function BrandCircularForm({ initialValue = {}, onSubmit, busy = 
       <Textarea label="Brand demands" value={form.brandDemands} onChange={value => update('brandDemands', value)} />
       <Textarea label="Judging criteria" value={form.judgingCriteria} onChange={value => update('judgingCriteria', value)} />
 
-      <button type="submit" disabled={busy} className="focus-ring rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50">
+      <button type="submit" disabled={busy} className="focus-ring rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[var(--accent-fg)] disabled:opacity-50">
         {busy ? 'Saving...' : 'Save circular'}
       </button>
     </form>

@@ -230,7 +230,7 @@ export default function EditProfilePage() {
             <button
               type="submit"
               disabled={busy}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-mint text-[#05130d] text-sm font-bold shadow-[0_0_15px_rgba(var(--color-mint-rgb),0.3)] hover:brightness-110 hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-mint text-[var(--accent-fg)] text-sm font-bold shadow-[0_0_15px_rgba(var(--color-mint-rgb),0.3)] hover:brightness-110 hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save size={16} /> {busy ? 'Saving...' : 'Save Profile'}
             </button>

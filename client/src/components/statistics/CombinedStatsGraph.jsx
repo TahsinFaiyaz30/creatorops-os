@@ -1,7 +1,25 @@
 'use client';
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * CombinedStatsGraph — metric + platform filters above one chart.
+ *
+ * Filters are one row above the plot, as a segmented control rather than a
+ * native <select>, so switching metric is one click instead of two and the
+ * current choice is readable without opening anything.
+ *
+ * Active chips carry the accent, not per-platform brand colours. The chart is a
+ * single series now (see StatsChart), so brand-coloured chips would read as a
+ * legend mapping chip colour → bar colour, and no such mapping exists.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
 import { useState, useMemo, useEffect } from 'react';
+import { motion } from 'motion/react';
+import { RadioTower, Check, X } from 'lucide-react';
+
 import { formatPlatform } from '../../lib/platforms';
+import { AnimatedButton } from '../ui/AnimatedButton';
 import StatsChart from './StatsChart';
 
 const METRIC_OPTIONS = [
@@ -10,22 +28,10 @@ const METRIC_OPTIONS = [
   { key: 'comments', label: 'Comments' },
   { key: 'shares', label: 'Shares' },
   { key: 'saves', label: 'Saves' },
-  { key: 'engagement', label: 'Engagement (combined)' },
+  { key: 'engagement', label: 'Engagement' }
 ];
 
-const PLATFORM_COLORS = {
-  facebook: '#3b82f6',
-  instagram: '#f472b6',
-  tiktok: '#22d3ee',
-  youtube: '#f87171',
-  youtube_shorts: '#fb923c',
-  threads: '#a78bfa',
-  linkedin: '#60a5fa',
-  x: '#94a3b8',
-  pinterest: '#f43f5e',
-  wordpress: '#34d399',
-  shopify: '#4ade80',
-};
+const GHOST_CHIPS = ['Instagram', 'YouTube', 'TikTok', 'LinkedIn'];
 
 export default function CombinedStatsGraph({ platformStats = [] }) {
   // Only include platforms that are actually connected (have a source != 'unavailable')
@@ -71,7 +77,7 @@ export default function CombinedStatsGraph({ platformStats = [] }) {
         (p.metrics?.likes || 0) +
         (p.metrics?.comments || 0) +
         (p.metrics?.shares || 0) +
-        (p.metrics?.saves || 0),
+        (p.metrics?.saves || 0)
     }));
   }, [filteredPlatforms, metric]);
 
@@ -90,88 +96,121 @@ export default function CombinedStatsGraph({ platformStats = [] }) {
 
   return (
     <section className="space-y-4">
-      {/* Controls row */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-[var(--text)]">Platform Analytics</h2>
+          <h2 className="text-base font-semibold tracking-tight text-[var(--text)]">Platform Analytics</h2>
 
-          {/* Metric selector */}
-          <div className="flex items-center gap-2">
-            <label htmlFor="stat-metric-select" className="text-xs text-[var(--muted)]">Metric</label>
-            <select
-              id="stat-metric-select"
-              value={metric}
-              onChange={e => setMetric(e.target.value)}
-              className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-1.5 text-xs text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-mint"
-            >
-              {METRIC_OPTIONS.map(opt => (
-                <option key={opt.key} value={opt.key}>{opt.label}</option>
-              ))}
-            </select>
+          {/* Metric segmented control — was a native <select>. */}
+          <div
+            role="group"
+            aria-label="Metric"
+            className="flex gap-0.5 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-0.5"
+          >
+            {METRIC_OPTIONS.map(option => {
+              const selected = metric === option.key;
+              return (
+                <button
+                  key={option.key}
+                  id={`stat-metric-${option.key}`}
+                  type="button"
+                  onClick={() => setMetric(option.key)}
+                  aria-pressed={selected}
+                  className={`focus-ring relative shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
+                    selected ? 'text-[var(--accent-fg)]' : 'text-[var(--muted)] hover:text-[var(--text)]'
+                  }`}
+                >
+                  {selected ? (
+                    <motion.span
+                      layoutId="stats-metric-pill"
+                      className="absolute inset-0 rounded-lg bg-[var(--accent)]"
+                      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                    />
+                  ) : null}
+                  <span className="relative">{option.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Platform filter chips */}
         {connectedPlatforms.length > 0 ? (
           <div className="mt-4">
-            <div className="mb-2 flex items-center gap-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
               <span className="text-xs text-[var(--muted)]">Platforms</span>
-              <button
-                id="stats-select-all-platforms"
-                onClick={selectAll}
-                className="text-xs text-mint hover:underline"
-              >
+              <AnimatedButton id="stats-select-all-platforms" size="xs" variant="ghost" onClick={selectAll}>
+                <Check className="h-3 w-3" />
                 All
-              </button>
-              <button
-                id="stats-clear-platforms"
-                onClick={clearAll}
-                className="text-xs text-[var(--muted)] hover:text-[var(--text)]"
-              >
+              </AnimatedButton>
+              <AnimatedButton id="stats-clear-platforms" size="xs" variant="ghost" onClick={clearAll}>
+                <X className="h-3 w-3" />
                 None
-              </button>
+              </AnimatedButton>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {connectedPlatforms.map(p => {
+
+            <div className="flex flex-wrap gap-1.5">
+              {connectedPlatforms.map((p, i) => {
                 const active = selectedPlatforms.has(p.platform);
-                const color = PLATFORM_COLORS[p.platform] || '#22d3ee';
                 return (
-                  <button
+                  <motion.button
                     key={p.platform}
                     id={`stats-platform-${p.platform}`}
+                    type="button"
                     onClick={() => togglePlatform(p.platform)}
-                    style={{
-                      borderColor: active ? color : 'transparent',
-                      background: active ? `${color}20` : 'transparent',
-                      color: active ? color : '#64748b',
-                      outline: `1px solid ${active ? color : '#334155'}`,
-                    }}
-                    className="rounded-full px-3 py-1 text-xs font-medium transition-all hover:opacity-80"
+                    aria-pressed={active}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35, delay: i * 0.04 }}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.95 }}
+                    className={`focus-ring inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                      active
+                        ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                        : 'border-[var(--border)] bg-[var(--surface2)] text-[var(--muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
+                    }`}
                   >
+                    {active ? <Check className="h-3 w-3" /> : null}
                     {formatPlatform(p.platform)}
-                    <span className="ml-1.5 opacity-60">
-                      {p.metrics?.postCount || 0} posts
-                    </span>
-                  </button>
+                    <span className="opacity-60">{p.metrics?.postCount || 0}</span>
+                  </motion.button>
                 );
               })}
             </div>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-[var(--muted)]">
-            No connected platform accounts have synced data yet. Connect accounts and publish real posts to see analytics here.
-          </p>
+          /* Ghost chips keep the row's shape so the panel doesn't collapse into
+             a lone sentence, and the CTA points at the actual next step. */
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap gap-1.5">
+              {GHOST_CHIPS.map((label, i) => (
+                <motion.span
+                  key={label}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: [0.35, 0.7, 0.35] }}
+                  transition={{ duration: 2.4, repeat: Infinity, delay: i * 0.25, ease: 'easeInOut' }}
+                  className="rounded-full border border-dashed border-[var(--border)] px-2.5 py-1 text-xs text-[var(--muted)]"
+                >
+                  {label}
+                </motion.span>
+              ))}
+            </div>
+            <AnimatedButton as="a" href="/accounts" size="sm" variant="primary" className="rounded-full">
+              <RadioTower className="h-3.5 w-3.5" />
+              Connect accounts
+            </AnimatedButton>
+            <p className="text-xs text-[var(--muted)]">
+              Analytics appear once a connected account has published and synced.
+            </p>
+          </div>
         )}
       </div>
 
-      {/* Chart */}
       <StatsChart
         data={chartData}
         metric={metric}
-        title={`${metricLabel} — Combined across selected platforms`}
+        title={`${metricLabel} — combined across selected platforms`}
         subtitle={
           filteredPlatforms.length > 0
-            ? `Showing ${filteredPlatforms.length} platform${filteredPlatforms.length !== 1 ? 's' : ''}: ${filteredPlatforms.map(p => formatPlatform(p.platform)).join(', ')}`
+            ? `${filteredPlatforms.length} platform${filteredPlatforms.length !== 1 ? 's' : ''}: ${filteredPlatforms.map(p => formatPlatform(p.platform)).join(', ')}`
             : 'Select at least one platform to display the chart.'
         }
       />
