@@ -110,7 +110,7 @@ export default function ProfilePage() {
             <ArrowLeft size={16} /> Back
           </button>
           {isOwnProfile && (
-            <button onClick={() => router.push('/profile/edit')} className="px-4 py-2 bg-[var(--surface2)] border border-[var(--border)] rounded-xl text-sm font-bold hover:bg-mint hover:text-[#05130d] hover:border-mint transition-colors">
+            <button onClick={() => router.push('/profile/edit')} className="px-4 py-2 bg-[var(--surface2)] border border-[var(--border)] rounded-xl text-sm font-bold hover:bg-mint hover:text-[var(--accent-fg)] hover:border-mint transition-colors">
               Edit My Profile
             </button>
           )}
@@ -127,7 +127,7 @@ export default function ProfilePage() {
           <div className="h-32 bg-gradient-to-r from-[var(--surface2)] to-mint/20"></div>
           <div className="px-8 pb-8 relative">
             <div className="flex flex-col md:flex-row gap-6 items-start md:items-end -mt-12 mb-6">
-              <div className="w-24 h-24 rounded-2xl bg-[#05130d] border-4 border-[var(--surface)] overflow-hidden shadow-lg flex items-center justify-center shrink-0">
+              <div className="w-24 h-24 rounded-2xl bg-[var(--surface3)] border-4 border-[var(--surface)] overflow-hidden shadow-lg flex items-center justify-center shrink-0">
                 {user.profile?.avatarUrl ? (
                   <img src={user.profile.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
                 ) : (
@@ -214,7 +214,7 @@ export default function ProfilePage() {
               <MessageSquare className="text-mint" /> Collaboration History
             </h2>
             {!isOwnProfile && currentUser && !showReviewForm && (
-              <button onClick={() => setShowReviewForm(true)} className="px-4 py-2 bg-mint text-[#05130d] rounded-xl text-sm font-bold shadow-[0_0_15px_rgba(var(--color-mint-rgb),0.3)] hover:brightness-110 transition-all">
+              <button onClick={() => setShowReviewForm(true)} className="px-4 py-2 bg-mint text-[var(--accent-fg)] rounded-xl text-sm font-bold shadow-[0_0_15px_rgba(var(--color-mint-rgb),0.3)] hover:brightness-110 transition-all">
                 Leave a Review
               </button>
             )}
@@ -246,7 +246,7 @@ export default function ProfilePage() {
               </label>
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={() => setShowReviewForm(false)} className="px-4 py-2 text-sm font-bold text-[var(--muted)] hover:text-[var(--text)]">Cancel</button>
-                <button type="submit" disabled={submittingReview} className="px-6 py-2 bg-mint text-[#05130d] rounded-xl text-sm font-bold disabled:opacity-50">
+                <button type="submit" disabled={submittingReview} className="px-6 py-2 bg-mint text-[var(--accent-fg)] rounded-xl text-sm font-bold disabled:opacity-50">
                   {submittingReview ? 'Submitting...' : 'Post Review'}
                 </button>
               </div>
@@ -264,7 +264,7 @@ export default function ProfilePage() {
                 <article key={review._id} className="p-5 rounded-2xl border border-[var(--border)] bg-[var(--surface2)]">
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-[#05130d] overflow-hidden border border-[var(--border)]">
+                      <div className="w-10 h-10 rounded-full bg-[var(--surface3)] overflow-hidden border border-[var(--border)]">
                         {review.reviewerId?.profile?.avatarUrl ? (
                           <img src={review.reviewerId.profile.avatarUrl} alt="" className="w-full h-full object-cover" />
                         ) : (

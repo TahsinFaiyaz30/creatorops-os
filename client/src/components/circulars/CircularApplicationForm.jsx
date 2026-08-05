@@ -61,7 +61,7 @@ export default function CircularApplicationForm({ onSubmit, statistics, busy }) 
           renderItem={asset => `${asset.mediaType || 'media'} · ${asset.originalName || asset.publicUrl}`}
         />
       </div>
-      <button type="submit" disabled={busy} className="focus-ring mt-4 rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[#05130d] disabled:opacity-50">
+      <button type="submit" disabled={busy} className="focus-ring mt-4 rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[var(--accent-fg)] disabled:opacity-50">
         {busy ? 'Submitting...' : 'Submit application'}
       </button>
     </form>

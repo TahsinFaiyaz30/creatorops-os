@@ -126,7 +126,7 @@ export default function PlatformVariantCard({ variant, user, onRefresh }) {
           type="button"
           onClick={submitForReview}
           disabled={busy || localVariant.status !== 'draft'}
-          className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]"
+          className="focus-ring inline-flex items-center gap-2 rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[var(--accent-fg)]"
         >
           <Send size={15} />
           Queue for review

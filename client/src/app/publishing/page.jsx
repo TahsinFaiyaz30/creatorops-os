@@ -1,28 +1,46 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Activity,
   AlertTriangle,
+  Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Clock3,
   Cloud,
   ExternalLink,
+  FileCheck2,
+  Globe,
+  ImageOff,
   Layers3,
   Loader2,
+  MonitorSmartphone,
   PauseCircle,
   PlayCircle,
+  Radio,
   RefreshCw,
   RotateCcw,
   Search,
   Send,
+  Server,
+  ShieldAlert,
+  ShieldCheck,
   TimerReset,
   Trash2,
   UploadCloud,
+  X,
   XCircle
 } from 'lucide-react';
 import AppShell from '../../components/layout/AppShell';
+import { TextGenerateEffect } from '../../components/ui/text-generate-effect';
+import { BackgroundBeams } from '../../components/ui/background-beams';
+import {
+  Page, Section, Badge, Button, Input,
+  EmptyState, Notice, GlareStat, GlareStatGrid, GLARE_TINTS
+} from '../../components/ds';
 import { api } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { getUser, getUserId } from '../../lib/auth';
@@ -44,6 +62,11 @@ import {
   subscribeUploadStateChanges,
   uploadFileResumable
 } from '../../lib/resumableUploads';
+
+const EASE = [0.16, 1, 0.3, 1];
+
+/* Populated refs come back as objects; the validate endpoint wants raw ids. */
+const idOf = value => (value && typeof value === 'object' ? value._id : value) || '';
 
 const ACTIVE_STATUSES = ['queued', 'publishing', 'paused'];
 const ATTENTION_STATUSES = ['failed', 'blocked', 'cancelled'];
@@ -1390,42 +1413,118 @@ export default function PublishingPage() {
 
   const hasVisibleWork = visiblePendingUploads.length > 0 || visibleGroups.length > 0;
 
+  /*
+   * POST /api/publish/validate was the last endpoint no client code called.
+   * A failed job could only be retried blind — same payload, same failure, one
+   * more burnt retry. Pre-flight runs the connector's real validation (token
+   * health, approval state, media policy, visibility, caption limits) and says
+   * what will happen before you spend the retry.
+   */
+  const [preflight, setPreflight] = useState({});
+
+  const runPreflight = async job => {
+    const id = String(job._id);
+    setPreflight(current => ({ ...current, [id]: { loading: true } }));
+    try {
+      const payload = await api.post('/api/publish/validate', {
+        platformConnectionId: idOf(job.platformConnectionId),
+        variantId: idOf(job.variantId) || null,
+        contentItemId: idOf(job.contentItemId) || null,
+        mediaAssetIds: (job.mediaAssetIds || []).map(idOf).filter(Boolean),
+        caption: getJobCaption(job),
+        visibility: job.visibility || 'public',
+        targetPlatform: job.platform,
+        postGroupId: job.postGroupId || ''
+      });
+      const validation = payload.data.validation || {};
+      setPreflight(current => ({
+        ...current,
+        [id]: {
+          ok: Boolean(validation.ok),
+          code: validation.code || '',
+          message: validation.message || (validation.ok ? 'This target will accept the retry.' : 'Validation failed.'),
+          at: Date.now()
+        }
+      }));
+    } catch (err) {
+      setPreflight(current => ({
+        ...current,
+        [id]: { ok: false, code: 'REJECTED', message: err.message, at: Date.now() }
+      }));
+    }
+  };
+
+  const railStages = [
+    { key: 'browser', label: 'This browser', icon: MonitorSmartphone, value: stats.uploading, hint: 'Resumable chunks' },
+    { key: 'cloud', label: 'Cloud media', icon: Cloud, value: stats.queued, hint: 'Verified & queued' },
+    { key: 'provider', label: 'Platform', icon: Server, value: stats.processing, hint: 'Provider ingest' },
+    { key: 'live', label: 'Live', icon: Globe, value: stats.published, hint: 'Post URL returned' }
+  ];
+
+  const liveLabel = liveTransport === 'socket' ? 'Live socket' : liveTransport === 'polling' ? 'Live polling' : 'Connecting';
+
   return (
     <AppShell>
-      <div className="space-y-5 pb-6">
-        <header className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 md:p-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-mint">Post operations</p>
-              <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Post Dispatch</h1>
-              <p className="mt-2 max-w-3xl text-sm text-[var(--muted)]">
-                Track the whole publish path from browser resumable upload to cloud media, provider processing, retries, expiry, and final published posts.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusStat icon={UploadCloud} label="Uploading" value={stats.uploading} tone="text-mint" />
-              <StatusStat icon={Activity} label="Processing" value={stats.processing} tone="text-mint" />
-              <StatusStat icon={AlertTriangle} label="Review" value={stats.review} tone="text-gold" />
-              <StatusStat icon={CheckCircle2} label="Done" value={stats.published} tone="text-mint" />
-              <Link href="/compose" className="focus-ring inline-flex h-10 items-center gap-2 rounded-lg bg-mint px-3 text-sm font-semibold text-[#05130d]">
-                <Send size={16} />
-                Compose
-              </Link>
-              <button
-                type="button"
-                onClick={() => load().catch(err => setMessage(err.message))}
-                className="focus-ring inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)]"
-                title="Refresh"
-                aria-label="Refresh dispatches"
-              >
-                <RefreshCw size={16} />
-              </button>
+      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <BackgroundBeams className="opacity-25 dark:opacity-50" />
+        <div className="absolute inset-0 bg-blueprint [mask-image:radial-gradient(ellipse_at_top,black_10%,transparent_70%)]" />
+      </div>
+
+      <Page>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
+              Distribute
+            </p>
+            <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-[var(--text)] sm:text-3xl">
+              Post Dispatch
+            </h1>
+            <div className="max-w-3xl">
+              <TextGenerateEffect
+                words="Every publish, from the first byte leaving this browser to the live post URL. Uploads resume from their own verified offset, so closing the tab never costs you the transfer."
+                className="font-normal"
+                duration={0.5}
+              />
             </div>
           </div>
-        </header>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button as="a" href="/compose" variant="primary" size="sm">
+              <Send className="h-3.5 w-3.5" />
+              Compose
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => load().catch(err => setMessage(err.message))}
+              title="Refresh"
+              aria-label="Refresh dispatches"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
 
-        <section className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-center">
-          <div className="flex gap-2 overflow-x-auto rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1">
+        <GlareStatGrid>
+          <GlareStat label="Uploading"   value={stats.uploading}    icon={UploadCloud}   tint={GLARE_TINTS[0]} hint="Browser → cloud" />
+          <GlareStat label="Queued"      value={stats.queued}       icon={Clock3}        tint={GLARE_TINTS[1]} hint="Waiting on worker" />
+          <GlareStat label="Processing"  value={stats.processing}   icon={Activity}      tint={GLARE_TINTS[2]} hint="Provider ingest" />
+          <GlareStat label="Needs you"   value={stats.review}       icon={AlertTriangle} tint={GLARE_TINTS[3]} hint="Failed or blocked" />
+          <GlareStat label="Published"   value={stats.published}    icon={CheckCircle2}  tint={GLARE_TINTS[4]} hint="Fully released" />
+        </GlareStatGrid>
+
+        <PipelineRail
+          stages={railStages}
+          liveLabel={liveLabel}
+          transport={liveTransport}
+          lastUpdated={lastUpdated}
+          platformJobs={stats.platformJobs}
+          intakeCount={pendingUploads.length}
+          retentionLabel={temporaryMediaRetentionLabel}
+          hardDeleteLabel={temporaryMediaHardDeleteLabel}
+        />
+
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-center">
+          <div className="flex gap-1 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 p-1 backdrop-blur-xl">
             {dispatchFilters.map(filter => {
               const active = activeFilter === filter.id;
               return (
@@ -1433,125 +1532,301 @@ export default function PublishingPage() {
                   key={filter.id}
                   type="button"
                   onClick={() => setActiveFilter(filter.id)}
-                  className={`focus-ring inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-semibold transition ${
-                    active ? 'bg-[var(--text)] text-[var(--bg)]' : 'text-[var(--muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
+                  aria-pressed={active}
+                  className={`focus-ring relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors ${
+                    active ? 'text-[var(--accent)]' : 'text-[var(--muted)] hover:text-[var(--text)]'
                   }`}
                 >
-                  {filter.label}
-                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? 'bg-[var(--bg)]/15 text-[var(--bg)]' : 'bg-[var(--surface2)] text-[var(--muted)]'}`}>
+                  {active ? (
+                    <motion.span
+                      layoutId="dispatch-filter-pill"
+                      className="absolute inset-0 rounded-lg bg-[var(--accent-soft)] ring-1 ring-inset ring-[var(--accent-line)]"
+                      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                    />
+                  ) : null}
+                  <span className="relative">{filter.label}</span>
+                  <span
+                    className={`relative rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                      active ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'bg-[var(--surface2)] text-[var(--muted)]'
+                    }`}
+                  >
                     {filterCounts[filter.id] || 0}
                   </span>
                 </button>
               );
             })}
           </div>
-          <label className="focus-within:ring-ring flex h-11 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm">
-            <Search size={16} className="shrink-0 text-[var(--muted)]" />
-            <input
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--muted)]" />
+            <Input
               value={query}
               onChange={event => setQuery(event.target.value)}
-              placeholder="Search platform, account, caption, stage"
-              className="min-w-0 flex-1 bg-transparent text-[var(--text)] outline-none placeholder:text-[var(--muted)]"
+              placeholder="Platform, account, caption, stage…"
+              aria-label="Search dispatches"
+              className="pl-8"
             />
-          </label>
-        </section>
-
-        <div className="flex flex-col gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--muted)] md:flex-row md:items-center md:justify-between">
-          <span>{stats.platformJobs} platform jobs · {pendingUploads.length} upload intake {pendingUploads.length === 1 ? 'record' : 'records'}</span>
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full border border-mint/30 bg-mint/10 px-2 py-1 font-semibold text-mint">
-              <Activity size={12} />
-              {liveTransport === 'socket' ? 'Live socket' : liveTransport === 'polling' ? 'Live polling' : 'Connecting'}
-            </span>
-            <span>{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Waiting for first sync'}</span>
-          </span>
+          </div>
         </div>
 
         {(message || pendingUploadError) && (
-          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-sm text-[var(--text)]">
+          <Notice tone={pendingUploadError && !message ? 'warning' : 'neutral'}>
             {message || pendingUploadError}
-          </div>
+          </Notice>
         )}
 
         {visiblePendingUploads.length > 0 && (
-          <section className="space-y-3">
-            <SectionHeader
-              icon={UploadCloud}
-              title="Cloud Upload Intake"
-              detail="Media appears here before publish jobs exist. Resume, pause, or cancel cloud upload intake from here."
-            />
-            {visiblePendingUploads.map(pending => (
-              <PendingUploadCard
-                key={pending.id}
-                pending={pending}
-                busyKey={busyKey}
-                canManage={canManage}
-                onResume={resumePendingUpload}
-                onPause={pausePendingUpload}
-                onCancel={cancelPendingUpload}
-              />
-            ))}
-          </section>
+          <Section
+            title="Cloud upload intake"
+            description="Media lands here before any publish job exists. Resume, pause or cancel the transfer from this device."
+          >
+            <div className="space-y-4">
+              <AnimatePresence mode="popLayout">
+                {visiblePendingUploads.map(pending => (
+                  <PendingUploadCard
+                    key={pending.id}
+                    pending={pending}
+                    busyKey={busyKey}
+                    canManage={canManage}
+                    onResume={resumePendingUpload}
+                    onPause={pausePendingUpload}
+                    onCancel={cancelPendingUpload}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          </Section>
         )}
 
         {visibleGroups.length > 0 && (
-          <section className="space-y-3">
-            <SectionHeader
-              icon={Cloud}
-              title="Platform Dispatches"
-              detail={`Retry media expires after ${temporaryMediaRetentionLabel} once a group is no longer queued, publishing, or paused. Storage hard-deletes temporary uploads and cloud media after ${temporaryMediaHardDeleteLabel} from upload start even if jobs are still active.`}
-            />
-            {visibleGroups.map(group => (
-              <DispatchGroup
-                key={group.id}
-                group={group}
-                canManage={canManage}
-                busyKey={busyKey}
-                retentionLabel={temporaryMediaRetentionLabel}
-                hardDeleteLabel={temporaryMediaHardDeleteLabel}
-                onJobAction={runJobAction}
-                onGroupAction={runGroupAction}
-                onDeleteGroup={group => setDeleteTarget({ kind: 'group', group })}
-                onDeleteJob={job => setDeleteTarget({ kind: 'job', job })}
-              />
-            ))}
-          </section>
+          <Section
+            title="Platform dispatches"
+            description={`Retry media expires ${temporaryMediaRetentionLabel} after a group stops being queued, publishing or paused. Storage hard-deletes temporary uploads ${temporaryMediaHardDeleteLabel} from upload start regardless.`}
+          >
+            <div className="space-y-4">
+              <AnimatePresence mode="popLayout">
+                {visibleGroups.map(group => (
+                  <DispatchGroup
+                    key={group.id}
+                    group={group}
+                    canManage={canManage}
+                    busyKey={busyKey}
+                    retentionLabel={temporaryMediaRetentionLabel}
+                    hardDeleteLabel={temporaryMediaHardDeleteLabel}
+                    preflight={preflight}
+                    onPreflight={runPreflight}
+                    onJobAction={runJobAction}
+                    onGroupAction={runGroupAction}
+                    onDeleteGroup={group => setDeleteTarget({ kind: 'group', group })}
+                    onDeleteJob={job => setDeleteTarget({ kind: 'job', job })}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          </Section>
         )}
 
         {!hasVisibleWork && (
-          <div className="flex min-h-72 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface)] p-6 text-center">
-            <Layers3 size={26} className="text-[var(--muted)]" />
-            <p className="mt-3 text-sm font-semibold text-[var(--text)]">No dispatches here</p>
-            <p className="mt-1 max-w-md text-sm text-[var(--muted)]">
-              Try another filter, clear search, or start a new publish. Upload intake will show here before platform jobs are created.
-            </p>
-          </div>
-        )}
-
-        {deleteTarget && (
-          <DeleteDispatchModal
-            target={deleteTarget}
-            busyKey={busyKey}
-            onClose={() => setDeleteTarget(null)}
-            onConfirm={deleteDispatchTarget}
+          <EmptyState
+            icon={Layers3}
+            title={activeFilter === 'all' && !query ? 'Nothing in flight' : 'No dispatches match'}
+            description={
+              activeFilter === 'all' && !query
+                ? 'Start a publish from Compose and it appears here the moment the first chunk leaves this browser — upload intake shows up before any platform job exists.'
+                : 'Try another filter or clear the search.'
+            }
+            action={
+              activeFilter === 'all' && !query ? (
+                <Button as="a" href="/compose" variant="primary" size="sm">
+                  <Send className="h-3.5 w-3.5" />
+                  Compose a post
+                </Button>
+              ) : (
+                <Button variant="secondary" size="sm" onClick={() => { setActiveFilter('all'); setQuery(''); }}>
+                  Clear filters
+                </Button>
+              )
+            }
           />
         )}
-      </div>
+
+        <AnimatePresence>
+          {deleteTarget ? (
+            <DeleteDispatchModal
+              target={deleteTarget}
+              busyKey={busyKey}
+              onClose={() => setDeleteTarget(null)}
+              onConfirm={deleteDispatchTarget}
+            />
+          ) : null}
+        </AnimatePresence>
+      </Page>
     </AppShell>
   );
 }
 
-function SectionHeader({ icon: Icon, title, detail }) {
+/* ── Publish path rail ────────────────────────────────────────────────────── */
+
+function PipelineRail({ stages, liveLabel, transport, lastUpdated, platformJobs, intakeCount, retentionLabel, hardDeleteLabel }) {
   return (
-    <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
-      <div className="flex items-center gap-2">
-        <Icon size={18} className="text-mint" />
-        <h2 className="text-sm font-semibold text-[var(--text)]">{title}</h2>
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: EASE }}
+      className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 p-4 shadow-[var(--shadow)] backdrop-blur-xl sm:p-5"
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(130%_130%_at_0%_0%,var(--accent-soft),transparent_58%)]"
+      />
+
+      <div className="relative flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+            Publish path
+          </p>
+          <p className="mt-0.5 text-xs text-[var(--text-2)]">
+            Chunked upload → SHA-256 verify → provider ingest → live post
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--accent-line)] bg-[var(--accent-soft)] px-2.5 py-1 text-[10px] font-semibold text-[var(--accent)]">
+            <span className="relative flex h-1.5 w-1.5">
+              {transport !== 'connecting' ? (
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-70" />
+              ) : null}
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+            </span>
+            {liveLabel}
+          </span>
+          <span className="text-[10px] text-[var(--muted)]">
+            {lastUpdated ? `Synced ${lastUpdated.toLocaleTimeString()}` : 'Waiting for first sync'}
+          </span>
+        </div>
       </div>
-      <p className="text-xs text-[var(--muted)]">{detail}</p>
+
+      <div className="relative mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {stages.map((stage, index) => (
+          <StageNode key={stage.key} stage={stage} index={index} last={index === stages.length - 1} />
+        ))}
+      </div>
+
+      <div className="relative mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--border)] pt-3 text-[10px] text-[var(--muted)]">
+        <span className="inline-flex items-center gap-1">
+          <Layers3 className="h-3 w-3" />
+          {platformJobs} platform {platformJobs === 1 ? 'job' : 'jobs'}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <UploadCloud className="h-3 w-3" />
+          {intakeCount} intake {intakeCount === 1 ? 'record' : 'records'}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <TimerReset className="h-3 w-3" />
+          Retry media {retentionLabel}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Trash2 className="h-3 w-3" />
+          Hard delete {hardDeleteLabel}
+        </span>
+      </div>
+    </motion.div>
+  );
+}
+
+function StageNode({ stage, index, last }) {
+  const active = stage.value > 0;
+  const Icon = stage.icon;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, ease: EASE, delay: 0.06 * index }}
+      className={`relative rounded-xl border px-3 py-2.5 transition-colors ${
+        active
+          ? 'border-[var(--accent-line)] bg-[var(--accent-soft)]'
+          : 'border-[var(--border)] bg-[var(--surface2)]/60'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+            active ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'bg-[var(--surface3)] text-[var(--muted)]'
+          }`}
+        >
+          <Icon className="h-3.5 w-3.5" />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-semibold text-[var(--text)]">{stage.label}</p>
+          <p className="truncate text-[9px] uppercase tracking-wider text-[var(--muted)]">{stage.hint}</p>
+        </div>
+        <span
+          className={`ml-auto text-lg font-bold tabular-nums ${
+            active ? 'text-[var(--accent)]' : 'text-[var(--muted)]'
+          }`}
+        >
+          {stage.value}
+        </span>
+      </div>
+
+      {!last ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -right-2.5 top-1/2 hidden -translate-y-1/2 lg:block"
+        >
+          <ChevronRight className={`h-4 w-4 ${active ? 'text-[var(--accent)]' : 'text-[var(--border-strong)]'}`} />
+        </span>
+      ) : null}
+    </motion.div>
+  );
+}
+
+/* ── Shared bits ──────────────────────────────────────────────────────────── */
+
+function Meter({ percent, tone = 'bg-[var(--accent)]', className = '' }) {
+  return (
+    <div className={`h-1.5 overflow-hidden rounded-full bg-[var(--surface3)] ${className}`}>
+      <motion.div
+        className={`h-full rounded-full ${tone}`}
+        initial={{ width: 0 }}
+        animate={{ width: formatPercent(percent) }}
+        transition={{ duration: 0.6, ease: EASE }}
+      />
     </div>
   );
 }
+
+function StatusChip({ meta, spinning = false }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.tone}`}>
+      {spinning ? (
+        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+      ) : (
+        <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+      )}
+      {meta.label}
+    </span>
+  );
+}
+
+function CardShell({ children, className = '' }) {
+  return (
+    <motion.article
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.2 } }}
+      transition={{ duration: 0.45, ease: EASE }}
+      className={`relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]/75 shadow-[var(--shadow)] backdrop-blur-xl ${className}`}
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_70%_at_0%_0%,var(--accent-soft),transparent_55%)]"
+      />
+      <div className="relative">{children}</div>
+    </motion.article>
+  );
+}
+
+/* ── Delete dialog ────────────────────────────────────────────────────────── */
 
 function DeleteDispatchModal({ target, busyKey, onClose, onConfirm }) {
   const isGroup = target.kind === 'group';
@@ -1601,67 +1876,72 @@ function DeleteDispatchModal({ target, busyKey, onClose, onConfirm }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <section className="w-full max-w-2xl overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
-        <div className="border-b border-[var(--border)] p-4">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+    >
+      <motion.section
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 10, scale: 0.98 }}
+        transition={{ duration: 0.35, ease: EASE }}
+        className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl"
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(80%_100%_at_50%_0%,rgb(var(--danger-rgb)/0.16),transparent_70%)]"
+        />
+
+        <div className="relative border-b border-[var(--border)] p-4">
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-rose">Delete dispatch</p>
-              <h2 className="mt-1 text-xl font-bold text-[var(--text)]">{title}</h2>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-danger">Delete dispatch</p>
+              <h2 className="mt-1 text-lg font-bold tracking-tight text-[var(--text)]">{title}</h2>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="focus-ring inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)]"
-              aria-label="Close delete dialog"
-            >
-              <XCircle size={16} />
-            </button>
+            <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close delete dialog">
+              <X className="h-4 w-4" />
+            </Button>
           </div>
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            Choose exactly what each platform row should do. A row can be deleted only here, or deleted here after the provider delete API succeeds.
+          <p className="mt-2 text-xs leading-relaxed text-[var(--muted)]">
+            Choose what each platform row should do. A row can be removed from CreatorOps only, or removed here after
+            the provider delete API succeeds.
           </p>
         </div>
 
-        <div className="max-h-[70vh] space-y-4 overflow-y-auto p-4">
-          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface2)] p-3">
-            {isGroup && (
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-[var(--text)]">Platforms in this post</h3>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedJobIds(jobs.map(job => String(job._id)))}
-                    className="focus-ring rounded-md border border-[var(--border)] px-2 py-1 text-xs font-semibold text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]"
-                  >
-                    All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedJobIds([])}
-                    className="focus-ring rounded-md border border-[var(--border)] px-2 py-1 text-xs font-semibold text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]"
-                  >
-                    None
-                  </button>
-                </div>
+        <div className="relative max-h-[64vh] space-y-3 overflow-y-auto p-4">
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface2)]/60 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {isGroup ? (
+                <h3 className="text-xs font-semibold text-[var(--text)]">Platforms in this post</h3>
+              ) : (
+                <span />
+              )}
+              <div className="flex flex-wrap gap-1.5">
+                {isGroup ? (
+                  <>
+                    <Button size="sm" variant="ghost" onClick={() => setSelectedJobIds(jobs.map(job => String(job._id)))}>
+                      All
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setSelectedJobIds([])}>
+                      None
+                    </Button>
+                  </>
+                ) : null}
+                <Button size="sm" variant="ghost" onClick={() => setDeleteModes(buildInitialDeleteModes(jobs))}>
+                  Here only
+                </Button>
+                <Button size="sm" variant="ghost" onClick={setSupportedJobsToPlatform}>
+                  Platform too
+                </Button>
               </div>
-            )}
-            <div className={`${isGroup ? 'mt-3' : ''} flex flex-wrap gap-2`}>
-              <button
-                type="button"
-                onClick={() => setDeleteModes(buildInitialDeleteModes(jobs))}
-                className="focus-ring rounded-md border border-[var(--border)] px-2 py-1 text-xs font-semibold text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]"
-              >
-                All here only
-              </button>
-              <button
-                type="button"
-                onClick={setSupportedJobsToPlatform}
-                className="focus-ring rounded-md border border-[var(--border)] px-2 py-1 text-xs font-semibold text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]"
-              >
-                Supported platform too
-              </button>
             </div>
+
             <div className="mt-3 grid gap-2">
               {jobs.map(job => {
                 const account = getJobAccount(job);
@@ -1669,53 +1949,70 @@ function DeleteDispatchModal({ target, busyKey, onClose, onConfirm }) {
                 const support = getPlatformDeleteSupport(job);
                 const mode = deleteModes[String(job._id)] || 'local';
                 return (
-                  <div key={job._id} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
-                    <div className="flex items-start gap-3">
+                  <div
+                    key={job._id}
+                    className={`rounded-xl border p-3 transition-colors ${
+                      checked ? 'border-[var(--accent-line)] bg-[var(--surface)]' : 'border-[var(--border)] bg-[var(--surface)]/60'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
                       <input
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggleJob(job._id)}
-                        className="mt-1 h-4 w-4 accent-[var(--mint)]"
+                        aria-label={`Include ${formatPlatform(job.platform)}`}
+                        className="focus-ring mt-1 h-4 w-4 shrink-0 accent-[var(--accent)]"
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="truncate text-sm font-semibold text-[var(--text)]">{formatPlatform(job.platform)}</span>
-                          {job.providerPostId ? (
-                            <span className="rounded-full border border-mint/30 px-2 py-0.5 text-[10px] font-semibold text-mint">platform post</span>
-                          ) : (
-                            <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted)]">website only</span>
-                          )}
+                          <span className="truncate text-sm font-semibold text-[var(--text)]">
+                            {formatPlatform(job.platform)}
+                          </span>
+                          <Badge tone={job.providerPostId ? 'accent' : 'neutral'}>
+                            {job.providerPostId ? 'platform post' : 'CreatorOps only'}
+                          </Badge>
                         </div>
-                        <div className="mt-1 truncate text-xs text-[var(--muted)]">
+                        <p className="mt-0.5 truncate text-[11px] text-[var(--muted)]">
                           {account.accountHandle || account.accountName || 'account'} · {job.status}
-                        </div>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        </p>
+
+                        <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
                           <button
                             type="button"
                             onClick={() => setJobMode(job._id, 'local')}
                             disabled={!checked}
-                            className={`focus-ring rounded-lg border px-3 py-2 text-left text-xs transition disabled:opacity-50 ${
+                            className={`focus-ring rounded-lg border px-2.5 py-2 text-left transition-colors disabled:opacity-50 ${
                               mode === 'local'
-                                ? 'border-mint bg-mint/10 text-[var(--text)]'
-                                : 'border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface2)]'
+                                ? 'border-[var(--accent-line)] bg-[var(--accent-soft)]'
+                                : 'border-[var(--border)] hover:border-[var(--border-strong)]'
                             }`}
                           >
-                            <span className="block font-semibold">Delete from here only</span>
-                            <span className="mt-1 block text-[11px] text-[var(--muted)]">Removes this website record and local history.</span>
+                            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--text)]">
+                              {mode === 'local' ? <Check className="h-3 w-3 text-[var(--accent)]" /> : null}
+                              Delete here only
+                            </span>
+                            <span className="mt-0.5 block text-[10px] leading-relaxed text-[var(--muted)]">
+                              Removes the CreatorOps record and local history.
+                            </span>
                           </button>
                           <button
                             type="button"
                             onClick={() => setJobMode(job._id, 'platform')}
                             disabled={!checked || !support.supported}
-                            className={`focus-ring rounded-lg border px-3 py-2 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                              mode === 'platform'
-                                ? 'border-mint bg-mint/10 text-[var(--text)]'
-                                : 'border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface2)]'
-                            }`}
                             title={support.reason}
+                            className={`focus-ring rounded-lg border px-2.5 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                              mode === 'platform'
+                                ? 'border-[var(--accent-line)] bg-[var(--accent-soft)]'
+                                : 'border-[var(--border)] hover:border-[var(--border-strong)]'
+                            }`}
                           >
-                            <span className="block font-semibold">Delete here + platform</span>
-                            <span className="mt-1 block text-[11px] text-[var(--muted)]">{support.reason}</span>
+                            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--text)]">
+                              {mode === 'platform' ? <Check className="h-3 w-3 text-[var(--accent)]" /> : null}
+                              Delete here + platform
+                            </span>
+                            <span className="mt-0.5 block text-[10px] leading-relaxed text-[var(--muted)]">
+                              {support.reason}
+                            </span>
                           </button>
                         </div>
                       </div>
@@ -1726,52 +2023,36 @@ function DeleteDispatchModal({ target, busyKey, onClose, onConfirm }) {
             </div>
           </div>
 
-          {hasPublishing && (
-            <div className="rounded-lg border border-gold/30 bg-gold/10 p-3 text-sm text-gold">
-              Active publishing jobs must be paused or cancelled before deletion so the worker cannot finish a provider upload after the local record is gone.
-            </div>
-          )}
+          {hasPublishing ? (
+            <Notice tone="warning">
+              Active publishing jobs must be paused or cancelled first, so the worker cannot finish a provider upload
+              after the local record is gone.
+            </Notice>
+          ) : null}
 
-          {selectedPlatformDeleteCount > 0 && (
-            <div className="rounded-lg border border-gold/30 bg-gold/10 p-3 text-sm text-gold">
-              {selectedPlatformDeleteCount} selected {selectedPlatformDeleteCount === 1 ? 'platform' : 'platforms'} will call provider delete APIs first. If a provider delete fails, CreatorOps keeps that record for review.
-            </div>
-          )}
+          {selectedPlatformDeleteCount > 0 ? (
+            <Notice tone="warning">
+              {selectedPlatformDeleteCount} selected {selectedPlatformDeleteCount === 1 ? 'platform' : 'platforms'} will
+              call provider delete APIs first. If a provider delete fails, CreatorOps keeps that record for review.
+            </Notice>
+          ) : null}
         </div>
 
-        <div className="flex flex-col gap-2 border-t border-[var(--border)] p-4 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="focus-ring inline-flex h-10 items-center justify-center rounded-lg border border-[var(--border)] px-4 text-sm font-semibold text-[var(--muted)] hover:bg-[var(--surface2)] hover:text-[var(--text)] disabled:opacity-60"
-          >
+        <div className="relative flex flex-col gap-2 border-t border-[var(--border)] p-4 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
             Keep
-          </button>
-          <button
-            type="button"
-            onClick={confirmDelete}
-            disabled={!canConfirm}
-            className="focus-ring inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-rose/40 bg-rose/10 px-4 text-sm font-semibold text-rose hover:bg-rose/20 disabled:opacity-60"
-          >
-            {busy ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+          </Button>
+          <Button variant="danger" onClick={confirmDelete} disabled={!canConfirm}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
             Delete {selectedJobs.length} {selectedJobs.length === 1 ? 'platform' : 'platforms'}
-          </button>
+          </Button>
         </div>
-      </section>
-    </div>
+      </motion.section>
+    </motion.div>
   );
 }
 
-function StatusStat({ icon: Icon, label, value, tone }) {
-  return (
-    <div className="flex h-10 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface2)] px-3">
-      <Icon size={15} className={tone} />
-      <span className="text-xs font-medium text-[var(--muted)]">{label}</span>
-      <span className="text-sm font-bold text-[var(--text)]">{value}</span>
-    </div>
-  );
-}
+/* ── Upload intake ────────────────────────────────────────────────────────── */
 
 function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onCancel }) {
   const progress = getPendingProgress(pending);
@@ -1800,108 +2081,112 @@ function PendingUploadCard({ pending, busyKey, canManage, onResume, onPause, onC
     items.find(item => item.status === 'failed' && (item.failureReason || item.errorMessage))?.errorMessage ||
     '';
   const statusDescription = (() => {
-    if (failedTargetResults.length > 0) return 'One or more platform dispatches failed before a job was created. Retry from Dispatch or cancel it.';
-    if (progress.status === 'failed_upload') return failedUploadReason || 'Cloud upload or verification failed. Retry from Dispatch or cancel it.';
-    if (pending.pauseReason === 'user') return 'Paused by you. Resume from Dispatch when ready.';
-    if (progress.status === 'interrupted_upload') return 'Interrupted upload is saved. Resume from the last verified chunk here.';
-    if (progress.status === 'verifying_upload' && fullSizeUnverifiedCount > 0) return 'Upload reached cloud storage. CreatorOps is verifying SHA-256 and linking the cloud media asset.';
-    if (progress.status === 'verifying_upload' && hasUnfinishedTargets) return 'Cloud media is verified. CreatorOps is creating the remaining platform dispatches.';
-    if (progress.status === 'verifying_upload') return 'Cloud media is verified. CreatorOps is preparing platform dispatch.';
+    if (failedTargetResults.length > 0) return 'One or more platform dispatches failed before a job was created. Retry or cancel from here.';
+    if (progress.status === 'failed_upload') return failedUploadReason || 'Cloud upload or verification failed. Retry or cancel from here.';
+    if (pending.pauseReason === 'user') return 'Paused by you. Resume when ready — the transfer picks up at the last verified chunk.';
+    if (progress.status === 'interrupted_upload') return 'Interrupted transfer is saved. Resume from the last verified chunk.';
+    if (progress.status === 'verifying_upload' && fullSizeUnverifiedCount > 0) return 'Bytes reached cloud storage. CreatorOps is verifying SHA-256 and linking the media asset.';
+    if (progress.status === 'verifying_upload' && hasUnfinishedTargets) return 'Cloud media verified. Creating the remaining platform dispatches.';
+    if (progress.status === 'verifying_upload') return 'Cloud media verified. Preparing platform dispatch.';
     if (progress.status === 'uploading_client') return 'Uploading from this browser to CreatorOps cloud storage.';
-    return 'Upload runs sequentially so every file can resume from its own verified offset.';
+    return 'Files upload one at a time so each can resume from its own verified offset.';
   })();
 
   return (
-    <article className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]">
-      <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+    <CardShell>
+      <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_240px]">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-semibold ${meta.tone}`}>
-              {progress.status === 'uploading_client' ? <Loader2 size={12} className="animate-spin" /> : <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />}
-              {meta.label}
+            <StatusChip meta={meta} spinning={progress.status === 'uploading_client'} />
+            <Badge tone="neutral">{pending.mode === 'schedule' ? 'Scheduled' : 'Publish now'}</Badge>
+            <span className="font-mono text-[10px] text-[var(--muted)]">
+              {compactId(pending.postGroupId || pending.id)}
             </span>
-            <span className="text-xs text-[var(--muted)]">{pending.mode === 'schedule' ? 'Scheduled publish' : 'Publish now'}</span>
-            <span className="text-xs text-[var(--muted)]">{compactId(pending.postGroupId || pending.id)}</span>
           </div>
-          <h3 className="mt-3 truncate text-base font-semibold text-[var(--text)]">
-            {firstCaption || `${items.length} media ${items.length === 1 ? 'file' : 'files'} for ${targets.length} platform ${targets.length === 1 ? 'target' : 'targets'}`}
+
+          <h3 className="mt-2.5 line-clamp-2 text-sm font-bold leading-snug tracking-tight text-[var(--text)]">
+            {firstCaption || `${items.length} media ${items.length === 1 ? 'file' : 'files'} → ${targets.length} ${targets.length === 1 ? 'target' : 'targets'}`}
           </h3>
-          <div className="mt-4">
-            <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--muted)]">
-              <span>{progress.completedCount}/{progress.totalCount} uploaded to cloud</span>
-              <span>
+
+          <div className="mt-3">
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-[10px] text-[var(--muted)]">
+              <span className="font-semibold text-[var(--text-2)]">
+                {progress.completedCount}/{progress.totalCount} in cloud
+              </span>
+              <span className="tabular-nums">
                 {formatBytes(progress.uploadedBytes)} / {formatBytes(progress.totalBytes)}
                 {progress.bytesPerSecond > 0 ? ` · ${formatThroughput(progress.bytesPerSecond)}` : ''}
               </span>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-[var(--surface2)]">
-              <div className="h-full rounded-full bg-mint transition-all" style={{ width: formatPercent(progress.percent) }} />
+            <Meter percent={progress.percent} />
+          </div>
+
+          {targets.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {targets.map(connection => (
+                <span
+                  key={connection.targetKey || `${connection.platform}-${connection.accountHandle}`}
+                  className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface2)] px-2 py-0.5 text-[10px] text-[var(--text-2)]"
+                >
+                  <Radio className="h-2.5 w-2.5 text-[var(--accent)]" />
+                  {formatPlatform(connection.platform)}
+                  {connection.accountHandle ? (
+                    <span className="text-[var(--muted)]">· {connection.accountHandle}</span>
+                  ) : null}
+                </span>
+              ))}
             </div>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {targets.map(connection => (
-              <span key={connection.targetKey || `${connection.platform}-${connection.accountHandle}`} className="rounded-full border border-[var(--border)] px-2 py-1 text-xs text-[var(--muted)]">
-                {formatPlatform(connection.platform)} {connection.accountHandle ? `· ${connection.accountHandle}` : ''}
-              </span>
-            ))}
-          </div>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-2 xl:items-end">
-          <span className="text-xs text-[var(--muted)]">Updated {formatDateTime(pending.updatedAt || pending.createdAt)}</span>
-          <div className="flex flex-wrap gap-2 xl:justify-end">
-            {canResumeUpload && (
-              <button
-                type="button"
-                onClick={() => onResume(pending)}
-                disabled={resumeBusy}
-                className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d] disabled:opacity-60"
-              >
-                {resumeBusy ? <Loader2 size={14} className="animate-spin" /> : progress.status === 'failed_upload' ? <RotateCcw size={14} /> : <PlayCircle size={14} />}
+          <span className="text-[10px] text-[var(--muted)]">
+            Updated {formatDateTime(pending.updatedAt || pending.createdAt)}
+          </span>
+          <div className="flex flex-wrap gap-1.5 xl:justify-end">
+            {canResumeUpload ? (
+              <Button size="sm" variant="primary" onClick={() => onResume(pending)} disabled={resumeBusy}>
+                {resumeBusy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : progress.status === 'failed_upload' ? (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                ) : (
+                  <PlayCircle className="h-3.5 w-3.5" />
+                )}
                 {resumeLabel}
-              </button>
-            )}
-            {handoffBusy && (
-              <span className="inline-flex h-9 items-center gap-2 rounded-lg border border-blue-300/30 bg-blue-300/10 px-3 text-xs font-semibold text-blue-200">
-                <Loader2 size={14} className="animate-spin" />
+              </Button>
+            ) : null}
+            {handoffBusy ? (
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--accent-line)] bg-[var(--accent-soft)] px-2.5 py-1.5 text-xs font-semibold text-[var(--accent)]">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Dispatching
               </span>
-            )}
-            {canPauseUpload && (
-              <button
-                type="button"
-                onClick={() => onPause(pending)}
-                disabled={pauseBusy}
-                className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-gold/40 px-3 text-xs font-semibold text-gold hover:bg-gold/10 disabled:opacity-60"
-              >
-                {pauseBusy ? <Loader2 size={14} className="animate-spin" /> : <PauseCircle size={14} />}
+            ) : null}
+            {canPauseUpload ? (
+              <Button size="sm" variant="secondary" onClick={() => onPause(pending)} disabled={pauseBusy}>
+                {pauseBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PauseCircle className="h-3.5 w-3.5" />}
                 Pause
-              </button>
-            )}
-            {canManage && (
-              <button
-                type="button"
-                onClick={() => onCancel(pending)}
-                disabled={cancelBusy}
-                className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10 disabled:opacity-60"
-              >
-                {cancelBusy ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+              </Button>
+            ) : null}
+            {canManage ? (
+              <Button size="sm" variant="danger" onClick={() => onCancel(pending)} disabled={cancelBusy}>
+                {cancelBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
                 Cancel
-              </button>
-            )}
+              </Button>
+            ) : null}
           </div>
-          <p className="max-w-xs text-right text-xs text-[var(--muted)]">
+          <p className="max-w-[15rem] text-[10px] leading-relaxed text-[var(--muted)] xl:text-right">
             {statusDescription}
           </p>
         </div>
       </div>
 
-      <div className="grid gap-2 border-t border-[var(--border)] p-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-2 border-t border-[var(--border)] bg-[var(--surface2)]/30 p-3 md:grid-cols-2 xl:grid-cols-3">
         {items.map(item => (
           <PendingMediaRow key={item.uploadKey || item.mediaAssetId || item.localId} item={item} />
         ))}
       </div>
-    </article>
+    </CardShell>
   );
 }
 
@@ -1930,24 +2215,22 @@ function PendingMediaRow({ item }) {
     : '';
 
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface2)] p-3">
-      <div className="flex items-center justify-between gap-3 text-xs">
-        <span className="min-w-0 truncate font-semibold text-[var(--text)]">{item.originalName || 'Media file'}</span>
-        <span className={`shrink-0 rounded-full border px-2 py-0.5 font-semibold ${meta.tone}`}>{meta.label}</span>
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 p-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-[11px] font-semibold text-[var(--text)]">
+          {item.originalName || 'Media file'}
+        </span>
+        <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${meta.tone}`}>
+          {meta.label}
+        </span>
       </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--surface)]">
-        <div className="h-full rounded-full bg-mint transition-all" style={{ width: formatPercent(percent) }} />
-      </div>
-      <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[var(--muted)]">
-        <span>{formatBytes(bytesUploaded)} / {formatBytes(item.size)}</span>
+      <Meter percent={percent} className="mt-2" />
+      <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-[var(--muted)]">
+        <span className="tabular-nums">{formatBytes(bytesUploaded)} / {formatBytes(item.size)}</span>
         <span className="min-w-0 truncate text-right">{detailText}</span>
       </div>
-      {verifiedText && (
-        <p className="mt-1 text-[10px] text-[var(--muted)]">{verifiedText}</p>
-      )}
-      {storageHardDeleteText && (
-        <p className="mt-1 text-[10px] text-gold">{storageHardDeleteText}</p>
-      )}
+      {verifiedText ? <p className="mt-1 text-[10px] text-[var(--muted)]">{verifiedText}</p> : null}
+      {storageHardDeleteText ? <p className="mt-1 text-[10px] text-warning">{storageHardDeleteText}</p> : null}
     </div>
   );
 }
@@ -1955,153 +2238,209 @@ function PendingMediaRow({ item }) {
 function getPendingItemMeta(item) {
   if (item.mediaAssetId) return { label: 'Cloud', tone: 'border-mint/30 bg-mint/10 text-mint' };
   if (item.status === 'failed') return { label: 'Failed', tone: 'border-rose/30 bg-rose/10 text-rose' };
-  if (item.status === 'completed' || (item.sessionId && (isPendingItemAtCloudSize(item) || isPendingItemSentToCloudSize(item)))) return { label: 'Verifying cloud', tone: 'border-blue-300/30 bg-blue-300/10 text-blue-200' };
-  if (item.status === 'uploading') return { label: 'Cloud upload', tone: 'border-mint/30 bg-mint/10 text-mint' };
+  if (item.status === 'completed' || (item.sessionId && (isPendingItemAtCloudSize(item) || isPendingItemSentToCloudSize(item)))) return { label: 'Verifying', tone: 'border-cyan/30 bg-cyan/10 text-cyan' };
+  if (item.status === 'uploading') return { label: 'Uploading', tone: 'border-mint/30 bg-mint/10 text-mint' };
   if (item.status === 'paused') return { label: 'Paused', tone: 'border-gold/30 bg-gold/10 text-gold' };
   if (item.status === 'interrupted') return { label: 'Interrupted', tone: 'border-gold/30 bg-gold/10 text-gold' };
-  return { label: 'Waiting', tone: 'border-sky-400/30 bg-sky-400/10 text-sky-300' };
+  return { label: 'Waiting', tone: 'border-cyan/30 bg-cyan/10 text-cyan' };
 }
 
-function DispatchGroup({ group, canManage, busyKey, retentionLabel, hardDeleteLabel, onJobAction, onGroupAction, onDeleteGroup, onDeleteJob }) {
+/* ── Dispatch group ───────────────────────────────────────────────────────── */
+
+function DispatchGroup({
+  group, canManage, busyKey, retentionLabel, hardDeleteLabel,
+  preflight, onPreflight, onJobAction, onGroupAction, onDeleteGroup, onDeleteJob
+}) {
   const meta = getJobStatusMeta(group.status);
   const pauseJobs = getGroupActionJobs(group, 'pause');
   const resumeJobs = getGroupActionJobs(group, 'resume');
   const cancelJobs = getGroupActionJobs(group, 'cancel');
   const firstCaption = group.jobs.map(getJobCaption).find(Boolean);
   const firstMedia = group.jobs.map(getJobMedia).find(Boolean);
+  const hasBulkActions = pauseJobs.length > 0 || resumeJobs.length > 0 || cancelJobs.length > 0;
+  const [open, setOpen] = useState(true);
 
   return (
-    <article className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]">
-      <div className="grid gap-4 p-4 xl:grid-cols-[128px_minmax(0,1fr)_260px]">
+    <CardShell>
+      <div className="grid gap-4 p-4 sm:grid-cols-[auto_minmax(0,1fr)] xl:grid-cols-[132px_minmax(0,1fr)_236px]">
         <MediaPreview media={firstMedia} emptyLabel={group.expiredCount > 0 ? 'Media expired' : 'Media cleared'} />
 
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-semibold ${meta.tone}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
-              {meta.label}
+            <StatusChip meta={meta} />
+            <span className="font-mono text-[10px] text-[var(--muted)]">{compactId(group.id)}</span>
+            <span className="inline-flex items-center gap-1 text-[10px] text-[var(--muted)]">
+              <Clock3 className="h-2.5 w-2.5" />
+              {formatDateTime(group.scheduledAt)}
             </span>
-            <span className="text-xs text-[var(--muted)]">{compactId(group.id)}</span>
-            <span className="text-xs text-[var(--muted)]">{formatDateTime(group.scheduledAt)}</span>
           </div>
-          <h2 className="mt-3 line-clamp-2 text-base font-semibold text-[var(--text)]">{firstCaption || `Dispatch ${compactId(group.id)}`}</h2>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+          <h3 className="mt-2.5 line-clamp-2 text-sm font-bold leading-snug tracking-tight text-[var(--text)]">
+            {firstCaption || `Dispatch ${compactId(group.id)}`}
+          </h3>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
             <div>
-              <div className="mb-1 flex items-center justify-between text-xs text-[var(--muted)]">
+              <div className="mb-1.5 flex items-center justify-between text-[10px] text-[var(--muted)]">
                 <span>{group.terminalCount}/{group.expectedTargetCount} finished</span>
-                <span>{group.publishedCount}/{group.expectedTargetCount} published</span>
+                <span className="font-semibold text-[var(--text-2)]">
+                  {group.publishedCount}/{group.expectedTargetCount} published
+                </span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-[var(--surface2)]">
-                <div className="h-full rounded-full bg-mint" style={{ width: formatPercent(group.successPercent) }} />
-              </div>
+              <Meter percent={group.successPercent} />
             </div>
-            <div className="flex flex-wrap gap-2 md:justify-end">
-              {group.jobs.map(job => (
-                <PlatformPill key={job._id} job={job} />
-              ))}
+            <div className="flex flex-wrap gap-1.5 md:justify-end">
+              {group.jobs.map(job => <PlatformPill key={job._id} job={job} />)}
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 xl:items-end">
-          <span className="text-xs text-[var(--muted)]">Updated {formatDateTime(group.latestUpdatedAt)}</span>
-          {canManage && (pauseJobs.length > 0 || resumeJobs.length > 0 || cancelJobs.length > 0) && (
-            <div className="flex flex-wrap gap-2 xl:justify-end">
-              {pauseJobs.length > 0 && (
-                <button
-                  type="button"
+        <div className="flex flex-col gap-2 sm:col-span-2 xl:col-span-1 xl:items-end">
+          <span className="text-[10px] text-[var(--muted)]">Updated {formatDateTime(group.latestUpdatedAt)}</span>
+          {canManage ? (
+            <div className="flex flex-wrap gap-1.5 xl:justify-end">
+              {pauseJobs.length > 0 ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
                   onClick={() => onGroupAction({ group, action: 'pause' })}
                   disabled={busyKey === `pause:group:${group.id}`}
-                  className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-gold/40 px-3 text-xs font-semibold text-gold hover:bg-gold/10 disabled:opacity-60"
                 >
-                  <PauseCircle size={14} />
+                  <PauseCircle className="h-3.5 w-3.5" />
                   Pause {pauseJobs.length}
-                </button>
-              )}
-              {resumeJobs.length > 0 && (
-                <button
-                  type="button"
+                </Button>
+              ) : null}
+              {resumeJobs.length > 0 ? (
+                <Button
+                  size="sm"
+                  variant="primary"
                   onClick={() => onGroupAction({ group, action: 'resume' })}
                   disabled={busyKey === `resume:group:${group.id}`}
-                  className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d] disabled:opacity-60"
                 >
-                  <PlayCircle size={14} />
+                  <PlayCircle className="h-3.5 w-3.5" />
                   Resume {resumeJobs.length}
-                </button>
-              )}
-              {cancelJobs.length > 0 && (
-                <button
-                  type="button"
+                </Button>
+              ) : null}
+              {cancelJobs.length > 0 ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
                   onClick={() => onGroupAction({ group, action: 'cancel' })}
                   disabled={busyKey === `cancel:group:${group.id}`}
-                  className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10 disabled:opacity-60"
                 >
-                  <XCircle size={14} />
+                  <XCircle className="h-3.5 w-3.5" />
                   Cancel {cancelJobs.length}
-                </button>
-              )}
-              <button
-                type="button"
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                variant="danger"
                 onClick={() => onDeleteGroup(group)}
                 disabled={busyKey === `delete:group:${group.id}`}
-                className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10 disabled:opacity-60"
               >
-                {busyKey === `delete:group:${group.id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                {busyKey === `delete:group:${group.id}` ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
                 Delete
-              </button>
+              </Button>
             </div>
-          )}
-          {canManage && !(pauseJobs.length > 0 || resumeJobs.length > 0 || cancelJobs.length > 0) && (
-            <button
-              type="button"
-              onClick={() => onDeleteGroup(group)}
-              disabled={busyKey === `delete:group:${group.id}`}
-              className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10 disabled:opacity-60"
-            >
-              {busyKey === `delete:group:${group.id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-              Delete
-            </button>
-          )}
+          ) : null}
+          {!canManage && !hasBulkActions ? (
+            <span className="text-[10px] text-[var(--muted)]">Read-only for your role</span>
+          ) : null}
         </div>
       </div>
 
-      <div className="border-t border-[var(--border)]">
-        {group.jobs.map(job => (
-          <PlatformJobRow
-            key={job._id}
-            job={job}
-            canManage={canManage}
-            busyKey={busyKey}
-            retentionLabel={retentionLabel}
-            hardDeleteLabel={hardDeleteLabel}
-            onJobAction={onJobAction}
-            onDeleteJob={onDeleteJob}
-          />
-        ))}
-      </div>
-    </article>
+      <button
+        type="button"
+        onClick={() => setOpen(value => !value)}
+        aria-expanded={open}
+        className="focus-ring flex w-full items-center justify-between gap-2 border-t border-[var(--border)] bg-[var(--surface2)]/40 px-4 py-2 text-left transition-colors hover:bg-[var(--surface2)]/70"
+      >
+        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+          {group.jobs.length} platform {group.jobs.length === 1 ? 'target' : 'targets'}
+        </span>
+        <ChevronDown className={`h-3.5 w-3.5 text-[var(--muted)] transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: EASE }}
+            className="overflow-hidden"
+          >
+            {group.jobs.map(job => (
+              <PlatformJobRow
+                key={job._id}
+                job={job}
+                canManage={canManage}
+                busyKey={busyKey}
+                retentionLabel={retentionLabel}
+                hardDeleteLabel={hardDeleteLabel}
+                preflight={preflight[String(job._id)]}
+                onPreflight={onPreflight}
+                onJobAction={onJobAction}
+                onDeleteJob={onDeleteJob}
+              />
+            ))}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </CardShell>
   );
 }
 
 function MediaPreview({ media, emptyLabel = 'No cloud media' }) {
-  const wrapperClassName = 'aspect-video min-h-24 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface2)] xl:aspect-square xl:min-h-28';
+  /* Was `aspect-video` at every width inside a column that is only 132px at xl
+     and full-width below it — which stretched the thumbnail to ~660px tall and
+     pushed each dispatch card past 1000px. Fixed square thumb, full column at xl. */
+  const wrapper = 'group relative aspect-square w-24 shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface2)] sm:w-28 xl:w-full';
+  /* Storage hard-delete and expiry both leave a live publicUrl pointing at an
+     object that is already gone, which otherwise renders as a broken glyph. */
+  const [broken, setBroken] = useState(false);
 
-  if (!media?.publicUrl) {
+  useEffect(() => { setBroken(false); }, [media?.publicUrl]);
+
+  if (!media?.publicUrl || broken) {
     return (
-      <div className={`${wrapperClassName} flex items-center justify-center border-dashed px-2 text-center text-[11px] text-[var(--muted)]`}>
-        {emptyLabel}
+      <div className={`${wrapper} flex flex-col items-center justify-center gap-1 border-dashed px-2 text-center`}>
+        <ImageOff className="h-4 w-4 text-[var(--muted)]" />
+        <span className="text-[10px] leading-tight text-[var(--muted)]">
+          {broken ? 'Media unavailable' : emptyLabel}
+        </span>
       </div>
     );
   }
 
   return (
-    <div className={wrapperClassName}>
+    <div className={wrapper}>
       {media.mediaType === 'video' ? (
-        <video src={media.publicUrl} className="h-full w-full object-cover" controls muted playsInline preload="metadata" />
+        <video
+          src={media.publicUrl}
+          className="h-full w-full object-cover"
+          controls
+          muted
+          playsInline
+          preload="metadata"
+          onError={() => setBroken(true)}
+        />
       ) : (
-        <img src={media.publicUrl} alt={media.originalName || 'media'} className="h-full w-full object-cover" />
+        <img
+          src={media.publicUrl}
+          alt={media.originalName || 'media'}
+          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+          onError={() => setBroken(true)}
+        />
       )}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent"
+      />
     </div>
   );
 }
@@ -2109,14 +2448,17 @@ function MediaPreview({ media, emptyLabel = 'No cloud media' }) {
 function PlatformPill({ job }) {
   const meta = getJobStatusMeta(job.temporaryMediaExpiredAt ? 'expired' : job.status);
   return (
-    <span className={`inline-flex min-h-7 items-center gap-1.5 rounded-full border px-2 text-xs font-semibold ${meta.tone}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.tone}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
       {formatPlatform(job.platform)}
     </span>
   );
 }
 
-function PlatformJobRow({ job, canManage, busyKey, retentionLabel, hardDeleteLabel, onJobAction, onDeleteJob }) {
+function PlatformJobRow({
+  job, canManage, busyKey, retentionLabel, hardDeleteLabel,
+  preflight, onPreflight, onJobAction, onDeleteJob
+}) {
   const meta = getJobStatusMeta(job.temporaryMediaExpiredAt ? 'expired' : job.status);
   const account = getJobAccount(job);
   const media = getJobMedia(job);
@@ -2143,164 +2485,210 @@ function PlatformJobRow({ job, canManage, busyKey, retentionLabel, hardDeleteLab
   );
   const stageLabel = getJobStageLabel(job);
   const stageText = job.mediaProcessing?.lastCompressionMessage || job.processingMessage || job.errorMessage || job.processingStage || job.status;
+  /* The chip, the detail line and the provider phase all resolve from the same
+     stage, so an in-flight upload printed "Uploading to platform" three times. */
+  const showStageText = stageText && normalizeText(stageText) !== normalizeText(stageLabel);
+  const providerPhaseLabel = providerProgress ? getProviderPhaseLabel(providerProgress.phase) : '';
   const busy = action => busyKey === `${action}:${job._id}`;
 
   return (
-    <div className="grid gap-3 border-t border-[var(--border)] px-4 py-3 first:border-t-0 xl:grid-cols-[minmax(170px,0.7fr)_minmax(0,1.35fr)_minmax(220px,auto)] xl:items-center">
+    <div className="grid gap-3 border-t border-[var(--border)] px-4 py-3 first:border-t-0 xl:grid-cols-[minmax(160px,0.7fr)_minmax(0,1.35fr)_minmax(210px,auto)] xl:items-start">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-semibold ${meta.tone}`}>
-            {job.status === 'publishing' ? <Loader2 size={12} className="animate-spin" /> : <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />}
-            {meta.label}
-          </span>
-          <span className="truncate text-sm font-semibold text-[var(--text)]">{formatPlatform(job.platform)}</span>
+          <StatusChip meta={meta} spinning={job.status === 'publishing'} />
+          <span className="truncate text-xs font-bold text-[var(--text)]">{formatPlatform(job.platform)}</span>
         </div>
-        <p className="mt-1 truncate text-xs text-[var(--muted)]">
+        <p className="mt-1 truncate text-[10px] text-[var(--muted)]">
           {account.accountHandle || account.accountName || 'account'} · {job.visibility || 'public'}
         </p>
       </div>
 
       <div className="min-w-0">
-        <p className="line-clamp-2 text-sm font-semibold text-[var(--text)]">{caption || 'No caption saved for this platform.'}</p>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-          <span className="rounded-full border border-[var(--border)] bg-[var(--surface2)] px-2 py-0.5 font-semibold text-[var(--text)]">
+        <p className="line-clamp-2 text-xs leading-relaxed text-[var(--text-2)]">
+          {caption || 'No caption saved for this platform.'}
+        </p>
+
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
+          <span className="rounded-full border border-[var(--border)] bg-[var(--surface2)] px-1.5 py-0.5 font-semibold text-[var(--text)]">
             {stageLabel}
           </span>
-          <span className="min-w-0 flex-1 line-clamp-2 text-[var(--muted)]">{stageText}</span>
+          {showStageText ? (
+            <span className="min-w-0 flex-1 line-clamp-2 text-[var(--muted)]">{stageText}</span>
+          ) : null}
         </div>
-        {providerProgress && (
+
+        {providerProgress ? (
           <div className="mt-2 max-w-2xl">
-            <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--muted)]">
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[10px] text-[var(--muted)]">
               <span>
                 {providerProgress.complete
                   ? `${formatPlatform(job.platform)} media upload complete`
-                  : getProviderPhaseLabel(providerProgress.phase)}
+                  : normalizeText(providerPhaseLabel) === normalizeText(stageLabel)
+                    ? 'Media transfer'
+                    : providerPhaseLabel}
               </span>
               {providerProgress.totalBytes > 0 ? (
-                <span>
+                <span className="tabular-nums">
                   {formatBytes(providerProgress.bytesUploaded)} / {formatBytes(providerProgress.totalBytes)}
                   {providerProgress.bytesPerSecond > 0 ? ` · ${formatThroughput(providerProgress.bytesPerSecond)}` : ''}
                 </span>
               ) : (
-                <span>{formatPercent(providerProgress.percent)}</span>
+                <span className="tabular-nums">{formatPercent(providerProgress.percent)}</span>
               )}
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-[var(--surface2)]">
-              <div
-                className={`h-full rounded-full transition-all ${providerProgress.complete ? 'bg-mint' : 'bg-gold'}`}
-                style={{ width: formatPercent(providerProgress.percent) }}
-              />
-            </div>
+            <Meter
+              percent={providerProgress.percent}
+              tone={providerProgress.complete ? 'bg-[var(--accent)]' : 'bg-warning'}
+            />
           </div>
-        )}
-        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--muted)]">
+        ) : null}
+
+        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-[var(--muted)]">
           <span className="inline-flex items-center gap-1">
-            <Clock3 size={12} />
+            <Clock3 className="h-2.5 w-2.5" />
             {formatDateTime(job.scheduledAt)}
           </span>
-          <span>{stageLabel}</span>
-          {job.retryCount > 0 && <span>{job.retryCount} retries</span>}
-          {job.mediaProcessing?.compressBeforeUpload && <span className="text-mint">compression enabled</span>}
-          {controlAction && <span className="text-gold">{job.publishControl?.message || 'Control pending'}</span>}
-          {temporaryMediaExpired && <span className="text-rose">{temporaryMediaExpiredMessage}</span>}
-          {!temporaryMediaExpired && temporaryMediaExpiresAt && (
-            <span className="text-gold">Retry media until {temporaryMediaExpiresAt.toLocaleString()}</span>
-          )}
-          {!temporaryMediaExpired && storageHardDeleteAt && (
-            <span className="text-gold">Storage hard delete {storageHardDeleteAt.toLocaleString()}</span>
-          )}
+          {job.retryCount > 0 ? <span>{job.retryCount} retries</span> : null}
+          {job.mediaProcessing?.compressBeforeUpload ? <span className="text-[var(--accent)]">compression on</span> : null}
+          {controlAction ? <span className="text-warning">{job.publishControl?.message || 'Control pending'}</span> : null}
+          {temporaryMediaExpired ? <span className="text-danger">{temporaryMediaExpiredMessage}</span> : null}
+          {!temporaryMediaExpired && temporaryMediaExpiresAt ? (
+            <span className="text-warning">Retry media until {temporaryMediaExpiresAt.toLocaleString()}</span>
+          ) : null}
+          {!temporaryMediaExpired && storageHardDeleteAt ? (
+            <span className="text-warning">Storage hard delete {storageHardDeleteAt.toLocaleString()}</span>
+          ) : null}
         </div>
+
+        {/* Pre-flight verdict — POST /api/publish/validate */}
+        <AnimatePresence initial={false}>
+          {preflight ? (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25, ease: EASE }}
+              className="overflow-hidden"
+            >
+              <div
+                className={`mt-2 rounded-lg border px-2.5 py-1.5 ${
+                  preflight.loading
+                    ? 'border-[var(--border)] bg-[var(--surface2)]'
+                    : preflight.ok
+                      ? 'border-success/30 bg-success/10'
+                      : 'border-danger/30 bg-danger/10'
+                }`}
+              >
+                <p
+                  className={`flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider ${
+                    preflight.loading ? 'text-[var(--muted)]' : preflight.ok ? 'text-success' : 'text-danger'
+                  }`}
+                >
+                  {preflight.loading ? (
+                    <>
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" /> Running pre-flight
+                    </>
+                  ) : preflight.ok ? (
+                    <>
+                      <ShieldCheck className="h-2.5 w-2.5" /> Pre-flight passed
+                    </>
+                  ) : (
+                    <>
+                      <ShieldAlert className="h-2.5 w-2.5" /> {preflight.code || 'Pre-flight failed'}
+                    </>
+                  )}
+                </p>
+                {!preflight.loading && preflight.message ? (
+                  <p
+                    className={`mt-0.5 text-[10px] leading-relaxed ${
+                      preflight.ok ? 'text-success/90' : 'text-danger/90'
+                    }`}
+                  >
+                    {preflight.message}
+                  </p>
+                ) : null}
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
 
-      <div className="flex flex-wrap gap-2 xl:justify-end">
-        {media?.publicUrl && (
-          <a
-            href={media.publicUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] px-3 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface2)]"
-          >
-            <Cloud size={14} />
+      <div className="flex flex-wrap gap-1.5 xl:justify-end">
+        {media?.publicUrl ? (
+          <Button as="a" size="sm" variant="ghost" href={media.publicUrl} target="_blank" rel="noreferrer">
+            <Cloud className="h-3.5 w-3.5" />
             Media
-          </a>
-        )}
-        {job.providerPostUrl && (
-          <a
-            href={job.providerPostUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] px-3 text-xs font-semibold text-mint hover:bg-mint/10"
+          </Button>
+        ) : null}
+        {job.providerPostUrl ? (
+          <Button as="a" size="sm" variant="secondary" href={job.providerPostUrl} target="_blank" rel="noreferrer">
+            <ExternalLink className="h-3.5 w-3.5" />
+            Open post
+          </Button>
+        ) : null}
+        {canRetry ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onPreflight(job)}
+            disabled={preflight?.loading}
+            title="Validate this target against the platform before spending a retry"
           >
-            <ExternalLink size={14} />
-            Open
-          </a>
-        )}
-        {canPause && (
-          <button
-            type="button"
-            onClick={() => onJobAction({ job, action: 'pause' })}
-            disabled={busy('pause')}
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-gold/40 px-3 text-xs font-semibold text-gold hover:bg-gold/10 disabled:opacity-60"
-          >
-            <PauseCircle size={14} />
+            <FileCheck2 className="h-3.5 w-3.5" />
+            Pre-flight
+          </Button>
+        ) : null}
+        {canPause ? (
+          <Button size="sm" variant="secondary" onClick={() => onJobAction({ job, action: 'pause' })} disabled={busy('pause')}>
+            <PauseCircle className="h-3.5 w-3.5" />
             Pause
-          </button>
-        )}
-        {canResume && (
-          <button
-            type="button"
-            onClick={() => onJobAction({ job, action: 'resume' })}
-            disabled={busy('resume')}
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d] disabled:opacity-60"
-          >
-            <PlayCircle size={14} />
+          </Button>
+        ) : null}
+        {canResume ? (
+          <Button size="sm" variant="primary" onClick={() => onJobAction({ job, action: 'resume' })} disabled={busy('resume')}>
+            <PlayCircle className="h-3.5 w-3.5" />
             Resume
-          </button>
-        )}
-        {canRetry && (
-          <button
-            type="button"
-            onClick={() => onJobAction({ job, action: 'retry' })}
-            disabled={busy('retry')}
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-gold px-3 text-xs font-semibold text-[#05130d] disabled:opacity-60"
-          >
-            <RotateCcw size={14} />
+          </Button>
+        ) : null}
+        {canRetry ? (
+          <Button size="sm" variant="primary" onClick={() => onJobAction({ job, action: 'retry' })} disabled={busy('retry')}>
+            <RotateCcw className="h-3.5 w-3.5" />
             Retry
-          </button>
-        )}
-        {canRetryWithCompression && (
-          <button
-            type="button"
+          </Button>
+        ) : null}
+        {canRetryWithCompression ? (
+          <Button
+            size="sm"
+            variant="secondary"
             onClick={() => onJobAction({ job, action: 'retry', options: { mediaProcessing: { compressOnOversize: true, compressBeforeUpload: true } } })}
             disabled={busy('retry')}
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-mint/40 px-3 text-xs font-semibold text-mint hover:bg-mint/10 disabled:opacity-60"
           >
-            <TimerReset size={14} />
+            <TimerReset className="h-3.5 w-3.5" />
             Compress
-          </button>
-        )}
-        {canCancel && (
-          <button
-            type="button"
-            onClick={() => onJobAction({ job, action: 'cancel' })}
-            disabled={busy('cancel')}
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10 disabled:opacity-60"
-          >
-            <XCircle size={14} />
+          </Button>
+        ) : null}
+        {canCancel ? (
+          <Button size="sm" variant="ghost" onClick={() => onJobAction({ job, action: 'cancel' })} disabled={busy('cancel')}>
+            <XCircle className="h-3.5 w-3.5" />
             Cancel
-          </button>
-        )}
-        {canManage && (
-          <button
-            type="button"
+          </Button>
+        ) : null}
+        {canManage ? (
+          <Button
+            size="sm"
+            variant="danger"
             onClick={() => onDeleteJob(job)}
             disabled={busyKey === `delete:job:${job._id}`}
-            className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-rose/40 px-3 text-xs font-semibold text-rose hover:bg-rose/10 disabled:opacity-60"
+            aria-label={`Delete ${formatPlatform(job.platform)} dispatch`}
+            title="Delete this platform row"
           >
-            {busyKey === `delete:job:${job._id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-            Delete
-          </button>
-        )}
+            {busyKey === `delete:job:${job._id}` ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        ) : null}
       </div>
     </div>
   );

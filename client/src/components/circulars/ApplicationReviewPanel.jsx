@@ -36,8 +36,8 @@ export default function ApplicationReviewPanel({ applications, onChanged }) {
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <button onClick={() => act(application, 'view-profile')} className="focus-ring rounded-xl border border-[var(--border)] px-3 py-2 text-xs text-[var(--text)] hover:bg-white/5">View profile</button>
-              <button onClick={() => act(application, 'shortlist')} className="focus-ring rounded-xl bg-mint px-3 py-2 text-xs font-semibold text-[#05130d]">Shortlist</button>
-              <button onClick={() => act(application, 'accept')} className="focus-ring rounded-xl bg-mint px-3 py-2 text-xs font-semibold text-[#05130d]">Accept</button>
+              <button onClick={() => act(application, 'shortlist')} className="focus-ring rounded-xl bg-mint px-3 py-2 text-xs font-semibold text-[var(--accent-fg)]">Shortlist</button>
+              <button onClick={() => act(application, 'accept')} className="focus-ring rounded-xl bg-mint px-3 py-2 text-xs font-semibold text-[var(--accent-fg)]">Accept</button>
               <button onClick={() => act(application, 'reject')} className="focus-ring rounded-xl border border-rose/40 px-3 py-2 text-xs text-rose hover:bg-rose/10">Reject</button>
             </div>
           </article>

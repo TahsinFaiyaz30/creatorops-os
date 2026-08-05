@@ -124,7 +124,7 @@ export default function CampaignDetailPage() {
                   />
                 ))}
               </div>
-              <button className="focus-ring mt-4 rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[#05130d]">
+              <button className="focus-ring mt-4 rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[var(--accent-fg)]">
                 {brandProfile ? 'Update brand' : 'Create brand'}
               </button>
             </form>

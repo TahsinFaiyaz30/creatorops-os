@@ -5,6 +5,14 @@ import Link from 'next/link';
 import { CalendarClock, ImagePlus, Sparkles, Send, X, Trash2, CheckCircle2, AlertCircle, LayoutPanelTop, ZoomIn, ZoomOut, Crop, PauseCircle, PlayCircle } from 'lucide-react';
 import AppShell from '../../components/layout/AppShell';
 import VisibilitySelector from '../../components/publish/VisibilitySelector';
+
+/* Aceternity + design system. Presentation only — every handler below is untouched. */
+import { TextGenerateEffect } from '../../components/ui/text-generate-effect';
+import { FileUpload } from '../../components/ui/file-upload';
+import { MultiStepLoader } from '../../components/ui/multi-step-loader';
+import {
+  Surface, Section, Badge, Notice, GlareStat, GlareStatGrid, GLARE_TINTS
+} from '../../components/ds';
 import { api } from '../../lib/api';
 import { getUser, getUserId } from '../../lib/auth';
 import { formatDuration } from '../../lib/duration';
@@ -1183,24 +1191,67 @@ export default function ComposePage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <header className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
-          <p className="text-sm uppercase tracking-[0.18em] text-mint">Advanced Compose</p>
-          <h1 className="mt-2 text-3xl font-bold text-[var(--text)]">Compose & Publish</h1>
-          <p className="mt-2 max-w-4xl text-sm text-[var(--muted)]">
-            Select multiple media files, manage cover and aspect ratios, customize captions with AI, and intelligently deploy to supported platforms. Media uploads only start when you publish or schedule.
+        {/* ── Header — matches Dashboard / Campaigns ─────────────────────── */}
+        <header>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
+            Create
           </p>
-          <p className="mt-3 max-w-4xl rounded-xl border border-gold/30 bg-gold/10 p-3 text-sm text-gold">
+          <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-[var(--text)] sm:text-3xl">
+            Compose &amp; Publish
+          </h1>
+          <div className="max-w-3xl">
+            <TextGenerateEffect
+              words="Stage media, set covers and aspect ratios, tune captions per platform with AI, then deploy. Uploads only start when you publish or schedule."
+              className="font-normal"
+              duration={0.5}
+            />
+          </div>
+          <Notice tone="warning" className="mt-3 max-w-4xl">
             Temporary publish media is removed from retry storage after {temporaryMediaRetentionLabel} once every platform in the post group is no longer queued, publishing, or paused. Storage hard-deletes temporary uploads and cloud media after {temporaryMediaHardDeleteLabel} from upload start even if work is still active, and retry becomes unavailable after deletion.
-          </p>
+          </Notice>
         </header>
 
-        {message && <div className="rounded-xl border border-mint/30 bg-mint/10 p-3 text-sm text-mint">{message}</div>}
+        {/* ── Live compose metrics — same GlareStat as Dashboard ─────────── */}
+        <GlareStatGrid className="xl:grid-cols-4">
+          <GlareStat label="Media staged"  value={mediaAssets.length}       icon={ImagePlus}     tint={GLARE_TINTS[0]} />
+          <GlareStat label="Targets"       value={selectedConnections.length} icon={LayoutPanelTop} tint={GLARE_TINTS[1]} />
+          <GlareStat label="Captions"      value={captions.length}          icon={Sparkles}      tint={GLARE_TINTS[2]} />
+          <GlareStat
+            label="Upload queue"
+            value={uploadQueue.length}
+            icon={Send}
+            tint={GLARE_TINTS[3]}
+            hint={uploading ? (isUploadPaused ? 'Paused' : 'Uploading…') : undefined}
+          />
+        </GlareStatGrid>
+
+        {message && <Notice tone="accent">{message}</Notice>}
+
+        {/* AI caption generation — Aceternity step loader over the real request */}
+        <MultiStepLoader
+          loading={busy === 'ai'}
+          duration={1200}
+          loadingStates={[
+            { text: 'Reading your base caption' },
+            { text: 'Loading each platform’s format rules' },
+            { text: 'Rewriting per platform and account' },
+            { text: 'Checking caption limits and hashtag caps' },
+            { text: 'Finalising variants' }
+          ]}
+        />
 
         {(uploadQueue.length > 0 || pendingUploadNotice) && (
-          <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+          <Surface pad="md">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-[var(--text)]">Media Upload</h2>
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--text)]">
+                  Media Upload
+                  {uploading ? (
+                    <Badge tone={isUploadPaused ? 'warning' : 'accent'}>
+                      {isUploadPaused ? 'Paused' : 'Uploading'}
+                    </Badge>
+                  ) : null}
+                </h2>
                 {pendingUploadNotice && <p className="mt-1 text-xs text-gold">{pendingUploadNotice}</p>}
               </div>
               {uploading && (
@@ -1209,7 +1260,7 @@ export default function ComposePage() {
                     <button
                       type="button"
                       onClick={resumeClientUpload}
-                      className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[#05130d]"
+                      className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg bg-mint px-3 text-xs font-semibold text-[var(--accent-fg)]"
                     >
                       <PlayCircle size={14} />
                       Resume
@@ -1256,7 +1307,7 @@ export default function ComposePage() {
                 ))}
               </div>
             )}
-          </section>
+          </Surface>
         )}
 
         {publishResults.length > 0 && (
@@ -1288,11 +1339,22 @@ export default function ComposePage() {
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <h2 className="text-base font-semibold text-[var(--text)]">Media Gallery</h2>
-                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-4 py-2 text-sm text-[var(--text)] hover:border-mint transition">
-                  <ImagePlus size={16} />
-                  {busy === 'upload' ? 'Selecting...' : 'Add Media'}
-                  <input type="file" accept="image/*,video/*" multiple onChange={upload} className="hidden" />
-                </label>
+                <Badge tone={mediaAssets.length ? 'accent' : 'neutral'}>
+                  <ImagePlus className="h-3 w-3" />
+                  {mediaAssets.length} staged
+                </Badge>
+              </div>
+
+              {/* Aceternity drag-and-drop zone. It hands back a File[], while
+                  `upload` expects a change event — adapted rather than rewritten
+                  so the existing metadata/cropping pipeline is untouched. */}
+              <div className="mb-4 overflow-hidden rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface2)]/40">
+                <FileUpload
+                  onChange={files => {
+                    if (!files?.length) return;
+                    upload({ target: { files } });
+                  }}
+                />
               </div>
 
               {mediaAssets.length > 0 ? (
@@ -1311,7 +1373,7 @@ export default function ComposePage() {
                           <img src={asset.publicUrl} className="h-full w-full object-cover" />
                         )}
                         {coverIndex === idx && (
-                          <div className="absolute left-1 top-1 rounded bg-[#05130d]/80 px-1 text-[10px] font-bold text-mint backdrop-blur">COVER</div>
+                          <div className="absolute left-1 top-1 rounded bg-black/70 px-1 text-[10px] font-bold text-mint backdrop-blur">COVER</div>
                         )}
                         <button 
                           onClick={(e) => { e.stopPropagation(); removeMedia(idx); }}
@@ -1387,7 +1449,7 @@ export default function ComposePage() {
                                       onClick={() => setGlobalAspect(option.value)} 
                                       className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-300 ${
                                         isActive 
-                                          ? 'bg-mint text-[#05130d] shadow-[0_0_15px_rgba(var(--color-mint-rgb),0.3)] border-transparent' 
+                                          ? 'bg-mint text-[var(--accent-fg)] shadow-[0_0_15px_rgba(var(--color-mint-rgb),0.3)] border-transparent' 
                                           : 'bg-[var(--surface)] text-[var(--muted)] border border-[var(--border)] hover:bg-[var(--border)] hover:text-[var(--text)]'
                                       }`}
                                     >
@@ -1521,7 +1583,7 @@ export default function ComposePage() {
                 type="button"
                 disabled={busy === 'ai' || !baseCaption || selectedIds.length === 0}
                 onClick={customizeCaptions}
-                className="focus-ring mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-mint px-3 py-2.5 text-sm font-semibold text-[#05130d] transition hover:brightness-110 disabled:opacity-50"
+                className="focus-ring mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-mint px-3 py-2.5 text-sm font-semibold text-[var(--accent-fg)] transition hover:brightness-110 disabled:opacity-50"
               >
                 <Sparkles size={16} />
                 {busy === 'ai' ? 'Customizing...' : 'Tailor Captions with AI'}
@@ -1631,7 +1693,7 @@ export default function ComposePage() {
                 <input type="datetime-local" value={scheduledAt} onChange={event => setScheduledAt(event.target.value)} className="focus-ring mt-1 w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]" />
               </label>
               <div className="grid gap-2">
-                <button type="button" disabled={busy === 'now' || hasPendingUpload || selectedIds.length === 0 || (!baseCaption && mediaAssets.length === 0)} onClick={() => publish({ mode: 'now' })} className="focus-ring flex items-center justify-center gap-2 rounded-xl bg-mint px-3 py-2.5 text-sm font-semibold text-[#05130d] transition hover:brightness-110 disabled:opacity-50">
+                <button type="button" disabled={busy === 'now' || hasPendingUpload || selectedIds.length === 0 || (!baseCaption && mediaAssets.length === 0)} onClick={() => publish({ mode: 'now' })} className="focus-ring flex items-center justify-center gap-2 rounded-xl bg-mint px-3 py-2.5 text-sm font-semibold text-[var(--accent-fg)] transition hover:brightness-110 disabled:opacity-50">
                   <Send size={15} /> Publish Now
                 </button>
                 <button type="button" disabled={busy === 'schedule' || hasPendingUpload || selectedIds.length === 0 || (!baseCaption && mediaAssets.length === 0)} onClick={() => publish({ mode: 'schedule' })} className="focus-ring flex items-center justify-center gap-2 rounded-xl border border-mint text-mint px-3 py-2.5 text-sm font-semibold hover:bg-mint/10 transition disabled:opacity-50">

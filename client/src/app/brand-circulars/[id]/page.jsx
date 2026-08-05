@@ -101,8 +101,8 @@ export default function BrandCircularDetailPage() {
         {isBrandRep(user) ? (
           <>
             <div className="flex flex-wrap gap-2">
-              <button disabled={busy === 'publish'} onClick={() => transition('publish')} className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[#05130d]">Publish</button>
-              <button disabled={busy === 'close'} onClick={() => transition('close')} className="focus-ring rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-[#05130d]">Close</button>
+              <button disabled={busy === 'publish'} onClick={() => transition('publish')} className="focus-ring rounded-xl bg-mint px-3 py-2 text-sm font-semibold text-[var(--accent-fg)]">Publish</button>
+              <button disabled={busy === 'close'} onClick={() => transition('close')} className="focus-ring rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-[var(--accent-fg)]">Close</button>
               <button disabled={busy === 'archive'} onClick={() => transition('archive')} className="focus-ring rounded-xl border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]">Archive</button>
             </div>
             <ApplicationReviewPanel applications={applications} onChanged={load} />
