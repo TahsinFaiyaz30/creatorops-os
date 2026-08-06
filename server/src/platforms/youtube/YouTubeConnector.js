@@ -1,6 +1,6 @@
 import env from '../../config/env.js';
 import { inspectVideoMetadata } from '../../services/mediaMetadata.service.js';
-import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
+import BasePlatformConnector, { connectorResult, okResult, unavailableResult } from '../BasePlatformConnector.js';
 
 const YOUTUBE_UPLOAD_CHUNK_BYTES = 16 * 1024 * 1024;
 const YOUTUBE_SHORTS_MAX_DURATION_SECONDS = 3 * 60;
@@ -767,6 +767,51 @@ export default class YouTubeConnector extends BasePlatformConnector {
     });
     if (!result.ok) return result;
     return okResult({ providerReplyId: result.data?.id || '', rawResponse: result.data });
+  }
+
+  getAccountProfileUrl(connection) {
+    /* customUrl (`@handle`) is the friendlier address; channel id always resolves.
+       The `@` stays literal — encoding it to %40 is what YouTube redirects away from. */
+    const handle = String(connection?.accountHandle || '').trim();
+    if (handle.startsWith('@')) return `https://www.youtube.com/@${encodeURIComponent(this.stripHandlePrefix(handle))}`;
+    return connection?.externalAccountId
+      ? `https://www.youtube.com/channel/${encodeURIComponent(connection.externalAccountId)}`
+      : '';
+  }
+
+  async fetchAudienceMetrics(connection) {
+    const scopeCheck = this.requireScopes(
+      connection,
+      ['https://www.googleapis.com/auth/youtube.readonly'],
+      'read YouTube channel subscriber counts'
+    );
+    if (!scopeCheck.ok) return scopeCheck;
+
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored YouTube access token was found. Reconnect this account.' });
+    }
+
+    const result = await this.requestJson('https://www.googleapis.com/youtube/v3/channels?part=statistics&mine=true', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!result.ok) return result;
+
+    const statistics = result.data?.items?.[0]?.statistics;
+    if (!statistics) {
+      return unavailableResult('YouTube did not return channel statistics for this account.');
+    }
+    /* hiddenSubscriberCount channels legitimately have no readable number. */
+    const subscribers = statistics.hiddenSubscriberCount ? null : Number(statistics.subscriberCount || 0);
+    if (subscribers === null) {
+      return unavailableResult('This YouTube channel hides its subscriber count, so the number cannot be read.');
+    }
+    return okResult({
+      followers: subscribers,
+      subscribers,
+      lifetimeViews: Number(statistics.viewCount || 0),
+      raw: statistics
+    }, 'YouTube subscriber count read through the YouTube Data API.');
   }
 
   async fetchAnalytics(connection, providerPostId) {

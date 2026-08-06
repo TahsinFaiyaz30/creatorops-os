@@ -1,87 +1,338 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Apply to a brand circular.
+ *
+ * Three rules the old form did not enforce:
+ *
+ *  1. Exactly two posts. It offered "up to two" posts *and* "up to two" media
+ *     assets, so an application could arrive with nothing attached, and two
+ *     applicants were never comparable. A published post already carries its own
+ *     media and spans platforms, so the separate media picker is gone entirely.
+ *  2. Platform coverage. A circular naming Facebook + YouTube + LinkedIn is only
+ *     open to creators who have published on all three; the gate is enforced
+ *     server-side and mirrored here so it is visible before writing anything.
+ *  3. Analytics are not a field. The server reads the creator's own connected
+ *     platforms, averages the last 30 days across the circular's required
+ *     platforms, and freezes that onto the application — nothing to choose.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+import { useEffect, useMemo, useState } from 'react';
+import { motion } from 'motion/react';
+import {
+  CheckCircle2, CircleAlert, Lock, Send, Camera, ImageOff, BarChart3, ShieldCheck
+} from 'lucide-react';
+
+import { Badge, Button, Notice, Skeleton, Textarea } from '../ds';
 import { api } from '../../lib/api';
 import { formatPlatform } from '../../lib/platforms';
+import { MeanTiles, PlatformMeanChart } from './ApplicantAnalytics';
 
-export default function CircularApplicationForm({ onSubmit, statistics, busy }) {
+const EASE = [0.16, 1, 0.3, 1];
+
+const idOf = item => String(item?._id || item?.id || '');
+
+export default function CircularApplicationForm({ circularId, onSubmit, busy }) {
   const [message, setMessage] = useState('');
   const [summary, setSummary] = useState('');
-  const [posts, setPosts] = useState([]);
-  const [mediaAssets, setMediaAssets] = useState([]);
+  const [posts, setPosts] = useState(null);
   const [selectedPostIds, setSelectedPostIds] = useState([]);
-  const [selectedMediaAssetIds, setSelectedMediaAssetIds] = useState([]);
+  const [eligibility, setEligibility] = useState(null);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    Promise.allSettled([
-      api.get('/api/social/posts'),
-      api.get('/api/media')
-    ]).then(results => {
-      setPosts(results[0].value?.data?.posts || []);
-      setMediaAssets(results[1].value?.data?.mediaAssets || []);
-    });
-  }, []);
+    if (!circularId) return;
+    let cancelled = false;
 
-  const toggle = (id, values, setter) => {
-    setter(values.includes(id) ? values.filter(value => value !== id) : [...values, id].slice(0, 2));
+    Promise.all([
+      api.get(`/api/brand-circulars/${circularId}/eligibility`),
+      api.get('/api/social/posts').catch(() => null)
+    ])
+      .then(([eligibilityPayload, postsPayload]) => {
+        if (cancelled) return;
+        setEligibility(eligibilityPayload.data.eligibility);
+        setPosts((postsPayload?.data?.posts || []).filter(post => post.status === 'published'));
+      })
+      .catch(err => {
+        if (!cancelled) setLoadError(err.message);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [circularId]);
+
+  const requiredPostCount = eligibility?.requiredPostCount ?? 2;
+
+  const togglePost = id => {
+    setSelectedPostIds(current => {
+      if (current.includes(id)) return current.filter(value => value !== id);
+      /* Hard cap at the required count rather than silently trimming on submit. */
+      if (current.length >= requiredPostCount) return current;
+      return [...current, id];
+    });
   };
+
+  const selectionComplete = selectedPostIds.length === requiredPostCount;
+  const canSubmit = Boolean(eligibility?.canApply) && selectionComplete && !busy;
+
+  const blockedReason = useMemo(() => {
+    if (!eligibility) return '';
+    if (eligibility.alreadyApplied) return 'You have already applied to this circular.';
+    if (eligibility.deadlinePassed) return 'This circular deadline has passed.';
+    if (!eligibility.eligible) return eligibility.reason;
+    return '';
+  }, [eligibility]);
+
+  if (loadError) {
+    return <Notice tone="danger">{loadError}</Notice>;
+  }
+
+  if (!eligibility) {
+    return (
+      <section className="space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+        <Skeleton className="h-6 w-56" />
+        <Skeleton className="h-24" />
+        <Skeleton className="h-40" />
+      </section>
+    );
+  }
 
   return (
     <form
       onSubmit={event => {
         event.preventDefault();
-        onSubmit({ message, creatorProfileSummary: summary, selectedPostIds, selectedMediaAssetIds });
+        if (!canSubmit) return;
+        onSubmit({ message, creatorProfileSummary: summary, selectedPostIds });
       }}
-      className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4"
+      className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]/75 shadow-[var(--shadow)] backdrop-blur-xl"
     >
-      <h2 className="text-lg font-semibold text-[var(--text)]">Apply as creator</h2>
-      <p className="mt-1 text-sm text-[var(--muted)]">Your current real synced statistics snapshot will be attached. Unavailable metrics stay marked as unavailable.</p>
-      <textarea value={summary} onChange={event => setSummary(event.target.value)} placeholder="Creator profile summary" rows={3} className="focus-ring mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]" />
-      <textarea value={message} onChange={event => setMessage(event.target.value)} placeholder="Application message" rows={4} className="focus-ring mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]" />
-      <div className="mt-3 grid gap-2 text-xs text-[var(--muted)] md:grid-cols-3">
-        <span>Views: {statistics?.combinedStats?.views || 0}</span>
-        <span>Comments: {statistics?.combinedStats?.comments || 0}</span>
-        <span>Source: {statistics?.source || 'unavailable'}</span>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_80%_at_0%_0%,var(--accent-soft),transparent_58%)]"
+      />
+
+      <div className="relative space-y-5 p-4 sm:p-5">
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold tracking-tight text-[var(--text)]">Apply as creator</h2>
+            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-[var(--muted)]">
+              Attach exactly {requiredPostCount} published posts. Your last-{eligibility.windowDays}-day platform means are
+              generated by the server from your connected accounts and attached automatically — there is nothing to upload.
+            </p>
+          </div>
+          <Badge tone={eligibility.canApply ? 'success' : 'warning'}>
+            {eligibility.canApply ? <CheckCircle2 className="h-2.5 w-2.5" /> : <Lock className="h-2.5 w-2.5" />}
+            {eligibility.canApply ? 'Eligible' : 'Locked'}
+          </Badge>
+        </header>
+
+        <PlatformCoverage eligibility={eligibility} />
+
+        {blockedReason ? <Notice tone="warning">{blockedReason}</Notice> : null}
+
+        {eligibility.meanStatistics ? (
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight text-[var(--text)]">
+                <BarChart3 className="h-3.5 w-3.5 text-[var(--accent)]" />
+                Attached automatically
+              </h3>
+              <span className="text-[10px] text-[var(--muted)]">
+                Averaged across {eligibility.commonPlatforms.map(formatPlatform).join(', ')}
+              </span>
+            </div>
+            <MeanTiles statistics={eligibility.meanStatistics} />
+            {eligibility.meanStatistics.unavailableMessage ? (
+              <Notice tone="warning">{eligibility.meanStatistics.unavailableMessage}</Notice>
+            ) : null}
+            <PlatformMeanChart statistics={eligibility.meanStatistics} />
+          </section>
+        ) : null}
+
+        <section className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold tracking-tight text-[var(--text)]">
+              Select {requiredPostCount} published posts
+            </h3>
+            <Badge tone={selectionComplete ? 'success' : 'neutral'}>
+              {selectedPostIds.length}/{requiredPostCount} selected
+            </Badge>
+          </div>
+
+          {!posts ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <Skeleton key={index} className="h-24" />
+              ))}
+            </div>
+          ) : posts.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface2)] px-3 py-4 text-center text-xs text-[var(--muted)]">
+              You have no published posts yet. Publish through Dispatch first — a circular application is always backed by
+              real posts.
+            </p>
+          ) : (
+            <div className="grid max-h-[26rem] gap-2 overflow-auto pr-1 sm:grid-cols-2">
+              {posts.map((post, index) => (
+                <PostChoice
+                  key={idOf(post)}
+                  post={post}
+                  index={index}
+                  selected={selectedPostIds.includes(idOf(post))}
+                  disabled={!selectedPostIds.includes(idOf(post)) && selectedPostIds.length >= requiredPostCount}
+                  onToggle={() => togglePost(idOf(post))}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="grid gap-3 md:grid-cols-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-[var(--muted)]">Creator profile summary</span>
+            <Textarea
+              value={summary}
+              onChange={event => setSummary(event.target.value)}
+              placeholder="Who you are and the audience you reach"
+              rows={3}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-[var(--muted)]">Application message</span>
+            <Textarea
+              value={message}
+              onChange={event => setMessage(event.target.value)}
+              placeholder="Why this product fits your audience"
+              rows={3}
+            />
+          </label>
+        </section>
+
+        <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border)] pt-4">
+          <Button type="submit" variant="primary" disabled={!canSubmit} loading={busy}>
+            {busy ? null : <Send className="h-4 w-4" />}
+            Submit application
+          </Button>
+          <p className="flex items-center gap-1.5 text-[11px] text-[var(--muted)]">
+            <ShieldCheck className="h-3 w-3 text-[var(--accent)]" />
+            {selectionComplete
+              ? 'Your two posts and the generated means are sent together.'
+              : `Select ${requiredPostCount - selectedPostIds.length} more post${
+                  requiredPostCount - selectedPostIds.length === 1 ? '' : 's'
+                } to enable submission.`}
+          </p>
+        </div>
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <AttachmentPicker
-          title="Attach up to two real posts"
-          empty="No real published posts available for this creator."
-          items={posts}
-          selectedIds={selectedPostIds}
-          onToggle={id => toggle(id, selectedPostIds, setSelectedPostIds)}
-          renderItem={post => `${formatPlatform(post.platform)} · ${post.caption || post.providerPostUrl || post.providerPostId || 'Published post'}`}
-        />
-        <AttachmentPicker
-          title="Attach up to two media assets"
-          empty="No uploaded media assets available."
-          items={mediaAssets}
-          selectedIds={selectedMediaAssetIds}
-          onToggle={id => toggle(id, selectedMediaAssetIds, setSelectedMediaAssetIds)}
-          renderItem={asset => `${asset.mediaType || 'media'} · ${asset.originalName || asset.publicUrl}`}
-        />
-      </div>
-      <button type="submit" disabled={busy} className="focus-ring mt-4 rounded-xl bg-mint px-4 py-2 text-sm font-semibold text-[var(--accent-fg)] disabled:opacity-50">
-        {busy ? 'Submitting...' : 'Submit application'}
-      </button>
     </form>
   );
 }
 
-function AttachmentPicker({ title, empty, items, selectedIds, onToggle, renderItem }) {
+/* ── Platform coverage strip ──────────────────────────────────────────────── */
+
+function PlatformCoverage({ eligibility }) {
+  const required = eligibility.requiredPlatforms || [];
+  const missing = new Set(eligibility.missingPlatforms || []);
+  const counts = eligibility.publishedPostCounts || {};
+
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] p-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{title}</div>
-      <div className="mt-2 max-h-48 space-y-2 overflow-auto">
-        {items.slice(0, 8).map(item => (
-          <label key={item._id} className="flex items-start gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2 text-xs text-[var(--text)]">
-            <input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => onToggle(item._id)} />
-            <span>{renderItem(item)}</span>
-          </label>
-        ))}
-        {items.length === 0 && <p className="text-xs text-[var(--muted)]">{empty}</p>}
+    <section className="rounded-xl border border-[var(--border)] bg-[var(--surface2)]/70 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Platform requirement</h3>
+        <span className="text-[10px] text-[var(--muted)]">
+          {required.length - missing.size}/{required.length} covered
+        </span>
       </div>
-      <p className="mt-2 text-xs text-[var(--muted)]">Selected: {selectedIds.length}/2</p>
-    </div>
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {required.map(platform => {
+          const isMissing = missing.has(platform);
+          return (
+            <span
+              key={platform}
+              className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-semibold ${
+                isMissing
+                  ? 'border-danger/30 bg-danger/10 text-danger'
+                  : 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]'
+              }`}
+            >
+              {isMissing ? <CircleAlert className="h-2.5 w-2.5" /> : <CheckCircle2 className="h-2.5 w-2.5" />}
+              {formatPlatform(platform)}
+              <span className="tabular-nums opacity-70">{counts[platform]?.postCount ?? 0}</span>
+            </span>
+          );
+        })}
+        {required.length === 0 ? (
+          <span className="text-[11px] text-[var(--muted)]">This circular does not name any platform.</span>
+        ) : null}
+      </div>
+
+      {eligibility.extraPlatforms?.length ? (
+        <p className="mt-2 text-[10px] leading-relaxed text-[var(--muted)]">
+          Also published on {eligibility.extraPlatforms.map(formatPlatform).join(', ')} — outside this circular's
+          requirement, so excluded from the mean.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/* ── Post choice card ─────────────────────────────────────────────────────── */
+
+function PostChoice({ post, index, selected, disabled, onToggle }) {
+  const media = (post.mediaAssetIds || []).find(asset => asset?.publicUrl) || null;
+  const [broken, setBroken] = useState(false);
+
+  /* The checkbox is visually hidden, so focus-within puts the ring on the card. */
+  return (
+    <motion.label
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: EASE, delay: Math.min(index, 8) * 0.03 }}
+      className={`flex cursor-pointer gap-2.5 rounded-xl border p-2.5 transition-colors focus-within:ring-2 focus-within:ring-[var(--accent)] ${
+        selected
+          ? 'border-[var(--accent-line)] bg-[var(--accent-soft)]'
+          : disabled
+            ? 'cursor-not-allowed border-[var(--border)] bg-[var(--surface2)]/40 opacity-50'
+            : 'border-[var(--border)] bg-[var(--surface2)] hover:border-[var(--border-strong)]'
+      }`}
+    >
+      <input
+        type="checkbox"
+        className="sr-only"
+        checked={selected}
+        disabled={disabled}
+        onChange={onToggle}
+      />
+
+      <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface3)]">
+        {media && !broken ? (
+          media.mediaType === 'video' ? (
+            <video src={media.publicUrl} className="h-full w-full object-cover" muted playsInline preload="metadata" onError={() => setBroken(true)} />
+          ) : (
+            <img src={media.publicUrl} alt="" className="h-full w-full object-cover" onError={() => setBroken(true)} />
+          )
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">
+            {broken ? <ImageOff className="h-4 w-4 text-[var(--muted)]" /> : <Camera className="h-4 w-4 text-[var(--muted)]" />}
+          </div>
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <Badge tone={selected ? 'accent' : 'neutral'}>{formatPlatform(post.platform)}</Badge>
+          {selected ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" /> : null}
+        </div>
+        <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-[var(--text-2)]">
+          {post.caption || post.contentItemId?.title || 'Published post'}
+        </p>
+        <p className="mt-0.5 truncate text-[10px] text-[var(--muted)]">
+          {post.publishedAt ? new Date(post.publishedAt).toLocaleDateString() : 'Not dated'}
+          {post.accountSnapshot?.accountName ? ` · ${post.accountSnapshot.accountName}` : ''}
+        </p>
+      </div>
+    </motion.label>
   );
 }

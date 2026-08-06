@@ -1,5 +1,5 @@
 import env from '../../config/env.js';
-import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
+import BasePlatformConnector, { connectorResult, okResult, unavailableResult } from '../BasePlatformConnector.js';
 
 export default class PinterestConnector extends BasePlatformConnector {
   constructor() {
@@ -112,6 +112,26 @@ export default class PinterestConnector extends BasePlatformConnector {
     });
     if (!result.ok) return result;
     return okResult({ account: result.data }, 'Pinterest token verified through the Pinterest API.');
+  }
+
+  getAccountProfileUrl(connection) {
+    const username = this.stripHandlePrefix(connection?.accountHandle);
+    return username ? `https://www.pinterest.com/${encodeURIComponent(username)}/` : '';
+  }
+
+  async fetchAudienceMetrics(connection) {
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored Pinterest access token was found. Reconnect this account.' });
+    }
+    const result = await this.requestJson('https://api.pinterest.com/v5/user_account', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!result.ok) return result;
+    if (result.data?.follower_count === undefined || result.data?.follower_count === null) {
+      return unavailableResult('Pinterest did not return a follower count for this account.');
+    }
+    return okResult({ followers: Number(result.data.follower_count), raw: result.data }, 'Pinterest follower count read through the Pinterest API.');
   }
 
   validatePublishPayload(payload, connection) {

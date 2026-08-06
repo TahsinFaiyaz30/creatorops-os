@@ -15,17 +15,14 @@ export default function BrandCircularDetailPage() {
   const [user, setUser] = useState(null);
   const [circular, setCircular] = useState(null);
   const [applications, setApplications] = useState([]);
-  const [statistics, setStatistics] = useState(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState('');
+  /* Bumping this remounts the form so it re-reads eligibility after a submit. */
+  const [applicationVersion, setApplicationVersion] = useState(0);
 
   const load = async () => {
-    const [circularPayload, statsPayload] = await Promise.all([
-      api.get(`/api/brand-circulars/${params.id}`),
-      api.get('/api/statistics/creator').catch(() => null)
-    ]);
+    const circularPayload = await api.get(`/api/brand-circulars/${params.id}`);
     setCircular(circularPayload.data.circular);
-    setStatistics(statsPayload?.data?.statistics || null);
     const currentUser = getUser();
     if (isBrandRep(currentUser)) {
       const appPayload = await api.get(`/api/brand-circulars/${params.id}/applications`);
@@ -55,7 +52,8 @@ export default function BrandCircularDetailPage() {
     setBusy('apply');
     try {
       await api.post(`/api/brand-circulars/${params.id}/apply`, body);
-      setMessage('Application submitted with current statistics snapshot.');
+      setMessage('Application submitted with your two posts and the generated platform means.');
+      setApplicationVersion(version => version + 1);
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -108,7 +106,12 @@ export default function BrandCircularDetailPage() {
             <ApplicationReviewPanel applications={applications} onChanged={load} />
           </>
         ) : (
-          <CircularApplicationForm statistics={statistics} busy={busy === 'apply'} onSubmit={apply} />
+          <CircularApplicationForm
+            key={applicationVersion}
+            circularId={params.id}
+            busy={busy === 'apply'}
+            onSubmit={apply}
+          />
         )}
       </div>
     </AppShell>

@@ -165,6 +165,27 @@ export default class FacebookConnector extends BasePlatformConnector {
     return okResult({ providerPostId, rawResponse: result.data }, 'Facebook post deleted through the Graph API.');
   }
 
+  getAccountProfileUrl(connection) {
+    /* The stored handle is the Page's display name, so the numeric id is what resolves. */
+    return connection?.externalAccountId ? `https://www.facebook.com/${encodeURIComponent(connection.externalAccountId)}` : '';
+  }
+
+  async fetchAudienceMetrics(connection) {
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored Facebook access token was found. Reconnect this account.' });
+    }
+    const result = await this.requestJson(
+      `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(connection.externalAccountId)}?fields=followers_count,fan_count&access_token=${encodeURIComponent(token)}`
+    );
+    if (!result.ok) return result;
+    const followers = result.data?.followers_count ?? result.data?.fan_count;
+    if (followers === undefined || followers === null) {
+      return unavailableResult('Facebook did not return a follower count for this Page.');
+    }
+    return okResult({ followers: Number(followers), raw: result.data }, 'Facebook Page follower count read through the Graph API.');
+  }
+
   async fetchAnalytics(connection, providerPostId) {
     const token = this.getAccessToken(connection);
     const result = await this.requestJson(

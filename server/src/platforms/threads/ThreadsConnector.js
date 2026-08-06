@@ -1,5 +1,5 @@
 import env from '../../config/env.js';
-import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
+import BasePlatformConnector, { connectorResult, okResult, unavailableResult } from '../BasePlatformConnector.js';
 
 const THREADS_PROVIDER_SESSION_TYPE = 'threads_container_v1';
 
@@ -96,6 +96,29 @@ export default class ThreadsConnector extends BasePlatformConnector {
     );
     if (!result.ok) return result;
     return okResult({ account: result.data }, 'Threads token verified through the Threads API.');
+  }
+
+  getAccountProfileUrl(connection) {
+    /* The `@` stays literal; encoding it to %40 breaks the profile route. */
+    const handle = String(connection?.accountHandle || '').trim();
+    return handle.startsWith('@') ? `https://www.threads.net/@${encodeURIComponent(this.stripHandlePrefix(handle))}` : '';
+  }
+
+  async fetchAudienceMetrics(connection) {
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored Threads access token was found. Reconnect this account.' });
+    }
+    const result = await this.requestJson(
+      `https://graph.threads.net/v1.0/${encodeURIComponent(connection.externalAccountId)}/threads_insights?metric=followers_count&access_token=${encodeURIComponent(token)}`
+    );
+    if (!result.ok) return result;
+    const metric = (result.data?.data || []).find(item => item.name === 'followers_count');
+    const followers = metric?.total_value?.value ?? metric?.values?.[0]?.value;
+    if (followers === undefined || followers === null) {
+      return unavailableResult('Threads did not return a follower count for this account.');
+    }
+    return okResult({ followers: Number(followers), raw: result.data }, 'Threads follower count read through the Threads API.');
   }
 
   validatePublishPayload(payload, connection) {

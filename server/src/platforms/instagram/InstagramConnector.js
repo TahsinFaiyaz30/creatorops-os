@@ -1,5 +1,5 @@
 import env from '../../config/env.js';
-import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
+import BasePlatformConnector, { connectorResult, okResult, unavailableResult } from '../BasePlatformConnector.js';
 
 const GRAPH_VERSION = 'v20.0';
 const INSTAGRAM_PROVIDER_SESSION_TYPE = 'instagram_container_v1';
@@ -201,6 +201,29 @@ export default class InstagramConnector extends BasePlatformConnector {
       providerPostUrl: '',
       rawResponse: { container: containerData || { id: containerId }, published: published.data }
     }, 'Instagram media published through the official API.');
+  }
+
+  getAccountProfileUrl(connection) {
+    /* Handle is stored as `@username`; the numeric IG user id is not addressable. */
+    const username = this.stripHandlePrefix(connection?.accountHandle);
+    return username && username !== connection?.externalAccountId
+      ? `https://www.instagram.com/${encodeURIComponent(username)}/`
+      : '';
+  }
+
+  async fetchAudienceMetrics(connection) {
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored Instagram access token was found. Reconnect this account.' });
+    }
+    const result = await this.requestJson(
+      `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(connection.externalAccountId)}?fields=followers_count,media_count&access_token=${encodeURIComponent(token)}`
+    );
+    if (!result.ok) return result;
+    if (result.data?.followers_count === undefined || result.data?.followers_count === null) {
+      return unavailableResult('Instagram did not return a follower count for this professional account.');
+    }
+    return okResult({ followers: Number(result.data.followers_count), raw: result.data }, 'Instagram follower count read through the Graph API.');
   }
 
   async fetchAnalytics(connection, providerPostId) {

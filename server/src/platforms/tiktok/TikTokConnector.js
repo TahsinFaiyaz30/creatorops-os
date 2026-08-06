@@ -1,5 +1,5 @@
 import env from '../../config/env.js';
-import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
+import BasePlatformConnector, { connectorResult, okResult, unavailableResult } from '../BasePlatformConnector.js';
 
 export default class TikTokConnector extends BasePlatformConnector {
   constructor() {
@@ -107,6 +107,30 @@ export default class TikTokConnector extends BasePlatformConnector {
     });
     if (!result.ok) return result;
     return okResult({ account: result.data?.data?.user || null }, 'TikTok token verified through the TikTok API.');
+  }
+
+  getAccountProfileUrl(connection) {
+    /* Falls back to open_id when no username was granted, which is not addressable.
+       The `@` stays literal; encoding it to %40 breaks the profile route. */
+    const handle = String(connection?.accountHandle || '').trim();
+    return handle.startsWith('@') ? `https://www.tiktok.com/@${encodeURIComponent(this.stripHandlePrefix(handle))}` : '';
+  }
+
+  async fetchAudienceMetrics(connection) {
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored TikTok access token was found. Reconnect this account.' });
+    }
+    /* follower_count sits behind user.info.stats, which is granted separately from user.info.basic. */
+    const result = await this.requestJson('https://open.tiktokapis.com/v2/user/info/?fields=open_id,follower_count,likes_count,video_count', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!result.ok) return result;
+    const user = result.data?.data?.user;
+    if (!user || user.follower_count === undefined || user.follower_count === null) {
+      return unavailableResult('TikTok did not return a follower count. The user.info.stats scope is required and must be granted on reconnect.');
+    }
+    return okResult({ followers: Number(user.follower_count), raw: user }, 'TikTok follower count read through the TikTok API.');
   }
 
   validatePublishPayload(payload, connection) {

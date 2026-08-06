@@ -144,6 +144,99 @@ export const refreshStoredConnectionIfNeeded = async ({ connection, connector, f
   return { refreshed: true, result };
 };
 
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Audience (follower / subscriber) sync.
+ *
+ * Post metrics arrive per post through SocialMetricSnapshot. Follower counts do
+ * not belong to a post, so they are read from the provider's account endpoint
+ * and cached on the connection. Every failure path is recorded rather than
+ * swallowed: a refused field leaves `followers: null` plus the reason, so a
+ * brand reading a creator's mean can tell "no followers" from "not readable".
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+export const syncConnectionAudience = async ({ connection, connector }) => {
+  if (!connection || !connector) return null;
+
+  /*
+   * A failed read records why it failed but keeps whatever number was last read
+   * successfully. Nulling it would let one provider timeout silently shrink a
+   * creator's follower mean, and `syncedAt` already says how stale the figure is.
+   */
+  const applyFailure = (code, message) => {
+    const previous = connection.audience?.toObject?.() || connection.audience || {};
+    connection.audience = {
+      ...previous,
+      source: previous.followers === null || previous.followers === undefined ? 'unavailable' : 'stale',
+      unavailableCode: code || 'UNAVAILABLE',
+      unavailableReason: message || 'Audience size is unavailable for this connection.'
+    };
+    return connection.audience;
+  };
+
+  if (connection.status !== 'connected') {
+    applyFailure('NOT_CONNECTED', `This ${connector.getDisplayName()} account is ${connection.status || 'not connected'}.`);
+    await connection.save();
+    return connection.audience;
+  }
+
+  let result;
+  try {
+    await refreshStoredConnectionIfNeeded({ connection, connector });
+    result = await connector.fetchAudienceMetrics(connection);
+  } catch (error) {
+    result = { ok: false, code: 'SYNC_FAILED', message: error.message || 'Audience sync failed.' };
+  }
+
+  if (!result?.ok) {
+    applyFailure(result?.code, result?.message);
+  } else {
+    const followers = result.data?.followers;
+    connection.audience = {
+      followers: followers === undefined || followers === null ? null : Number(followers),
+      subscribers: result.data?.subscribers === undefined || result.data?.subscribers === null ? null : Number(result.data.subscribers),
+      lifetimeViews:
+        result.data?.lifetimeViews === undefined || result.data?.lifetimeViews === null ? null : Number(result.data.lifetimeViews),
+      source: 'real_sync',
+      syncedAt: new Date(),
+      unavailableCode: '',
+      unavailableReason: ''
+    };
+  }
+
+  connection.audience.syncedAt = connection.audience.syncedAt || new Date();
+  await connection.save();
+  return connection.audience;
+};
+
+/**
+ * Best-effort refresh of every connected account in a workspace, optionally
+ * narrowed to a platform list. Never throws — a provider outage must not block
+ * whatever the caller is really doing (submitting an application, for example).
+ */
+export const syncWorkspaceAudience = async ({ workspaceId, platforms = null }) => {
+  const filter = { workspaceId, status: 'connected' };
+  if (Array.isArray(platforms) && platforms.length > 0) {
+    filter.platform = { $in: [...new Set(platforms.flatMap(getConnectionPlatformsForQuery))] };
+  }
+
+  const connections = await PlatformConnection.find(filter).select(
+    '+encryptedAccessToken +encryptedRefreshToken +encryptedApiSecret +encryptedAppPassword'
+  );
+
+  return Promise.all(
+    connections.map(async connection => {
+      const connector = getConnector(connection.platform);
+      try {
+        const audience = await syncConnectionAudience({ connection, connector });
+        return { platform: connection.platform, connectionId: connection._id, audience };
+      } catch (error) {
+        return { platform: connection.platform, connectionId: connection._id, error: error.message };
+      }
+    })
+  );
+};
+
 const logOAuthCallback = state => {
   console.info(
     '[oauth.callback]',
@@ -394,6 +487,11 @@ export const healthCheckConnection = async ({ user, connectionId }) => {
   connection.lastErrorMessage = result.ok ? '' : result.message;
   connection.status = statusFromHealthResult(result, connection.status);
   await connection.save();
+
+  /* A verified token is the right moment to re-read the account's follower count. */
+  if (result.ok) {
+    await syncConnectionAudience({ connection, connector }).catch(() => {});
+  }
   return {
     connection: sanitizeConnection(connection),
     result: {

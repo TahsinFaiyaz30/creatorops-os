@@ -55,6 +55,10 @@ export default class WordPressConnector extends BasePlatformConnector {
     return okResult({}, 'WordPress payload is publishable.');
   }
 
+  getAccountProfileUrl(connection) {
+    return connection?.platformMetadata?.baseUrl || '';
+  }
+
   async healthCheck(connection) {
     const base = await super.healthCheck(connection);
     if (base.code !== 'CAPABILITY_UNAVAILABLE') return base;

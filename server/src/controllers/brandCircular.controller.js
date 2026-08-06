@@ -3,7 +3,9 @@ import {
   applyToCircular,
   closeBrandCircular,
   createBrandCircular,
+  getApplicantCreatorProfile,
   getBrandCircular,
+  getCircularApplicationEligibility,
   listApplicationsForUser,
   listBrandCirculars,
   listCircularApplications,
@@ -82,6 +84,24 @@ export const applyCircular = async (req, res, next) => {
   try {
     const application = await applyToCircular({ user: req.user, circularId: req.params.id, input: req.body });
     res.status(201).json({ data: { application } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getApplicationEligibility = async (req, res, next) => {
+  try {
+    const eligibility = await getCircularApplicationEligibility({ user: req.user, circularId: req.params.id });
+    res.json({ data: { eligibility } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getApplicantProfile = async (req, res, next) => {
+  try {
+    const profile = await getApplicantCreatorProfile({ user: req.user, applicationId: req.params.id });
+    res.json({ data: { profile } });
   } catch (error) {
     next(error);
   }

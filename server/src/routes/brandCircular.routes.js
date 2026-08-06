@@ -6,6 +6,8 @@ import {
   archiveCircular,
   closeCircular,
   createCircular,
+  getApplicantProfile,
+  getApplicationEligibility,
   getCircular,
   getCircularApplications,
   getCirculars,
@@ -31,9 +33,11 @@ router.patch('/brand-circulars/:id', requireRole(['brand_rep']), patchCircular);
 router.post('/brand-circulars/:id/publish', requireRole(['brand_rep']), publishCircular);
 router.post('/brand-circulars/:id/close', requireRole(['brand_rep']), closeCircular);
 router.post('/brand-circulars/:id/archive', requireRole(['brand_rep']), archiveCircular);
+router.get('/brand-circulars/:id/eligibility', getApplicationEligibility);
 router.post('/brand-circulars/:id/apply', applyCircular);
 router.get('/brand-circulars/:id/applications', requireRole(['brand_rep']), getCircularApplications);
 router.get('/applications', getMyApplications);
+router.get('/applications/:id/creator-profile', requireRole(['brand_rep']), getApplicantProfile);
 router.post('/applications/:id/view-profile', requireRole(['brand_rep']), viewProfile);
 router.post('/applications/:id/shortlist', requireRole(['brand_rep']), shortlist);
 router.post('/applications/:id/reject', requireRole(['brand_rep']), reject);

@@ -46,6 +46,11 @@ export default class ShopifyConnector extends BasePlatformConnector {
     }, 'Shopify Admin API token verified.');
   }
 
+  getAccountProfileUrl(connection) {
+    const shopDomain = connection?.platformMetadata?.shopDomain;
+    return shopDomain ? `https://${shopDomain}` : '';
+  }
+
   getAuthorizationUrl({ state, redirectUri }) {
     if (!env.oauth.shopify.shopDomain || !env.oauth.shopify.apiKey || !env.oauth.shopify.apiSecret) {
       return super.getAuthorizationUrl();

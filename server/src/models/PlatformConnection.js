@@ -22,6 +22,27 @@ const capabilitySchema = new Schema(
   { _id: false }
 );
 
+/*
+ * Account-level audience numbers, read from the provider's own account endpoint.
+ * Post metrics live on SocialMetricSnapshot; follower counts are not attached to
+ * any single post, so they belong on the connection. `null` means the provider
+ * never returned the number — it is never defaulted to 0, because a real account
+ * with 0 followers and an account whose API refused the field are not the same
+ * thing and a brand reading a creator's mean must be able to tell them apart.
+ */
+const audienceSchema = new Schema(
+  {
+    followers: { type: Number, default: null },
+    subscribers: { type: Number, default: null },
+    lifetimeViews: { type: Number, default: null },
+    source: { type: String, default: '' },
+    syncedAt: { type: Date, default: null },
+    unavailableCode: { type: String, default: '' },
+    unavailableReason: { type: String, default: '' }
+  },
+  { _id: false }
+);
+
 const platformConnectionSchema = new Schema(
   {
     workspaceId: {
@@ -102,6 +123,10 @@ const platformConnectionSchema = new Schema(
     },
     capabilities: {
       type: capabilitySchema,
+      default: () => ({})
+    },
+    audience: {
+      type: audienceSchema,
       default: () => ({})
     },
     lastHealthCheckAt: {

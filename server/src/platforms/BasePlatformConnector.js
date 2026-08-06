@@ -231,6 +231,30 @@ export default class BasePlatformConnector {
     return unavailableResult(`${this.displayName} analytics are unavailable with the current connector/scopes.`);
   }
 
+  /*
+   * Account-level audience size (followers / subscribers), as opposed to
+   * per-post metrics. Connectors that cannot read it with their granted scopes
+   * keep this default, so the number stays explicitly unavailable rather than
+   * silently becoming 0.
+   */
+  async fetchAudienceMetrics() {
+    return unavailableResult(`${this.displayName} does not expose an audience size the current connector/scopes can read.`);
+  }
+
+  /**
+   * Public web address of the connected account, built from what the provider
+   * returned at connect time. Empty when no public URL can be derived — better
+   * a plain handle than a link that 404s.
+   */
+  getAccountProfileUrl() {
+    return '';
+  }
+
+  /** Handles are stored as the provider writes them, some with a leading `@`. */
+  stripHandlePrefix(handle) {
+    return String(handle || '').trim().replace(/^@+/, '');
+  }
+
   async fetchComments() {
     return unavailableResult(`${this.displayName} comments are unavailable with the current connector/scopes.`);
   }

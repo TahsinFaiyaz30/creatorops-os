@@ -160,13 +160,33 @@ Visibility values are `public`, `private`, and `friends_only`. The backend valid
 | POST | `/api/brand-circulars/:id/publish` | includes `brand_rep` | Publish own circular |
 | POST | `/api/brand-circulars/:id/close` | includes `brand_rep` | Close own circular |
 | POST | `/api/brand-circulars/:id/archive` | includes `brand_rep` | Archive own circular |
-| POST | `/api/brand-circulars/:id/apply` | Auth | Creator applies to an open circular with stats snapshot |
+| GET | `/api/brand-circulars/:id/eligibility` | Auth | Platform coverage, apply gates, and a preview of the means that will be attached |
+| POST | `/api/brand-circulars/:id/apply` | Auth | Creator applies with exactly 2 published posts; means are generated server-side |
 | GET | `/api/brand-circulars/:id/applications` | includes `brand_rep` | List applications for own circular |
 | GET | `/api/applications` | Auth | List applications relevant to the current user |
-| POST | `/api/applications/:id/view-profile` | includes `brand_rep` | Mark profile viewed and notify creator |
+| GET | `/api/applications/:id/creator-profile` | includes `brand_rep` | Applicant profile, posts and recomputed means for an application on own circular |
+| POST | `/api/applications/:id/view-profile` | includes `brand_rep` | Mark profile viewed; notifies the creator on the first view only |
 | POST | `/api/applications/:id/shortlist` | includes `brand_rep` | Shortlist creator and notify creator |
 | POST | `/api/applications/:id/reject` | includes `brand_rep` | Reject creator and notify creator |
 | POST | `/api/applications/:id/accept` | includes `brand_rep` | Accept creator and notify creator |
+
+### Applying to a circular
+
+`POST /api/brand-circulars/:id/apply` accepts `{ message, creatorProfileSummary, selectedPostIds }` and rejects anything else:
+
+- **Exactly two `selectedPostIds`.** Not fewer, not more. Published posts already carry their own media, so there is no separate media attachment.
+- **Full platform coverage.** The creator must have published on every platform the circular names. Covering more platforms is fine; the extras are excluded from the figures.
+- **Server-generated analytics.** Nothing about the numbers is client-supplied. The server refreshes follower counts, then averages the last 30 days across the circular's required platforms — followers, views, likes, comments, shares, engagement and engagement rate — and freezes the result onto `meanStatsSnapshot`, with `commonPlatforms` and `analyticsWindow` alongside it.
+
+A metric the provider never returned stays `null` rather than becoming `0`, so a brand can distinguish "no followers" from "the API would not say".
+
+### Applicant ranking
+
+`GET /api/brand-circulars/:id/applications` returns applicants strongest first. The order comes from a `rankingScore` computed once at submit time from the three headline means, weighted views `0.50`, followers `0.25`, engagement `0.25`.
+
+Each mean is passed through `log1p` before weighting. Without that the weights would be decorative: followers routinely run an order of magnitude above the other means, so a plain weighted sum is decided by raw scale rather than by the weights, and a 400k-follower / 2k-view creator would outrank a 4k-follower / 60k-view one. A metric that is `null` drops out and the remaining weights renormalise, so an unreadable follower count is not scored as zero.
+
+The score is stored and indexed as `{ circularId: 1, rankingScore: -1, createdAt: -1 }`, so the list is read straight out of the index in order — no comparison sort runs per request. It is projected out of every response: it exists to order the list, not to be shown.
 
 ## Statistics
 

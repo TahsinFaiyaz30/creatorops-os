@@ -1,5 +1,5 @@
 import env from '../../config/env.js';
-import BasePlatformConnector, { connectorResult, okResult } from '../BasePlatformConnector.js';
+import BasePlatformConnector, { connectorResult, okResult, unavailableResult } from '../BasePlatformConnector.js';
 
 const X_PROVIDER_SESSION_TYPE = 'x_chunked_media_v2';
 const X_MEDIA_UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
@@ -309,6 +309,27 @@ export default class XConnector extends BasePlatformConnector {
     });
     if (!result.ok) return normalizeXResult(result);
     return okResult({ account: result.data?.data || null }, 'X token verified through the X API.');
+  }
+
+  getAccountProfileUrl(connection) {
+    const handle = String(connection?.accountHandle || '').trim();
+    return handle.startsWith('@') ? `https://x.com/${encodeURIComponent(this.stripHandlePrefix(handle))}` : '';
+  }
+
+  async fetchAudienceMetrics(connection) {
+    const token = this.getAccessToken(connection);
+    if (!token) {
+      return connectorResult({ code: 'INVALID_CREDENTIALS', message: 'No stored X access token was found. Reconnect this account.' });
+    }
+    const result = await this.requestJson('https://api.x.com/2/users/me?user.fields=public_metrics', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!result.ok) return normalizeXResult(result);
+    const followers = result.data?.data?.public_metrics?.followers_count;
+    if (followers === undefined || followers === null) {
+      return unavailableResult('X did not return public metrics for this account.');
+    }
+    return okResult({ followers: Number(followers), raw: result.data?.data?.public_metrics }, 'X follower count read through the X API.');
   }
 
   validatePublishPayload(payload, connection) {
