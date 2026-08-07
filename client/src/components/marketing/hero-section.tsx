@@ -1,8 +1,6 @@
 "use client";
 
-import Link from "next/link";
 import { motion, cubicBezier, useReducedMotion, type Variants } from "motion/react";
-import { ArrowRight, PlayCircle } from "lucide-react";
 
 import { Spotlight } from "@/components/ui/spotlight-new";
 import { BackgroundBeams } from "@/components/ui/background-beams";
@@ -11,7 +9,6 @@ import { ShootingStars } from "@/components/ui/shooting-stars";
 import { LayoutTextFlip } from "@/components/ui/layout-text-flip";
 import { TextGenerateEffect } from "@/components/ui/text-generate-effect";
 import { HoverBorderGradient } from "@/components/ui/hover-border-gradient";
-import ColourfulText from "@/components/ui/colourful-text";
 import {
   TextRevealCard,
   TextRevealCardDescription,
@@ -19,14 +16,6 @@ import {
 } from "@/components/ui/text-reveal-card";
 
 const easeOutExpo = cubicBezier(0.16, 1, 0.3, 1);
-
-const CAPABILITIES = [
-  "Campaign planning",
-  "AI repurposing",
-  "Creator review",
-  "Publishing",
-  "Analytics",
-];
 
 export default function HeroSection() {
   const reduceMotion = useReducedMotion();
@@ -120,7 +109,11 @@ export default function HeroSection() {
         >
           Every campaign. Every creator.
           <br />
-          Zero <ColourfulText text="context switching" />.
+          Zero{' '}
+          <span className="bg-gradient-to-r from-[var(--accent)] via-[#a78bfa] to-[#38bdf8] bg-clip-text text-transparent">
+            context switching
+          </span>
+          .
         </motion.h2>
 
         {/* Subcopy — word-by-word generate effect */}
@@ -132,54 +125,8 @@ export default function HeroSection() {
           />
         </motion.div>
 
-        {/* CTAs */}
-        <motion.div
-          variants={rise}
-          className="flex flex-col items-center gap-3 sm:flex-row sm:gap-4"
-        >
-          <motion.div
-            whileHover={reduceMotion ? undefined : { scale: 1.03 }}
-            whileTap={reduceMotion ? undefined : { scale: 0.97 }}
-            transition={{ type: "spring", stiffness: 420, damping: 26 }}
-          >
-            <Link
-              href="/signup"
-              className="focus-ring group relative inline-flex items-center gap-2 overflow-hidden rounded-full bg-[var(--accent)] px-7 py-3 text-sm font-semibold text-[var(--accent-fg)] shadow-[0_0_44px_-10px_var(--glow)] transition-shadow hover:shadow-[0_0_64px_-6px_var(--glow)]"
-            >
-              <motion.span
-                aria-hidden
-                className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-black/10 to-transparent"
-                animate={reduceMotion ? undefined : { translateX: ["-100%", "200%"] }}
-                transition={
-                  reduceMotion
-                    ? undefined
-                    : { duration: 2.2, repeat: Infinity, repeatDelay: 3.5, ease: "easeInOut" }
-                }
-              />
-              <span className="relative">Start free</span>
-              <ArrowRight
-                className="relative h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
-                aria-hidden
-              />
-            </Link>
-          </motion.div>
-
-          {/* Link wraps the gradient (as="div") instead of the gradient rendering
-              a <button> around a <Link> — an anchor inside a button is invalid
-              HTML and breaks keyboard semantics. */}
-          <Link href="/login" className="focus-ring rounded-full">
-            <HoverBorderGradient
-              as="div"
-              containerClassName="rounded-full"
-              className="flex items-center gap-2 bg-[var(--surface)] px-7 py-3 text-sm font-semibold text-[var(--text-2)]"
-            >
-              <PlayCircle className="h-4 w-4" aria-hidden />
-              See it live
-            </HoverBorderGradient>
-          </Link>
-        </motion.div>
-
-        {/* Interactive reveal card */}
+        {/* Interactive reveal card. The row of capability labels that used to sit
+            under it was the same five words the sections below already say. */}
         <motion.div variants={rise} className="w-full max-w-2xl">
           <TextRevealCard
             text="Six tools. Zero context."
@@ -192,18 +139,6 @@ export default function HeroSection() {
             </TextRevealCardDescription>
           </TextRevealCard>
         </motion.div>
-
-        {/* Capability rail */}
-        <motion.ul variants={rise} className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
-          {CAPABILITIES.map((label) => (
-            <li
-              key={label}
-              className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--muted)] transition-colors hover:text-[var(--muted)]"
-            >
-              {label}
-            </li>
-          ))}
-        </motion.ul>
       </motion.div>
     </section>
   );

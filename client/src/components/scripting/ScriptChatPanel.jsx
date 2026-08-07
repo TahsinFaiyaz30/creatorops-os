@@ -26,9 +26,10 @@ import {
   MessageSquarePlus, ArrowRightLeft, User as UserIcon, Film
 } from 'lucide-react';
 
-import { Surface, Badge, Button, Notice, Skeleton, EmptyState } from '../ds';
+import { Surface, Badge, Button, Skeleton, EmptyState } from '../ds';
 import { api } from '../../lib/api';
 import { platformOptions, formatPlatform } from '../../lib/platforms';
+import { useToastState } from '../ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -122,8 +123,8 @@ export default function ScriptChatPanel() {
   const [scriptType, setScriptType] = useState('reel script');
   const [campaignId, setCampaignId] = useState('');
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState('');
-  const [error, setError] = useState('');
+  const [notice, setNotice] = useToastState('success');
+  const [error, setError] = useToastState('danger');
   const scrollRef = useRef(null);
 
   /* GET /api/scripts + /api/campaigns — neither was wired before. */
@@ -375,8 +376,6 @@ export default function ScriptChatPanel() {
 
           {/* Composer */}
           <div className="border-t border-[var(--border)] bg-[var(--surface2)]/40 p-3">
-            {error ? <Notice tone="danger" className="mb-2">{error}</Notice> : null}
-            {notice ? <Notice tone="success" className="mb-2">{notice}</Notice> : null}
             <div className="flex items-end gap-2">
               <textarea
                 value={message}

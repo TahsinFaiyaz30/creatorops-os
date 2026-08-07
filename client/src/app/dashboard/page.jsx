@@ -19,8 +19,10 @@ import LiveEventFeed from '../../components/events/LiveEventFeed';
 import CreatorStatsCard from '../../components/statistics/CreatorStatsCard';
 import CombinedStatsGraph from '../../components/statistics/CombinedStatsGraph';
 import RoleBadge from '../../components/layout/RoleBadge';
+import BrandDashboard from '../../components/dashboard/BrandDashboard';
 import { api } from '../../lib/api';
 import { getUser } from '../../lib/auth';
+import { isBrandRep } from '../../lib/roles';
 
 import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
 import { GlareStat } from '../../components/ds';
@@ -107,6 +109,19 @@ export default function DashboardPage() {
     { icon: CheckCircle2,  label: 'Published jobs', value: stats.published, tint: 'from-emerald-500/40' },
     { icon: Radio,         label: 'Recent events',  value: stats.events,    tint: 'from-rose-500/40' }
   ];
+
+  /*
+   * A brand rep runs no campaigns, publishes nothing and has no team, so the
+   * creator dashboard rendered them a wall of zeroes. They get the queue they
+   * actually work from instead.
+   */
+  if (isBrandRep(user)) {
+    return (
+      <AppShell>
+        <BrandDashboard user={user} />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>

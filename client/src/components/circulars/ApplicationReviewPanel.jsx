@@ -28,6 +28,7 @@ import { Badge, Button, EmptyState, Notice } from '../ds';
 import { api } from '../../lib/api';
 import { formatPlatform } from '../../lib/platforms';
 import { MeanTiles, PlatformMeanChart, WindowTimeline, compactNumber } from './ApplicantAnalytics';
+import { useToastState } from '../ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -47,7 +48,7 @@ const profileHref = application => `/applications/${idOf(application)}/creator`;
 export default function ApplicationReviewPanel({ applications, onChanged }) {
   const [openApplication, setOpenApplication] = useState(null);
   const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useToastState('danger');
 
   /* Keep the modal in step with a refreshed list after a decision. */
   useEffect(() => {
@@ -81,7 +82,6 @@ export default function ApplicationReviewPanel({ applications, onChanged }) {
         </span>
       </div>
 
-      {error ? <Notice tone="danger">{error}</Notice> : null}
 
       {applications.length === 0 ? (
         <EmptyState

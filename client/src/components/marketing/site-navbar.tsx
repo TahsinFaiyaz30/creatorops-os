@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Navbar,
@@ -13,16 +13,27 @@ import {
   NavbarLogo,
   NavbarButton,
 } from "@/components/ui/resizable-navbar";
+import { getToken } from "@/lib/auth";
 
+/* No "Voices" — that section held placeholder testimonials and is gone, so the
+   link scrolled to an anchor that no longer exists. */
 const NAV_ITEMS = [
   { name: "Features", link: "#features" },
   { name: "Workflow", link: "#workflow" },
-  { name: "Voices", link: "#voices" },
   { name: "Reach", link: "#reach" },
 ];
 
 export default function SiteNavbar() {
   const [open, setOpen] = useState(false);
+  /*
+   * Auth state decides which door to show. "Sign in" pointed at /login, which
+   * bounces an already-signed-in visitor straight back out — so to someone with
+   * a session the button looked broken. Read in an effect, not during render:
+   * the token lives in localStorage, and touching it while rendering would make
+   * the server and client markup disagree.
+   */
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => setSignedIn(Boolean(getToken())), []);
 
   return (
     <Navbar className="fixed inset-x-0 top-0 z-50">
@@ -30,13 +41,29 @@ export default function SiteNavbar() {
       <NavBody>
         <NavbarLogo />
         <NavItems items={NAV_ITEMS} />
-        <div className="flex items-center gap-2">
-          <NavbarButton href="/login" variant="secondary">
-            Sign in
-          </NavbarButton>
-          <NavbarButton href="/signup" variant="dark">
-            Get started
-          </NavbarButton>
+        {/*
+          One primary door, not two competing ones. "Sign in" is a quiet text
+          link because returning users know where it is; the emphasis belongs on
+          the action a first-time visitor should take.
+        */}
+        <div className="flex items-center gap-4">
+          {signedIn ? (
+            <NavbarButton href="/dashboard" variant="dark" className="px-4 py-1.5 text-sm">
+              Dashboard
+            </NavbarButton>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="focus-ring rounded text-sm font-medium text-[var(--muted)] transition-colors hover:text-[var(--text)]"
+              >
+                Sign in
+              </Link>
+              <NavbarButton href="/signup" variant="dark" className="px-4 py-1.5 text-sm">
+                Get started
+              </NavbarButton>
+            </>
+          )}
         </div>
       </NavBody>
 
@@ -57,13 +84,25 @@ export default function SiteNavbar() {
               {item.name}
             </Link>
           ))}
-          <div className="mt-2 flex w-full flex-col gap-2">
-            <NavbarButton href="/login" variant="secondary" className="w-full text-center">
-              Sign in
-            </NavbarButton>
-            <NavbarButton href="/signup" variant="dark" className="w-full text-center">
-              Get started
-            </NavbarButton>
+          <div className="mt-2 flex w-full flex-col gap-3">
+            {signedIn ? (
+              <NavbarButton href="/dashboard" variant="dark" className="w-full text-center">
+                Dashboard
+              </NavbarButton>
+            ) : (
+              <>
+                <NavbarButton href="/signup" variant="dark" className="w-full text-center">
+                  Get started
+                </NavbarButton>
+                <Link
+                  href="/login"
+                  onClick={() => setOpen(false)}
+                  className="focus-ring w-full rounded py-1 text-center text-sm font-medium text-[var(--muted)]"
+                >
+                  Sign in
+                </Link>
+              </>
+            )}
           </div>
         </MobileNavMenu>
       </MobileNav>

@@ -158,6 +158,14 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent-line); }
 * { scrollbar-color: var(--border-strong) transparent; scrollbar-width: thin; }
 
+/*
+ * The nav rail scrolls but never shows a gutter. Collapsed it is 48px wide, and
+ * a 10px scrollbar there is a quarter of the content box — it pushed every icon
+ * off the centre line and read as a stray vertical rule down the rail.
+ */
+.rail-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.rail-scroll::-webkit-scrollbar { width: 0; height: 0; }
+
 /* ── Sidebar active link — was white-on-white in light mode ────────────────── */
 .nav-active {
   background: var(--accent-soft);
@@ -229,60 +237,23 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
               transform 0.22s cubic-bezier(0.4,0,0.2,1);
 }
 
-/* ── Sidebar Redesign Animations ───────────────────────────────────────────── */
-
-/* Active pill gradient that slowly shifts colour position */
-@keyframes gradient-shift {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-/* Subtle pulse glow behind the active nav icon */
-@keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 8px 2px rgba(167, 139, 250, 0.25); }
-  50%      { box-shadow: 0 0 16px 4px rgba(167, 139, 250, 0.45); }
-}
-.light {
-  @keyframes glow-pulse {
-    0%, 100% { box-shadow: 0 0 8px 2px rgba(124, 58, 237, 0.18); }
-    50%      { box-shadow: 0 0 16px 4px rgba(124, 58, 237, 0.32); }
-  }
-}
-
-/* Rotating gradient border for the profile avatar ring */
-@keyframes border-rotate {
-  0%   { --border-angle: 0deg; }
-  100% { --border-angle: 360deg; }
-}
-
-/* Breathing glow for the brand logo */
-@keyframes logo-breathe {
-  0%, 100% { box-shadow: 0 0 12px -4px var(--glow); }
-  50%      { box-shadow: 0 0 22px -2px var(--glow); }
-}
+/* ── Sidebar surfaces ──────────────────────────────────────────────────────
+ * Deliberately static. These carried looping gradient-shift, glow-pulse,
+ * border-rotate and logo-breathe animations, so the rail was in permanent
+ * motion behind whatever page you were reading. Navigation is a fixed frame;
+ * it should hold still.
+ * ────────────────────────────────────────────────────────────────────────── */
 
 .sidebar-active-pill {
-  background: linear-gradient(135deg, #5B34E8, #9333EA, #7C3AED, #5B34E8);
-  background-size: 300% 300%;
-  animation: gradient-shift 6s ease infinite;
+  background: linear-gradient(135deg, #5B34E8, #7C3AED, #9333EA);
 }
 
 .sidebar-icon-glow {
-  animation: glow-pulse 2.4s ease-in-out infinite;
   border-radius: 10px;
+  box-shadow: 0 0 12px 3px rgba(167, 139, 250, 0.32);
 }
-
-.sidebar-logo-breathe {
-  animation: logo-breathe 3s ease-in-out infinite;
-}
-
-.sidebar-avatar-ring {
-  background: conic-gradient(
-    from var(--border-angle, 0deg),
-    #5B34E8, #9333EA, #C084FC, #5B34E8
-  );
-  animation: border-rotate 4s linear infinite;
+.light .sidebar-icon-glow {
+  box-shadow: 0 0 12px 3px rgba(124, 58, 237, 0.24);
 }
 
 /* Glassmorphic active group well */

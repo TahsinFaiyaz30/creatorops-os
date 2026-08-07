@@ -30,8 +30,9 @@ import {
   Target, TriangleAlert, Users, ArrowUpRight, Radio
 } from 'lucide-react';
 
-import { Badge, Notice } from '../ds';
+import { Badge } from '../ds';
 import { AnimatedButton } from '../ui/AnimatedButton';
+import { useToastState } from '../ui/toast';
 import {
   platformOptions,
   formatPlatform,
@@ -346,7 +347,7 @@ function LivePreview({ form, insight }) {
 export default function CampaignForm({ onCreate }) {
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useToastState('danger');
 
   const set = (key, value) => setForm(c => ({ ...c, [key]: value }));
 
@@ -486,7 +487,6 @@ export default function CampaignForm({ onCreate }) {
         {/* Fills the column: shows exactly what will be created */}
         <LivePreview form={form} insight={insight} />
 
-        {error ? <Notice tone="danger">{error}</Notice> : null}
 
         {/* The hand-rolled shimmer this used to carry now lives in AnimatedButton,
             so the CTA stays in step with every other primary on the platform. */}

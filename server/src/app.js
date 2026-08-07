@@ -19,6 +19,7 @@ import notificationRoutes from './routes/notification.routes.js';
 import oauthRoutes from './routes/oauth.routes.js';
 import platformConnectionRoutes from './routes/platformConnection.routes.js';
 import platformFormatRoutes from './routes/platformFormat.routes.js';
+import publicRoutes from './routes/public.routes.js';
 import publishRoutes from './routes/publish.routes.js';
 import scriptRoutes from './routes/script.routes.js';
 import socialRoutes from './routes/social.routes.js';
@@ -84,6 +85,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/oauth', oauthRoutes);
 app.use('/api/platform-connections', platformConnectionRoutes);
 app.use('/api/platform-formats', platformFormatRoutes);
+/* No `authenticate` — the signup page reads this before an account exists. */
+app.use('/api/public', publicRoutes);
 app.use('/api/publish', publishRoutes);
 app.use('/api/scripts', scriptRoutes);
 app.use('/api/social', socialRoutes);

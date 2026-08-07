@@ -26,14 +26,16 @@ import {
 } from 'lucide-react';
 
 import AppShell from '../../components/layout/AppShell';
+import FormatRulesPanel from '../../components/formats/FormatRulesPanel';
 import { TextGenerateEffect } from '../../components/ui/text-generate-effect';
 import { BackgroundBeams } from '../../components/ui/background-beams';
 import {
   Page, Section, Badge, Button, Input,
-  EmptyState, Skeleton, Notice, GlareStat, GlareStatGrid, GLARE_TINTS
+  EmptyState, Skeleton, GlareStat, GlareStatGrid, GLARE_TINTS
 } from '../../components/ds';
 import { api } from '../../lib/api';
 import { formatPlatform } from '../../lib/platforms';
+import { useToastState } from '../../components/ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -347,12 +349,14 @@ function PlatformCard({ platform, busy, onConnect, expanded, onToggle }) {
 
 export default function AccountsPage() {
   const [platforms, setPlatforms] = useState(null);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [message, setMessage] = useToastState('info');
+  const [error, setError] = useToastState('danger');
   const [busyPlatform, setBusyPlatform] = useState('');
   const [busyConnection, setBusyConnection] = useState('');
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState({});
+  /* Format rules moved here from their own nav entry — same subject, one page. */
+  const [tab, setTab] = useState('connections');
 
   const load = async () => {
     const [statusPayload] = await Promise.all([
@@ -495,9 +499,37 @@ export default function AccountsPage() {
           </div>
         </div>
 
-        {error ? <Notice tone="danger">{error}</Notice> : null}
-        {message ? <Notice tone="success">{message}</Notice> : null}
 
+        <div className="flex gap-1 rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 p-1 backdrop-blur-xl">
+          {[
+            { id: 'connections', label: 'Connections' },
+            { id: 'formats', label: 'Platform rules' }
+          ].map(item => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setTab(item.id)}
+              aria-pressed={tab === item.id}
+              className={`focus-ring relative inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold transition-colors ${
+                tab === item.id ? 'text-[var(--accent)]' : 'text-[var(--muted)] hover:text-[var(--text)]'
+              }`}
+            >
+              {tab === item.id ? (
+                <motion.span
+                  layoutId="accounts-tab"
+                  className="absolute inset-0 rounded-lg bg-[var(--accent-soft)] ring-1 ring-inset ring-[var(--accent-line)]"
+                  transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                />
+              ) : null}
+              <span className="relative">{item.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {tab === 'formats' ? <FormatRulesPanel /> : null}
+
+        {tab === 'connections' ? (
+        <>
         {stats ? (
           <GlareStatGrid>
             <GlareStat label="Linked accounts" value={stats.linked} icon={Link2} tint={GLARE_TINTS[0]} />
@@ -581,6 +613,8 @@ export default function AccountsPage() {
             </div>
           )}
         </Section>
+        </>
+        ) : null}
       </Page>
     </AppShell>
   );

@@ -345,8 +345,8 @@ export default function AdminPanelPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {[
-              { label: 'Architecture Overview', href: '/architecture' },
-              { label: 'Publishing Jobs', href: '/publishing' }
+              { label: 'Post Status', href: '/publishing' },
+              { label: 'Connections & platform rules', href: '/accounts' }
             ].map(({ label, href }) => (
               <a
                 key={label}

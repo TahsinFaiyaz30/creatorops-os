@@ -26,9 +26,10 @@ import {
   Unlock, ChevronDown, UserCircle
 } from 'lucide-react';
 
-import { Badge, Button, EmptyState, Notice, Textarea } from '../ds';
+import { Badge, Button, EmptyState, Textarea } from '../ds';
 import { api } from '../../lib/api';
 import { formatPlatform } from '../../lib/platforms';
+import { useToastState } from '../ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -37,8 +38,8 @@ const idOf = item => String(item?._id || item?.id || '');
 export default function TeamReviewQueue({ onCounts }) {
   const [deliverables, setDeliverables] = useState(null);
   const [releases, setReleases] = useState([]);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [error, setError] = useToastState('danger');
+  const [notice, setNotice] = useToastState('success');
   const [busy, setBusy] = useState('');
 
   const load = async () => {
@@ -113,8 +114,6 @@ export default function TeamReviewQueue({ onCounts }) {
 
   return (
     <div className="space-y-3">
-      {error ? <Notice tone="danger">{error}</Notice> : null}
-      {notice ? <Notice tone="success">{notice}</Notice> : null}
 
       {isEmpty ? (
         <EmptyState

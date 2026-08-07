@@ -3,12 +3,9 @@
 import Link from "next/link";
 import { motion } from "motion/react";
 import { Timeline } from "@/components/ui/timeline";
-import { AnimatedTestimonials } from "@/components/ui/animated-testimonials";
 import WorldMap from "@/components/ui/world-map";
-import { LampContainer } from "@/components/ui/lamp";
 import { TextHoverEffect } from "@/components/ui/text-hover-effect";
 import { EvervaultCard } from "@/components/ui/evervault-card";
-import { Button as MovingBorderButton } from "@/components/ui/moving-border";
 
 /* ───────────────── 4. Workflow timeline ───────────────── */
 
@@ -120,52 +117,6 @@ export function WorkflowTimeline() {
   );
 }
 
-/* ───────────────── 5. Testimonials ───────────────── */
-
-const TESTIMONIALS = [
-  {
-    quote:
-      "One raw idea became twelve platform-ready posts before my coffee went cold. The repurposing engine is the whole product for me.",
-    name: "Independent creator",
-    designation: "Placeholder — replace with a real quote",
-    src: "/avatars/creator.svg",
-  },
-  {
-    quote:
-      "Review routing replaced a spreadsheet, three group chats, and a shared drive we all pretended to keep tidy.",
-    name: "Brand representative",
-    designation: "Placeholder — replace with a real quote",
-    src: "/avatars/brand.svg",
-  },
-  {
-    quote:
-      "Publishing used to be five tabs and a prayer. Now it validates before it ships and tells me exactly what broke.",
-    name: "Content operations",
-    designation: "Placeholder — replace with a real quote",
-    src: "/avatars/ops.svg",
-  },
-  {
-    quote:
-      "The live event feed means nobody asks me for a status update anymore. They just look.",
-    name: "Creator admin",
-    designation: "Placeholder — replace with a real quote",
-    src: "/avatars/admin.svg",
-  },
-];
-
-export function Voices() {
-  return (
-    <section id="voices" className="relative overflow-hidden bg-[var(--bg)] py-20">
-      <div className="mx-auto max-w-6xl px-6 text-center">
-        <span className="mb-2 inline-block rounded-full border border-[var(--border)] bg-[var(--surface2)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
-          Voices
-        </span>
-      </div>
-      <AnimatedTestimonials testimonials={TESTIMONIALS} autoplay />
-    </section>
-  );
-}
-
 /* ───────────────── 6. Global reach ───────────────── */
 
 /*
@@ -244,104 +195,169 @@ export function GlobalReach() {
   );
 }
 
-/* ───────────────── 7. Lamp CTA ───────────────── */
+/* ───────────────── 7. Footer ───────────────── */
 
-export function LampCta() {
+/*
+ * The lamp, hung on the footer's top edge.
+ *
+ * It used to light a standalone CTA section of its own, which meant the page
+ * ended on two closing statements in a row. The filament now sits on the
+ * footer's own border and the beam falls down through the whole footer, so the
+ * columns and the wordmark behind them are all lit by the same source.
+ *
+ * Kept dim on purpose: at full strength the cone read as a spotlight aimed at
+ * the reader rather than as ambient light in the room, and the cyan washed out
+ * the text it was supposed to reveal.
+ *
+ * Every layer is `pointer-events-none`. The wordmark underneath tracks the
+ * cursor to reveal its gradient, and an overlay that swallowed the mouse would
+ * kill that. The masks are painted in `var(--bg)` rather than the upstream
+ * `slate-950`, so the beam dissolves into the footer instead of stamping a dark
+ * rectangle onto it.
+ */
+function FooterLamp() {
   return (
-    <section className="relative bg-[var(--bg)]">
-      <LampContainer className="bg-[var(--bg)]">
-        <motion.h2
-          initial={{ opacity: 0.5, y: 100 }}
-          whileInView={{ opacity: 1, y: 0 }}
+    <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-0 h-72 overflow-hidden">
+      <div className="relative flex h-full w-full items-start justify-center opacity-45">
+        <motion.div
+          initial={{ opacity: 0.3, width: "12rem" }}
+          whileInView={{ opacity: 0.75, width: "30rem" }}
           viewport={{ once: true }}
-          transition={{ delay: 0.3, duration: 0.8, ease: "easeInOut" }}
-          className="bg-gradient-to-br from-white to-neutral-500 bg-clip-text py-4 text-center text-4xl font-bold tracking-tight text-transparent md:text-6xl"
+          transition={{ delay: 0.2, duration: 0.9, ease: "easeInOut" }}
+          style={{ backgroundImage: "conic-gradient(var(--conic-position), var(--tw-gradient-stops))" }}
+          className="absolute right-1/2 top-0 h-56 w-[30rem] bg-gradient-conic from-cyan-500/70 via-transparent to-transparent [--conic-position:from_70deg_at_center_top]"
         >
-          Ship your next campaign
-          <br />
-          without the tab graveyard
-        </motion.h2>
+          <div className="absolute bottom-0 left-0 h-40 w-full bg-[var(--bg)] [mask-image:linear-gradient(to_top,white,transparent)]" />
+          <div className="absolute bottom-0 left-0 h-full w-40 bg-[var(--bg)] [mask-image:linear-gradient(to_right,white,transparent)]" />
+        </motion.div>
 
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0.3, width: "12rem" }}
+          whileInView={{ opacity: 0.75, width: "30rem" }}
           viewport={{ once: true }}
-          transition={{ delay: 0.55, duration: 0.7 }}
-          className="mt-4 flex flex-col items-center gap-4 sm:flex-row"
+          transition={{ delay: 0.2, duration: 0.9, ease: "easeInOut" }}
+          style={{ backgroundImage: "conic-gradient(var(--conic-position), var(--tw-gradient-stops))" }}
+          className="absolute left-1/2 top-0 h-56 w-[30rem] bg-gradient-conic from-transparent via-transparent to-cyan-500/70 [--conic-position:from_290deg_at_center_top]"
         >
-          <MovingBorderButton
-            as={Link}
-            href="/signup"
-            borderRadius="1.75rem"
-            containerClassName="h-12 w-44"
-            className="border-[var(--border)] bg-[var(--surface)] text-sm font-semibold text-[var(--text)]"
-          >
-            Create account
-          </MovingBorderButton>
-
-          <Link
-            href="/login"
-            className="focus-ring rounded-full border border-[var(--border)] bg-[var(--surface2)] px-7 py-3 text-sm font-semibold text-[var(--text-2)] transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--surface3)]"
-          >
-            Sign in
-          </Link>
+          <div className="absolute bottom-0 right-0 h-full w-40 bg-[var(--bg)] [mask-image:linear-gradient(to_left,white,transparent)]" />
+          <div className="absolute bottom-0 right-0 h-40 w-full bg-[var(--bg)] [mask-image:linear-gradient(to_top,white,transparent)]" />
         </motion.div>
-      </LampContainer>
-    </section>
+
+        {/* The bulb: a soft pool of light, then the filament line itself. */}
+        <div className="absolute top-0 h-24 w-[26rem] -translate-y-14 rounded-full bg-cyan-500 opacity-20 blur-3xl" />
+        <motion.div
+          initial={{ width: "6rem" }}
+          whileInView={{ width: "14rem" }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.2, duration: 0.9, ease: "easeInOut" }}
+          className="absolute top-0 h-20 w-56 -translate-y-11 rounded-full bg-cyan-400/60 blur-2xl"
+        />
+        <motion.div
+          initial={{ width: "12rem" }}
+          whileInView={{ width: "30rem" }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.2, duration: 0.9, ease: "easeInOut" }}
+          className="absolute top-0 h-px w-[30rem] bg-cyan-400/70"
+        />
+      </div>
+    </div>
   );
 }
 
-/* ───────────────── 8. Footer ───────────────── */
-
-const FOOTER_LINKS = [
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Campaigns", href: "/campaigns" },
-  { label: "Compose", href: "/compose" },
-  { label: "Analytics", href: "/analytics" },
-  { label: "Architecture", href: "/architecture" },
+/*
+ * Footer.
+ *
+ * The old one linked straight into /dashboard, /campaigns, /compose — app routes
+ * that bounce a signed-out visitor to the login page — and pointed at an
+ * Architecture page that no longer exists. A marketing footer should link to the
+ * page it is on and to the two doors into the product.
+ */
+const FOOTER_SECTIONS = [
+  {
+    heading: "Product",
+    links: [
+      { label: "Features", href: "#features" },
+      { label: "Workflow", href: "#workflow" },
+      { label: "Reach", href: "#reach" },
+    ],
+  },
+  {
+    heading: "Get started",
+    links: [
+      { label: "Create an account", href: "/signup" },
+      { label: "Sign in", href: "/login" },
+    ],
+  },
 ];
 
 export function SiteFooter() {
   return (
-    <footer className="relative overflow-hidden border-t border-[var(--border)] bg-[var(--bg)] pt-16">
-      <div className="mx-auto max-w-6xl px-6">
-        <div className="flex flex-col items-center gap-6 md:flex-row md:justify-between">
-          <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
-            {FOOTER_LINKS.map((l) => (
-              <Link
-                key={l.href}
-                href={l.href}
-                className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)] transition-colors hover:text-[var(--text-2)]"
-              >
-                {l.label}
-              </Link>
-            ))}
-          </nav>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/login"
-              className="text-xs font-semibold text-[var(--muted)] hover:text-[var(--text)]"
-            >
-              Sign in
-            </Link>
-            <span className="text-[var(--text)]/15">·</span>
-            <Link
-              href="/signup"
-              className="text-xs font-semibold text-[var(--accent)] hover:text-[var(--text)]"
-            >
-              Get started
-            </Link>
-          </div>
-        </div>
+    <footer className="relative isolate overflow-hidden border-t border-[var(--border)] bg-[var(--bg)]">
+      {/* Light source, on the footer's own top edge. */}
+      <FooterLamp />
 
-        {/* Giant interactive wordmark */}
-        <div className="h-40 w-full select-none md:h-56">
+      {/*
+        The wordmark is the footer's backdrop, not a block of its own — it sits
+        behind the columns and the beam falls across both.
+
+        `pointer-events-auto` here and `pointer-events-none` on the content
+        wrapper below: a full-width content div would otherwise cover the whole
+        letterform and the cursor could never reach it, so the hover reveal
+        would be dead. Links opt back in individually.
+      */}
+      <div className="pointer-events-none absolute inset-x-0 top-12 z-0 flex select-none justify-center px-6">
+        <div className="pointer-events-auto h-40 w-full max-w-6xl md:h-52">
           <TextHoverEffect text="CREATOROPS" />
         </div>
+      </div>
 
-        <p className="pb-8 text-center text-[11px] text-[var(--muted)]">
-          CreatorOps OS · UIU Developers HUB Hackathon 2026
-        </p>
+      <div className="pointer-events-none relative z-10 mx-auto max-w-6xl px-6 pt-16 [&_a]:pointer-events-auto">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="lg:col-span-2">
+            <Link href="/" className="focus-ring inline-flex items-center gap-2.5 rounded-xl">
+              <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface2)]">
+                <img src="/logo.jpeg" alt="" width={26} height={26} className="rounded-lg" />
+              </span>
+              <span className="text-sm font-bold tracking-tight text-[var(--text)]">
+                CreatorOps<span className="text-[var(--accent)]">.OS</span>
+              </span>
+            </Link>
+            <p className="mt-4 max-w-sm text-sm leading-relaxed text-[var(--muted)]">
+              Plan, create, review, publish and measure across every platform — in one workspace,
+              with real numbers read back from the platforms themselves.
+            </p>
+          </div>
+
+          {FOOTER_SECTIONS.map((section) => (
+            <nav key={section.heading} aria-label={section.heading}>
+              <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--muted)]">
+                {section.heading}
+              </h3>
+              <ul className="mt-4 space-y-2.5">
+                {section.links.map((link) => (
+                  <li key={link.href}>
+                    <Link
+                      href={link.href}
+                      className="text-sm text-[var(--text-2)] transition-colors hover:text-[var(--accent)]"
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ))}
+        </div>
+
+        {/* Just enough to clear the wordmark behind the columns — no more. */}
+        <div className="mt-14 flex flex-col items-center justify-between gap-3 border-t border-[var(--border)] py-6 sm:flex-row md:mt-20">
+          <p className="text-[11px] text-[var(--muted)]">
+            CreatorOps OS · UIU Developers HUB Hackathon 2026
+          </p>
+          <p className="text-[11px] text-[var(--muted)]">
+            Metrics come from official platform APIs. Nothing here is estimated.
+          </p>
+        </div>
       </div>
     </footer>
   );

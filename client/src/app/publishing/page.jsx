@@ -41,6 +41,7 @@ import {
   Page, Section, Badge, Button, Input,
   EmptyState, Notice, GlareStat, GlareStatGrid, GLARE_TINTS
 } from '../../components/ds';
+import { useToastState } from '../../components/ui/toast';
 import { api } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { getUser, getUserId } from '../../lib/auth';
@@ -622,8 +623,10 @@ export default function PublishingPage() {
   const [user, setUser] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [pendingUploads, setPendingUploads] = useState([]);
+  /* A stalled transfer is standing state — it stays inline, under the uploads
+     it is about. Everything else here is an event, so it toasts. */
   const [pendingUploadError, setPendingUploadError] = useState('');
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useToastState('info');
   const [busyKey, setBusyKey] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const [query, setQuery] = useState('');
@@ -1568,11 +1571,7 @@ export default function PublishingPage() {
           </div>
         </div>
 
-        {(message || pendingUploadError) && (
-          <Notice tone={pendingUploadError && !message ? 'warning' : 'neutral'}>
-            {message || pendingUploadError}
-          </Notice>
-        )}
+        {pendingUploadError ? <Notice tone="warning">{pendingUploadError}</Notice> : null}
 
         {visiblePendingUploads.length > 0 && (
           <Section

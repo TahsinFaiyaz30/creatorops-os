@@ -79,6 +79,14 @@ export const SidebarBody = (props: React.ComponentProps<typeof motion.div>) => {
   );
 };
 
+/*
+ * Rail widths. Upstream ships 300px expanded, which is wider than anything in
+ * this nav needs — the longest label ("Brand Profile") clears 236px with room
+ * to spare, and the extra 64px was empty gutter taken from the page.
+ */
+export const RAIL_WIDTH_OPEN = "236px";
+export const RAIL_WIDTH_COLLAPSED = "72px";
+
 export const DesktopSidebar = ({
   className,
   children,
@@ -89,14 +97,12 @@ export const DesktopSidebar = ({
     <>
       <motion.div
         className={cn(
-          "h-full px-4 py-4 hidden  md:flex md:flex-col bg-neutral-100 dark:bg-neutral-800 w-[300px] shrink-0",
+          "h-full px-4 py-4 hidden  md:flex md:flex-col bg-neutral-100 dark:bg-neutral-800 w-[236px] shrink-0",
           className
         )}
         animate={{
-          width: animate ? (open ? "300px" : "60px") : "300px",
+          width: animate ? (open ? RAIL_WIDTH_OPEN : RAIL_WIDTH_COLLAPSED) : RAIL_WIDTH_OPEN,
         }}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
         {...props}
       >
         {children}

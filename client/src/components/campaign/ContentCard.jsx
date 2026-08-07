@@ -23,11 +23,12 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Sparkles, ChevronDown, Layers, Film, Clock } from 'lucide-react';
 
 import { GlareCard } from '../ui/glare-card';
-import { Surface, Badge, Button, Notice } from '../ds';
+import { Surface, Badge, Button } from '../ds';
 import { api } from '../../lib/api';
 import AIResultPanel from '../ai/AIResultPanel';
 import PlatformVariantCard from './PlatformVariantCard';
 import VersionHistory from './VersionHistory';
+import { useToastState } from '../ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -57,7 +58,7 @@ export default function ContentCard({
   const [variants, setVariants] = useState(initialVariants);
   const [provider, setProvider] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useToastState('danger');
   const [open, setOpen] = useState(false);
 
   useEffect(() => { setVariants(initialVariants); }, [initialVariants]);
@@ -166,7 +167,6 @@ export default function ContentCard({
                 <VersionHistory contentItemId={item._id} />
               </div>
 
-              {error ? <Notice tone="danger">{error}</Notice> : null}
 
               <AIResultPanel provider={provider} count={variants.length} />
 

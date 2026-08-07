@@ -1,6 +1,12 @@
 'use client';
 
 /**
+ * Format rules, rendered as a panel on the Connections page.
+ *
+ * These describe what a platform accepts and what the connected account can
+ * actually do there — the same subject as a connection, so they were a separate
+ * nav entry describing the thing on the page next door.
+ *
  * ─────────────────────────────────────────────────────────────────────────────
  * Platform Rules — GET /api/platform-formats + GET /api/platform-connections/capabilities
  *
@@ -28,14 +34,12 @@ import {
   MessageSquare, CornerDownRight, Upload, Trash2, Plug, ShieldAlert, ArrowUpDown
 } from 'lucide-react';
 
-import AppShell from '../../components/layout/AppShell';
-import { TextGenerateEffect } from '../../components/ui/text-generate-effect';
-import { BackgroundBeams } from '../../components/ui/background-beams';
 import {
   Page, Section, Surface, Badge, Button, Input,
-  EmptyState, Skeleton, Notice, GlareStat, GlareStatGrid, GLARE_TINTS, useStagger
-} from '../../components/ds';
+  EmptyState, Skeleton, GlareStat, GlareStatGrid, GLARE_TINTS, useStagger
+} from '../ds';
 import { api } from '../../lib/api';
+import { useToastState } from '../ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -130,18 +134,23 @@ function CaptionGauge({ value, max }) {
 /* ── Rule card ────────────────────────────────────────────────────────────── */
 
 function RuleCard({ rule, maxCaption, hovered, setHovered, index }) {
-  const dimmed = hovered !== null && hovered !== index;
   const caps = rule.capabilities || {};
   const capCount = CAPS.filter(c => caps[c.key]).length;
 
+  /*
+   * The hovered card lifts; its siblings are left alone.
+   *
+   * This grid used to blur and shrink every other card whenever the pointer
+   * touched one, so scrolling past dragged a wave of defocus across the page and
+   * anything you were reading nearby went soft. Hover should answer "this one",
+   * not repaint the rest of the screen.
+   */
   return (
     <motion.article
       layout
-      onMouseEnter={() => setHovered(index)}
-      onMouseLeave={() => setHovered(null)}
-      animate={{ filter: dimmed ? 'blur(1.5px)' : 'blur(0px)', scale: dimmed ? 0.99 : 1 }}
-      transition={{ duration: 0.25, ease: EASE }}
-      className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]/75 shadow-[var(--shadow)] backdrop-blur-xl"
+      whileHover={{ y: -4 }}
+      transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+      className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]/75 shadow-[var(--shadow)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 hover:border-[var(--accent-line)] hover:shadow-[0_16px_48px_-20px_var(--glow)]"
     >
       <span
         aria-hidden
@@ -257,9 +266,9 @@ function RuleCard({ rule, maxCaption, hovered, setHovered, index }) {
 
 /* ── Page ─────────────────────────────────────────────────────────────────── */
 
-export default function FormatsPage() {
+export default function FormatRulesPanel() {
   const [rules, setRules] = useState(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useToastState('danger');
   const [query, setQuery] = useState('');
   const [view, setView] = useState('cards');
   const [sort, setSort] = useState('name');
@@ -320,30 +329,12 @@ export default function FormatsPage() {
   }, [rules]);
 
   return (
-    <AppShell>
-      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <BackgroundBeams className="opacity-25 dark:opacity-50" />
-        <div className="absolute inset-0 bg-blueprint [mask-image:radial-gradient(ellipse_at_top,black_10%,transparent_70%)]" />
-      </div>
+    <div className="space-y-5">
+      <p className="max-w-3xl text-sm leading-relaxed text-[var(--muted)]">
+        What each platform will accept, and what your connection can actually do there. The publish validator enforces
+        these limits before anything ships.
+      </p>
 
-      <Page>
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
-            Distribute
-          </p>
-          <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-[var(--text)] sm:text-3xl">
-            Platform Rules
-          </h1>
-          <div className="max-w-3xl">
-            <TextGenerateEffect
-              words="What each platform will accept, and what your connection can actually do there. The publish validator enforces these limits before anything ships."
-              className="font-normal"
-              duration={0.5}
-            />
-          </div>
-        </div>
-
-        {error ? <Notice tone="danger">{error}</Notice> : null}
 
         {stats ? (
           <GlareStatGrid>
@@ -554,7 +545,6 @@ export default function FormatsPage() {
             </Surface>
           )}
         </Section>
-      </Page>
-    </AppShell>
+    </div>
   );
 }

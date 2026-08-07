@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { CalendarClock, ImagePlus, Sparkles, Send, X, Trash2, CheckCircle2, AlertCircle, LayoutPanelTop, ZoomIn, ZoomOut, Crop, PauseCircle, PlayCircle } from 'lucide-react';
 import AppShell from '../../components/layout/AppShell';
@@ -11,13 +11,14 @@ import { TextGenerateEffect } from '../../components/ui/text-generate-effect';
 import { FileUpload } from '../../components/ui/file-upload';
 import { MultiStepLoader } from '../../components/ui/multi-step-loader';
 import {
-  Surface, Section, Badge, Notice, GlareStat, GlareStatGrid, GLARE_TINTS
+  Surface, Section, Badge, Notice
 } from '../../components/ds';
 import { api } from '../../lib/api';
 import { getUser, getUserId } from '../../lib/auth';
 import { formatDuration } from '../../lib/duration';
 import { formatPlatform, getPlatformCaptionLimit, getPlatformDetails, platformCapabilities } from '../../lib/platforms';
 import { canPublish } from '../../lib/roles';
+import { toast } from '../../components/ui/toast';
 import {
   broadcastPendingPublishUpdate,
   cancelUploadSession,
@@ -222,7 +223,19 @@ export default function ComposePage() {
   const [captions, setCaptions] = useState([]);
   const [scheduledAt, setScheduledAt] = useState(() => new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16));
   const [visibility, setVisibility] = useState('public');
-  const [message, setMessage] = useState('');
+  /*
+   * Compose's status channel: validation results, upload progress, publish
+   * outcomes. Every update raises a toast under one fixed id, so a run of
+   * statuses replaces itself in place instead of stacking eight cards up the
+   * side of the screen. The state is kept because the publish flow reads the
+   * last message back.
+   */
+  const [message, setMessageState] = useState('');
+  const setMessage = useCallback(next => {
+    const text = typeof next === 'string' ? next : String(next?.message || '');
+    setMessageState(text);
+    if (text) toast.info(text, { id: 'compose-status' });
+  }, []);
   const [publishResults, setPublishResults] = useState([]);
   const [busy, setBusy] = useState('');
   const [publishSettings, setPublishSettings] = useState({
@@ -1211,21 +1224,11 @@ export default function ComposePage() {
           </Notice>
         </header>
 
-        {/* ── Live compose metrics — same GlareStat as Dashboard ─────────── */}
-        <GlareStatGrid className="xl:grid-cols-4">
-          <GlareStat label="Media staged"  value={mediaAssets.length}       icon={ImagePlus}     tint={GLARE_TINTS[0]} />
-          <GlareStat label="Targets"       value={selectedConnections.length} icon={LayoutPanelTop} tint={GLARE_TINTS[1]} />
-          <GlareStat label="Captions"      value={captions.length}          icon={Sparkles}      tint={GLARE_TINTS[2]} />
-          <GlareStat
-            label="Upload queue"
-            value={uploadQueue.length}
-            icon={Send}
-            tint={GLARE_TINTS[3]}
-            hint={uploading ? (isUploadPaused ? 'Paused' : 'Uploading…') : undefined}
-          />
-        </GlareStatGrid>
-
-        {message && <Notice tone="accent">{message}</Notice>}
+        {/*
+          The four big metric tiles are gone. Compose is a working surface, and
+          every number they showed — staged media, targets, captions, queue — is
+          already visible in the panels below as the actual items being counted.
+        */}
 
         {/* AI caption generation — Aceternity step loader over the real request */}
         <MultiStepLoader

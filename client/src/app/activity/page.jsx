@@ -29,12 +29,12 @@ import AppShell from '../../components/layout/AppShell';
 import { TextGenerateEffect } from '../../components/ui/text-generate-effect';
 import { BackgroundBeams } from '../../components/ui/background-beams';
 import {
-  Page, Section, Badge, Button, EmptyState, Skeleton, Notice,
-  GlareStat, GlareStatGrid, GLARE_TINTS
+  Page, Section, Badge, Button, EmptyState, Skeleton, GlareStat, GlareStatGrid, GLARE_TINTS
 } from '../../components/ds';
 import { api } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { getUser, getUserId } from '../../lib/auth';
+import { useToastState } from '../../components/ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 /* The server clamps to 100; asking for more just wastes the round trip. */
@@ -174,7 +174,7 @@ function ActivityPulse({ events }) {
 
 export default function ActivityPage() {
   const [events, setEvents] = useState(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useToastState('danger');
   const [typeFilter, setTypeFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
   const [liveCount, setLiveCount] = useState(0);
@@ -313,7 +313,6 @@ export default function ActivityPage() {
           </div>
         </div>
 
-        {error ? <Notice tone="danger">{error}</Notice> : null}
 
         {stats ? (
           <GlareStatGrid>

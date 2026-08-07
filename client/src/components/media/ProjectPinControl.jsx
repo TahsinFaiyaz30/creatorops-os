@@ -11,13 +11,15 @@
  * Only rendered inside a team: in a personal workspace there is nobody to hide
  * anything from, so the control would be a decision with no consequence.
  *
- * The menu is positioned `fixed`, measured from the trigger, because the tile it
- * sits in is `overflow-hidden` — anchoring it normally would clip it away.
+ * The menu is measured from the trigger and portalled to <body>: the tile it
+ * sits in is `overflow-hidden`, and the surrounding cards carry backdrop
+ * filters, which would otherwise both clip it and re-anchor it.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import Popover from '../ui/Popover';
 import { Check, FolderLock, Pin, Users } from 'lucide-react';
 
 import { api } from '../../lib/api';
@@ -129,6 +131,7 @@ export default function ProjectPinControl({ asset, projects, onChanged, onError,
         <span className="truncate">{label}</span>
       </button>
 
+      <Popover>
       <AnimatePresence>
         {open && anchor ? (
           <motion.div
@@ -205,6 +208,7 @@ export default function ProjectPinControl({ asset, projects, onChanged, onError,
           </motion.div>
         ) : null}
       </AnimatePresence>
+      </Popover>
     </>
   );
 }

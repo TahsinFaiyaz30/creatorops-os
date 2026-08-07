@@ -4,7 +4,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * AppShell — layout + auth. Nav is Sidebar.jsx's job.
  *
- *   · Aceternity DesktopSidebar rail: 60px of icons, expands to 300px on hover.
+ *   · Aceternity DesktopSidebar rail: 300px expanded, 72px collapsed, toggled
+ *     by an explicit button and remembered across reloads.
  *   · Our own mobile sheet (SidebarBody would inject a second hamburger and
  *     doesn't forward className, so it can't be restyled or hidden).
  *   · Sticky glass top bar: route title, role, theme toggle, notifications.
@@ -63,10 +64,25 @@ export default function AppShell({ children }) {
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
-  /* Pinned wins over hover: the primitive fires setOpen(false) on mouse-leave,
-     so without this the rail snaps shut the moment the pointer reaches the page. */
-  const [pinned, setPinned] = useState(false);
+  /*
+   * Desktop rail state, remembered across reloads the way every other tool does
+   * it. Read lazily so the first paint already matches the stored preference
+   * instead of expanding and then snapping shut.
+   */
+  const [railOpen, setRailOpen] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.localStorage.getItem('creatorops.railCollapsed') !== '1';
+  });
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('creatorops.railCollapsed', railOpen ? '0' : '1');
+    } catch (_error) {
+      /* Private mode; the rail just resets next load. */
+    }
+  }, [railOpen]);
+
+  /* Only the mobile sheet closes on navigation — the desktop rail must not. */
   useEffect(() => { setNavOpen(false); }, [pathname]);
 
   useEffect(() => {
@@ -112,7 +128,13 @@ export default function AppShell({ children }) {
 
   return (
     <div className="flex min-h-screen w-full bg-[var(--bg)]">
-      <SidebarProvider open={pinned || navOpen} setOpen={value => setNavOpen(pinned ? true : value)}>
+      {/*
+        The rail is toggled, never hovered. Hover-to-expand made the nav twitch
+        every time the pointer crossed it on the way to the page, and it swallowed
+        any popup anchored inside the rail the moment the mouse left.
+        `railOpen` is the single source of truth and it persists across routes.
+      */}
+      <SidebarProvider open={railOpen} setOpen={() => {}}>
         {/* Desktop rail. `dark:bg-[var(--surface)]` is required alongside the
             unprefixed class: upstream sets dark:bg-neutral-800 and twMerge keeps
             a dark:-prefixed utility next to an unprefixed one, so neutral-800
@@ -120,10 +142,9 @@ export default function AppShell({ children }) {
         <DesktopSidebar className="sticky top-3 my-3 ml-3 h-[calc(100vh-1.5rem)] justify-between gap-4 rounded-3xl border border-[var(--border)] bg-[var(--surface)] px-3 py-4 shadow-[var(--shadow)] dark:bg-[var(--surface)]">
           <SidebarNav
             user={user}
-            expanded={pinned || navOpen}
+            expanded={railOpen}
             onSignOut={signOut}
-            pinned={pinned}
-            onTogglePin={() => setPinned(value => !value)}
+            onToggleRail={() => setRailOpen(value => !value)}
           />
         </DesktopSidebar>
 

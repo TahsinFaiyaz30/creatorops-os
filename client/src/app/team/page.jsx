@@ -31,6 +31,7 @@ import {
 } from '../../components/ds';
 import { api } from '../../lib/api';
 import { TEAM_PERMISSIONS, clearActiveWorkspace, getActiveWorkspaceId, setActiveWorkspace } from '../../lib/teams';
+import { useToastState } from '../../components/ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -39,8 +40,8 @@ const idOf = item => String(item?._id || item?.id || '');
 export default function TeamCurrentPage() {
   const [data, setData] = useState(null);
   const [permissionGroups, setPermissionGroups] = useState([]);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [error, setError] = useToastState('danger');
+  const [notice, setNotice] = useToastState('success');
   const [busy, setBusy] = useState('');
   const [tab, setTab] = useState('members');
   const [editingRole, setEditingRole] = useState(null);
@@ -173,8 +174,6 @@ export default function TeamCurrentPage() {
           </div>
         </header>
 
-        {error ? <Notice tone="danger">{error}</Notice> : null}
-        {notice ? <Notice tone="success">{notice}</Notice> : null}
 
         <div className="flex gap-1 rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 p-1 backdrop-blur-xl">
           {[
@@ -244,8 +243,8 @@ function PersonalWorkspaceView() {
   const [invitations, setInvitations] = useState(null);
   const [form, setForm] = useState({ name: '', description: '' });
   const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [error, setError] = useToastState('danger');
+  const [notice, setNotice] = useToastState('success');
 
   const load = () =>
     api
@@ -302,8 +301,6 @@ function PersonalWorkspaceView() {
         </p>
       </div>
 
-      {error ? <Notice tone="danger">{error}</Notice> : null}
-      {notice ? <Notice tone="success">{notice}</Notice> : null}
 
       {invitations?.length ? (
         <Section title="Invitations" description="Teams that want to hire you.">

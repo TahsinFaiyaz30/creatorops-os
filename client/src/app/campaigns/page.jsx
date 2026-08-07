@@ -23,9 +23,10 @@ import { BentoGrid } from '../../components/ui/bento-grid';
 import { BackgroundBeams } from '../../components/ui/background-beams';
 import {
   Page, Section, Badge, Button,
-  EmptyState, Skeleton, Notice, GlareStat, GlareStatGrid, GLARE_TINTS, useStagger
+  EmptyState, Skeleton, GlareStat, GlareStatGrid, GLARE_TINTS, useStagger
 } from '../../components/ds';
 import { api } from '../../lib/api';
+import { useToastState } from '../../components/ui/toast';
 
 const STATUS_TONE = {
   active: 'success', live: 'success', draft: 'neutral',
@@ -102,8 +103,8 @@ export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState(null);
   const [summaries, setSummaries] = useState({});
   const [boardItems, setBoardItems] = useState([]);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [error, setError] = useToastState('danger');
+  const [notice, setNotice] = useToastState('success');
   const { item } = useStagger(0.06);
 
   const load = async () => {
@@ -191,8 +192,6 @@ export default function CampaignsPage() {
           </div>
         </div>
 
-        {error ? <Notice tone="danger">{error}</Notice> : null}
-        {notice ? <Notice tone="success">{notice}</Notice> : null}
 
         {/* Same GlareStat treatment as the Dashboard's headline metrics —
             one shared component, so the two pages cannot drift apart. */}

@@ -21,10 +21,11 @@ import {
   Share2, Check, Clock3, X
 } from 'lucide-react';
 
-import { Badge, Button, EmptyState, Input, Notice, Select, Textarea } from '../ds';
+import { Badge, Button, EmptyState, Input, Select, Textarea } from '../ds';
 import { api } from '../../lib/api';
 import { getActiveWorkspaceId } from '../../lib/teams';
 import { getSocket } from '../../lib/socket';
+import { useToastState } from '../ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -43,7 +44,7 @@ export default function ProjectTeamPanel({ project, onRefresh }) {
   const [members, setMembers] = useState([]);
   const [deliverables, setDeliverables] = useState([]);
   const [messages, setMessages] = useState([]);
-  const [error, setError] = useState('');
+  const [error, setError] = useToastState('danger');
   const [busy, setBusy] = useState('');
 
   const projectId = idOf(project);
@@ -122,7 +123,6 @@ export default function ProjectTeamPanel({ project, onRefresh }) {
       </div>
 
       <div className="p-3">
-        {error ? <Notice tone="danger">{error}</Notice> : null}
 
         {tab === 'crew' ? <CrewTab project={project} members={members} onRefresh={onRefresh} /> : null}
         {tab === 'work' ? (

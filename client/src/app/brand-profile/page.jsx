@@ -18,6 +18,7 @@ import {
   Skeleton, Notice
 } from '../../components/ds';
 import { api } from '../../lib/api';
+import { useToastState } from '../../components/ui/toast';
 
 const PLATFORMS = [
   'facebook', 'instagram', 'linkedin', 'pinterest', 'threads',
@@ -32,8 +33,8 @@ const EMPTY = {
 export default function BrandProfilePage() {
   const [form, setForm] = useState(null);
   const [exists, setExists] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [error, setError] = useToastState('danger');
+  const [notice, setNotice] = useToastState('success');
   const [busy, setBusy] = useState(false);
   const [bannedInput, setBannedInput] = useState('');
 
@@ -105,8 +106,6 @@ export default function BrandProfilePage() {
           }
         />
 
-        {error ? <Notice tone="danger">{error}</Notice> : null}
-        {notice ? <Notice tone="success">{notice}</Notice> : null}
         {!exists ? (
           <Notice tone="warning">
             No brand profile exists yet. Filling this in gives the AI a consistent voice instead of a generic default.

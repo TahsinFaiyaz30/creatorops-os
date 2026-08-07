@@ -5,9 +5,8 @@
  * Media Library — GET /api/media, PATCH /api/media/:id, DELETE /api/media/:id
  *
  * A library is a visual surface, so the default view is a thumbnail grid rather
- * than a table. Hovering a tile blurs its siblings (Aceternity's focus-cards
- * effect) — FocusCards itself only accepts { title, src }, which can't carry
- * size, status or row actions, so the effect is applied to a richer card here.
+ * than a table. Hover lifts the card under the pointer and leaves its neighbours
+ * alone.
  *
  * The list view is kept behind a toggle: filenames, sizes and statuses are
  * genuinely easier to scan in a table once a workspace has hundreds of assets.
@@ -30,11 +29,13 @@ import { TextGenerateEffect } from '../../components/ui/text-generate-effect';
 import { BackgroundBeams } from '../../components/ui/background-beams';
 import {
   Page, Section, Surface, Badge, Button, Input, Select,
-  EmptyState, Skeleton, Notice, DataList,
+  EmptyState, Skeleton, DataList,
   GlareStat, GlareStatGrid, GLARE_TINTS
 } from '../../components/ds';
 import { api } from '../../lib/api';
 import { getActiveWorkspaceId } from '../../lib/teams';
+import { formatPlatform } from '../../lib/platforms';
+import { useToastState } from '../../components/ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -71,16 +72,21 @@ function MediaTile({ asset, index, hovered, setHovered, onRename, onDelete, rena
   const dims = asset.width && asset.height ? `${asset.width}×${asset.height}` : null;
   const dur = fmtDuration(asset.durationSeconds);
   const isTemp = asset.storageIntent === 'temporary_publish' || asset.cleanupAt;
-  const dimmed = hovered !== null && hovered !== index;
 
+  /*
+   * The hovered card lifts; its siblings are left alone.
+   *
+   * This grid used to blur and shrink every other card whenever the pointer
+   * touched one, so scrolling past dragged a wave of defocus across the page and
+   * anything you were reading nearby went soft. Hover should answer "this one",
+   * not repaint the rest of the screen.
+   */
   return (
     <motion.div
       layout
-      onMouseEnter={() => setHovered(index)}
-      onMouseLeave={() => setHovered(null)}
-      animate={{ filter: dimmed ? 'blur(2px)' : 'blur(0px)', scale: dimmed ? 0.985 : 1 }}
-      transition={{ duration: 0.25, ease: EASE }}
-      className="group relative overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]"
+      whileHover={{ y: -4 }}
+      transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+      className="group relative overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] transition-[border-color,box-shadow] duration-200 hover:border-[var(--accent-line)] hover:shadow-[0_12px_40px_-16px_var(--glow)]"
     >
       {/* Preview */}
       <div className="relative aspect-[4/3] w-full overflow-hidden bg-[var(--surface2)]">
@@ -196,8 +202,8 @@ function MediaTile({ asset, index, hovered, setHovered, onRename, onDelete, rena
 
 export default function MediaPage() {
   const [assets, setAssets] = useState(null);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [error, setError] = useToastState('danger');
+  const [notice, setNotice] = useToastState('success');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [view, setView] = useState('grid');
@@ -207,12 +213,38 @@ export default function MediaPage() {
   const [projects, setProjects] = useState([]);
   const [scope, setScope] = useState('all');
   const [inTeam, setInTeam] = useState(false);
+  /* Platforms this creator has actually published to, ever. */
+  const [platforms, setPlatforms] = useState([]);
+  const [platform, setPlatform] = useState('all');
 
   const load = () =>
     api
       .get('/api/media')
       .then(p => setAssets(p?.data?.mediaAssets || []))
       .catch(e => setError(e.message));
+
+  useEffect(() => {
+    /*
+     * The platform list is derived from real published posts rather than from
+     * the eleven platforms the app supports: filtering by a network you have
+     * never posted to is a control that can only ever return nothing.
+     */
+    api
+      .get('/api/social/posts')
+      .then(p => {
+        const posts = p?.data?.posts || [];
+        const used = new Map();
+        posts.forEach(post => {
+          if (post.status !== 'published' || !post.platform) return;
+          const assetIds = (post.mediaAssetIds || []).map(a => String(a?._id || a));
+          const entry = used.get(post.platform) || new Set();
+          assetIds.forEach(id => entry.add(id));
+          used.set(post.platform, entry);
+        });
+        setPlatforms([...used.entries()].map(([key, ids]) => ({ key, assetIds: ids })));
+      })
+      .catch(() => setPlatforms([]));
+  }, []);
 
   useEffect(() => {
     load();
@@ -266,9 +298,12 @@ export default function MediaPage() {
       const assetProjectId = String(a.projectId?._id || a.projectId || '');
       const matchesScope =
         scope === 'all' || (scope === 'shared' ? !assetProjectId : assetProjectId === scope);
-      return matchesType && matchesQuery && matchesScope;
+      const matchesPlatform =
+        platform === 'all' ||
+        (platforms.find(p => p.key === platform)?.assetIds?.has(String(a._id || a.id)) ?? false);
+      return matchesType && matchesQuery && matchesScope && matchesPlatform;
     });
-  }, [assets, query, filter, scope]);
+  }, [assets, query, filter, scope, platform, platforms]);
 
   const stats = useMemo(() => {
     if (!assets) return null;
@@ -360,8 +395,6 @@ export default function MediaPage() {
           </div>
         </div>
 
-        {error ? <Notice tone="danger">{error}</Notice> : null}
-        {notice ? <Notice tone="success">{notice}</Notice> : null}
 
         {stats ? (
           <GlareStatGrid>
@@ -395,6 +428,23 @@ export default function MediaPage() {
                   {projects.map(project => (
                     <option key={project._id} value={String(project._id)}>
                       Pinned to {project.name}
+                    </option>
+                  ))}
+                </Select>
+              ) : null}
+
+              {/* Published-to filter — only the networks this creator has used. */}
+              {platforms.length > 0 ? (
+                <Select
+                  value={platform}
+                  onChange={e => setPlatform(e.target.value)}
+                  aria-label="Filter by the platform the media was published to"
+                  className="h-8 w-auto py-1 text-[11px]"
+                >
+                  <option value="all">Any platform</option>
+                  {platforms.map(p => (
+                    <option key={p.key} value={p.key}>
+                      Published to {formatPlatform(p.key)}
                     </option>
                   ))}
                 </Select>

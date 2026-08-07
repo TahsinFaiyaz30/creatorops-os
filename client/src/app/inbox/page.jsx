@@ -31,10 +31,11 @@ import { TextGenerateEffect } from '../../components/ui/text-generate-effect';
 import { BackgroundBeams } from '../../components/ui/background-beams';
 import {
   Page, Section, Badge, Button, Input, Textarea,
-  EmptyState, Skeleton, Notice, GlareStat, GlareStatGrid, GLARE_TINTS
+  EmptyState, Skeleton, GlareStat, GlareStatGrid, GLARE_TINTS
 } from '../../components/ds';
 import { api } from '../../lib/api';
 import { formatPlatform } from '../../lib/platforms';
+import { useToastState } from '../../components/ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -269,8 +270,8 @@ export default function InboxPage() {
   const [posts, setPosts] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [comments, setComments] = useState(null);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [error, setError] = useToastState('danger');
+  const [notice, setNotice] = useToastState('success');
   const [replyTo, setReplyTo] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -388,8 +389,6 @@ export default function InboxPage() {
           ) : null}
         </div>
 
-        {error ? <Notice tone="danger">{error}</Notice> : null}
-        {notice ? <Notice tone="success">{notice}</Notice> : null}
 
         {stats ? (
           <GlareStatGrid>

@@ -30,6 +30,7 @@ import {
 } from '../../../../components/circulars/ApplicantAnalytics';
 import { api } from '../../../../lib/api';
 import { formatPlatform } from '../../../../lib/platforms';
+import { useToastState } from '../../../../components/ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -53,8 +54,8 @@ const POST_METRICS = [
 export default function ApplicantProfilePage() {
   const params = useParams();
   const [profile, setProfile] = useState(null);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [error, setError] = useToastState('danger');
+  const [notice, setNotice] = useToastState('success');
   const [busy, setBusy] = useState('');
   const [platformFilter, setPlatformFilter] = useState('');
 
@@ -135,8 +136,6 @@ export default function ApplicantProfilePage() {
   return (
     <AppShell>
       <Page>
-        {error ? <Notice tone="danger">{error}</Notice> : null}
-        {notice ? <Notice tone="success">{notice}</Notice> : null}
 
         {/* Circular context — this page only exists relative to one application. */}
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--accent-line)] bg-[var(--accent-soft)] px-3 py-2 text-[11px] text-[var(--text-2)]">

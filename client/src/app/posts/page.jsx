@@ -24,10 +24,11 @@ import { TextGenerateEffect } from '../../components/ui/text-generate-effect';
 import { BackgroundBeams } from '../../components/ui/background-beams';
 import {
   Page, Section, Badge, Button, Input,
-  EmptyState, Skeleton, Notice, GlareStat, GlareStatGrid, GLARE_TINTS
+  EmptyState, Skeleton, GlareStat, GlareStatGrid, GLARE_TINTS
 } from '../../components/ds';
 import { api } from '../../lib/api';
 import { formatPlatform } from '../../lib/platforms';
+import { useToastState } from '../../components/ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -210,8 +211,8 @@ function PostCard({ post, index, syncing, onSync }) {
 export default function PostsPage() {
   const [posts, setPosts] = useState(null);
   const [groups, setGroups] = useState(null);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [error, setError] = useToastState('danger');
+  const [notice, setNotice] = useToastState('success');
   const [syncing, setSyncing] = useState(null);
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
@@ -303,8 +304,6 @@ export default function PostsPage() {
           </div>
         </div>
 
-        {error ? <Notice tone="danger">{error}</Notice> : null}
-        {notice ? <Notice tone="success">{notice}</Notice> : null}
 
         {stats ? (
           <GlareStatGrid>

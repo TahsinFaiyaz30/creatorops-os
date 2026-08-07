@@ -28,6 +28,7 @@ import {
   motion, cubicBezier, useMotionTemplate, useMotionValue, useSpring, useReducedMotion
 } from 'motion/react';
 import { IconCheck } from '@tabler/icons-react';
+import { ArrowLeft } from 'lucide-react';
 
 import { AuroraBackground } from '@/components/ui/aurora-background';
 import { StarsBackground } from '@/components/ui/stars-background';
@@ -145,75 +146,31 @@ function BrandPanel() {
   );
 }
 
-/* ── 3D glass card with cursor-tracked glare ──────────────────────────────── */
+/* ── Glass card ───────────────────────────────────────────────────────────── */
 
+/*
+ * Static, deliberately.
+ *
+ * This card used to tilt in 3D and track a glare under the cursor. On a sign-in
+ * form that means the inputs you are aiming at move while you aim at them, and
+ * the whole page rocks whenever the pointer crosses it. A login screen wants to
+ * hold still.
+ */
 function GlassCard({ className, children }) {
-  const reduce = useReducedMotion();
-  const ref = useRef(null);
-  const [hovering, setHovering] = useState(false);
-
-  /* Pointer position drives both the tilt and the glare from one read. */
-  const glareX = useMotionValue(50);
-  const glareY = useMotionValue(50);
-  const rotateX = useSpring(useMotionValue(0), { stiffness: 220, damping: 22 });
-  const rotateY = useSpring(useMotionValue(0), { stiffness: 220, damping: 22 });
-
-  const glare = useMotionTemplate`radial-gradient(420px circle at ${glareX}% ${glareY}%, rgb(var(--accent-rgb) / 0.16), transparent 60%)`;
-
-  const onMove = event => {
-    if (reduce || !ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    const px = (event.clientX - rect.left) / rect.width;
-    const py = (event.clientY - rect.top) / rect.height;
-    glareX.set(px * 100);
-    glareY.set(py * 100);
-    /* Deliberately shallow — a form has to stay readable while it tilts. */
-    rotateY.set((px - 0.5) * 6);
-    rotateX.set((0.5 - py) * 6);
-  };
-
-  const onLeave = () => {
-    setHovering(false);
-    rotateX.set(0);
-    rotateY.set(0);
-  };
-
   return (
-    <div style={{ perspective: 1200 }}>
-      <motion.div
-        ref={ref}
-        onMouseMove={onMove}
-        onMouseEnter={() => setHovering(true)}
-        onMouseLeave={onLeave}
-        style={reduce ? undefined : { rotateX, rotateY, transformStyle: 'preserve-3d' }}
-        className={cn(
-          'relative overflow-hidden rounded-[28px] border border-[var(--border)] bg-[var(--surface)]/80 p-7',
-          'shadow-[0_24px_80px_-24px_rgba(99,68,245,0.35)] backdrop-blur-xl',
-          className
-        )}
-      >
-        <motion.span
-          aria-hidden
-          className="pointer-events-none absolute inset-0 z-0"
-          style={{ background: glare }}
-          animate={{ opacity: hovering && !reduce ? 1 : 0 }}
-          transition={{ duration: 0.3 }}
-        />
-        {/* Animated border glow on hover */}
-        <motion.div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 z-0 rounded-[28px] border border-[var(--accent)]/50"
-          initial={false}
-          animate={{ opacity: hovering && !reduce ? 1 : 0, boxShadow: hovering && !reduce ? '0 0 20px 2px rgba(174,72,255,0.15) inset, 0 0 20px 2px rgba(174,72,255,0.15)' : 'none' }}
-          transition={{ duration: 0.4 }}
-        />
-        {/* Lit top seam — reads as a light source above the card. */}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-x-6 top-0 z-0 h-px bg-gradient-to-r from-transparent via-[var(--accent)]/60 to-transparent"
-        />
-        <div className="relative z-10">{children}</div>
-      </motion.div>
+    <div
+      className={cn(
+        'relative overflow-hidden rounded-[28px] border border-[var(--border)] bg-[var(--surface)]/80 p-7',
+        'shadow-[0_24px_80px_-24px_rgba(99,68,245,0.35)] backdrop-blur-xl',
+        className
+      )}
+    >
+      {/* Lit top seam — reads as a light source above the card. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-6 top-0 z-0 h-px bg-gradient-to-r from-transparent via-[var(--accent)]/60 to-transparent"
+      />
+      <div className="relative z-10">{children}</div>
     </div>
   );
 }
@@ -237,6 +194,19 @@ export function AuthShell({ title, subtitle, children, footer }) {
           translateY={-260}
           duration={10}
         />
+
+        {/*
+          The way back out. The brand panel is hidden below `lg`, and it was the
+          only route to the marketing site — so on a laptop or phone the auth
+          screens were a dead end with no link home.
+        */}
+        <Link
+          href="/"
+          className="focus-ring absolute left-5 top-5 z-20 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[var(--muted)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]"
+        >
+          <ArrowLeft size={14} />
+          Back to site
+        </Link>
 
         {/* Mobile logo */}
         <Link href="/" className="relative z-10 mb-8 flex items-center gap-2 lg:hidden">

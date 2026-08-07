@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 
 import { Surface, Badge, Button, Notice, Textarea, EmptyState, Skeleton } from '../ds';
+import { toast } from '../ui/toast';
 import { api } from '../../lib/api';
 import SchedulePanel from '../schedule/SchedulePanel';
 
@@ -233,10 +234,15 @@ export default function ApprovalQueue({ user, onStats }) {
     } catch (err) {
       setApprovals([]);
       if (err.status === 403) {
+        /*
+         * Not an event — it is the standing state of this screen for this
+         * account, and it explains why the queue is empty. It stays inline;
+         * a toast would vanish and leave a blank page with no reason given.
+         */
         setForbidden(true);
         setMessage('Your current roles cannot access creator review. This is backend-enforced RBAC.');
       } else {
-        setMessage(err.message);
+        toast.error(err.message);
       }
     }
   };
@@ -255,7 +261,7 @@ export default function ApprovalQueue({ user, onStats }) {
       setApprovals(current => (current || []).filter(item => item._id !== approval._id));
       setDecisions(current => [payload.data, ...current]);
     } catch (err) {
-      setMessage(err.message);
+      toast.error(err.message);
     } finally {
       setBusyId('');
     }
@@ -263,7 +269,8 @@ export default function ApprovalQueue({ user, onStats }) {
 
   return (
     <div className="space-y-4">
-      {message ? <Notice tone={forbidden ? 'warning' : 'danger'}>{message}</Notice> : null}
+      {/* Only the RBAC refusal reaches here now — everything else is a toast. */}
+      {message && forbidden ? <Notice tone="warning">{message}</Notice> : null}
 
       {!approvals ? (
         <div className="space-y-3">

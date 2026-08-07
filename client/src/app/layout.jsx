@@ -1,6 +1,7 @@
 import './globals.css';
 import ThemeProvider from '../components/layout/ThemeProvider';
 import PendingPublishWorker from '../components/publish/PendingPublishWorker';
+import { Toaster } from '../components/ui/toast';
 
 export const metadata = {
   title: 'CreatorOps OS',
@@ -38,6 +39,9 @@ export default function RootLayout({ children }) {
         <ThemeProvider>
           <PendingPublishWorker />
           {children}
+          {/* Mounted once, above every route — action results are announced here
+              instead of pushing a banner into whatever page you are reading. */}
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

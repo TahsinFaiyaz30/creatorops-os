@@ -11,12 +11,12 @@
  * Two layout facts drive the structure here, and getting either wrong makes the
  * control silently dead:
  *
- *   · The rail is collapsed to 60px by default and only expands on hover, so the
- *     trigger has to work in both states. An early `return` for the collapsed
- *     case leaves the popup unrendered and the button does nothing at all.
- *   · The rail scrolls with `overflow-x-hidden`, which clips any popup wider than
- *     it. The list is therefore positioned `fixed`, measured from the trigger,
- *     so it escapes the rail instead of being cut off by it.
+ *   · The rail collapses to an icon strip, so the trigger has to work in both
+ *     states. An early `return` for the collapsed case leaves the popup
+ *     unrendered and the button does nothing at all.
+ *   · The rail scrolls with `overflow-x-hidden`, and its ancestors carry
+ *     backdrop filters. The list is therefore measured from the trigger and
+ *     portalled to <body>, so neither the clipping nor the filter can reach it.
  *
  * The page is reloaded on switch rather than re-fetched in place: half the app's
  * screens hold data loaded under the previous workspace, and a soft switch would
@@ -27,6 +27,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import Popover from '../ui/Popover';
 import { Check, ChevronsUpDown, Plus, Users, User as UserIcon } from 'lucide-react';
 
 import { api } from '../../lib/api';
@@ -133,7 +134,9 @@ export default function WorkspaceSwitcher({ expanded = true }) {
         className={
           expanded
             ? 'focus-ring mb-3 flex w-full items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface2)]/70 px-2.5 py-2 text-left transition-colors hover:border-[var(--border-strong)]'
-            : 'focus-ring mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface2)] text-[var(--text-2)] transition-colors hover:border-[var(--accent-line)] hover:text-[var(--accent)]'
+            /* 40px square, same as every collapsed nav row — the rail is one
+               centre line and a 36px trigger visibly broke it. */
+            : 'focus-ring mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface2)] text-[var(--text-2)] transition-colors hover:border-[var(--accent-line)] hover:text-[var(--accent)]'
         }
       >
         {expanded ? (
@@ -152,11 +155,12 @@ export default function WorkspaceSwitcher({ expanded = true }) {
             <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-[var(--muted)]" />
           </>
         ) : (
-          <Icon className="h-4 w-4" />
+          <Icon className="h-[18px] w-[18px]" />
         )}
       </button>
 
       {/* Rendered in both rail states — see the note at the top of this file. */}
+      <Popover>
       <AnimatePresence>
         {open && anchor ? (
           <motion.div
@@ -227,6 +231,7 @@ export default function WorkspaceSwitcher({ expanded = true }) {
           </motion.div>
         ) : null}
       </AnimatePresence>
+      </Popover>
     </>
   );
 }

@@ -1,13 +1,16 @@
 'use client';
 
 /**
- * Login — converted from .tsx to .jsx by hand, types stripped.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Sign in.
  *
- * Every control on this page is an AnimatedButton now: the demo-account chips,
- * the password reveal and the submit. The submit previously used Aceternity's
- * StatefulButton, which ran its own spinner→check animation off the click
- * promise; that meant two different loading languages on one screen. It now
- * uses the shared `loading` state so the page matches the rest of the app.
+ * The page used to carry five one-click demo accounts with their passwords in
+ * the source. That is a set of live credentials published to anyone who opens
+ * the page, and it made the real form the smaller half of its own screen. Gone.
+ *
+ * What remains is one form: email, password, submit — plus the routes out, to
+ * signup and back to the marketing site.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { useState } from 'react';
@@ -18,18 +21,9 @@ import { Eye, EyeOff, LogIn } from 'lucide-react';
 
 import { AuthShell, Field } from '../../components/auth/auth-shell';
 import { AnimatedButton } from '../../components/ui/AnimatedButton';
-import { HoverBorderGradient } from '../../components/ui/hover-border-gradient';
 import { api } from '../../lib/api';
 import { saveSession } from '../../lib/auth';
 import { homePathForUser } from '../../lib/roles';
-
-const DEMO_ACCOUNTS = [
-  { label: 'Content Creator', email: 'creator@creatorops.dev', password: 'password123' },
-  { label: 'Brand Rep',      email: 'brand@creatorops.dev',   password: 'password123' },
-  { label: 'Admin',          email: 'admin@creatorops.dev',   password: 'password123' },
-  { label: 'Creator Admin',  email: 'creator.admin@creatorops.dev', password: 'password123' },
-  { label: 'Brand Admin',    email: 'brand.admin@creatorops.dev', password: 'password123' }
-];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -37,78 +31,36 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  const doLogin = async creds => {
-    setBusy(creds.email);
+  const submit = async event => {
+    event.preventDefault();
+    setBusy(true);
     setError('');
     try {
-      const payload = await api.post('/api/auth/login', creds);
+      const payload = await api.post('/api/auth/login', { email, password });
       saveSession(payload);
       router.push(homePathForUser(payload.user));
     } catch (err) {
       setError(err?.message || 'Login failed. Check your credentials.');
-    } finally {
-      setBusy('');
+      setBusy(false);
     }
   };
-
-  const anyBusy = Boolean(busy);
 
   return (
     <AuthShell
       title="Welcome back"
       subtitle="Sign in to your CreatorOps workspace."
       footer={
-        <>
-          <div className="mt-5">
-            <div className="flex items-center gap-3">
-              <div className="h-px flex-1 bg-[var(--surface3)]" />
-              <span className="text-xs text-[var(--muted)]">Demo accounts</span>
-              <div className="h-px flex-1 bg-[var(--surface3)]" />
-            </div>
-
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {DEMO_ACCOUNTS.map((account, i) => (
-                <motion.div
-                  key={account.email}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.35 + i * 0.05, duration: 0.5 }}
-                >
-                  <AnimatedButton
-                    id={`demo-${account.label.toLowerCase().replace(/\s+/g, '-')}`}
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={anyBusy}
-                    loading={busy === account.email}
-                    onClick={() => doLogin(account)}
-                    className="w-full rounded-full py-2.5 hover:border-[var(--accent-line)] hover:text-[var(--accent)]"
-                  >
-                    {busy === account.email ? null : account.label}
-                  </AnimatedButton>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-
-          <p className="mt-6 text-center text-sm text-[var(--muted)]">
-            New here?{' '}
-            <Link href="/signup" className="font-semibold text-[var(--accent)] hover:underline">
-              Create an account
-            </Link>
-          </p>
-        </>
+        <p className="mt-6 text-center text-sm text-[var(--muted)]">
+          New here?{' '}
+          <Link href="/signup" className="font-semibold text-[var(--accent)] hover:underline">
+            Create an account
+          </Link>
+        </p>
       }
     >
-      <form
-        onSubmit={event => {
-          event.preventDefault();
-          doLogin({ email, password });
-        }}
-        className="mt-5 space-y-4"
-      >
+      <form onSubmit={submit} className="mt-6 space-y-4">
         <Field
           id="login-email"
           label="Email address"
@@ -132,7 +84,7 @@ export default function LoginPage() {
             onChange={event => setPassword(event.target.value)}
             className="pr-11"
           />
-          {/* top-[1.85rem] clears the label row; the field itself is 38px tall. */}
+          {/* top-[1.95rem] clears the label row; the field itself is 38px tall. */}
           <AnimatedButton
             type="button"
             variant="ghost"
@@ -150,6 +102,7 @@ export default function LoginPage() {
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
+            role="alert"
             className="rounded-lg border border-danger/30 bg-danger/10 px-4 py-2.5 text-sm text-danger"
           >
             {error}
@@ -161,28 +114,21 @@ export default function LoginPage() {
           type="submit"
           variant="primary"
           size="lg"
-          disabled={anyBusy}
-          loading={busy === email && Boolean(email)}
+          loading={busy}
           className="w-full rounded-full"
         >
-          {busy === email && email ? 'Signing in…' : (
+          {busy ? 'Signing in…' : (
             <>
               <LogIn size={15} />
               Sign in
             </>
           )}
         </AnimatedButton>
-      </form>
 
-      <div className="mt-5 flex justify-center">
-        <HoverBorderGradient
-          as="div"
-          containerClassName="rounded-full"
-          className="bg-[var(--surface)] px-4 py-1.5 text-[11px] text-[var(--muted)]"
-        >
-          Protected workspace · roles enforced server-side
-        </HoverBorderGradient>
-      </div>
+        <p className="pt-1 text-center text-[11px] text-[var(--muted)]">
+          Roles and permissions are enforced server-side.
+        </p>
+      </form>
     </AuthShell>
   );
 }

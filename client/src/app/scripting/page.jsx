@@ -9,13 +9,12 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { MessagesSquare, FileText, Clock, Cpu } from 'lucide-react';
 
 import AppShell from '../../components/layout/AppShell';
 import ScriptChatPanel from '../../components/scripting/ScriptChatPanel';
 import { TextGenerateEffect } from '../../components/ui/text-generate-effect';
 import { BackgroundBeams } from '../../components/ui/background-beams';
-import { Page, GlareStat, GlareStatGrid, GLARE_TINTS } from '../../components/ds';
+import { Page } from '../../components/ds';
 import { api } from '../../lib/api';
 
 export default function ScriptingPage() {
@@ -70,13 +69,17 @@ export default function ScriptingPage() {
           </div>
         </div>
 
+        {/*
+          The four oversized stat tiles are gone. This is a writing surface, and
+          counting your own threads above the thing you came here to write in
+          pushed the chat below the fold for no working benefit.
+        */}
         {stats ? (
-          <GlareStatGrid className="xl:grid-cols-4">
-            <GlareStat label="Threads"       value={stats.threads}  icon={MessagesSquare} tint={GLARE_TINTS[0]} />
-            <GlareStat label="Final scripts" value={stats.finals}   icon={FileText}       tint={GLARE_TINTS[1]} />
-            <GlareStat label="Messages"      value={stats.messages} icon={Clock}          tint={GLARE_TINTS[2]} hint={`Last active ${stats.lastActive}`} />
-            <GlareStat label="Engine"        value={stats.provider} icon={Cpu}            tint={GLARE_TINTS[3]} />
-          </GlareStatGrid>
+          <p className="text-xs text-[var(--muted)]">
+            {stats.threads} thread{stats.threads === 1 ? '' : 's'} · {stats.finals} final script
+            {stats.finals === 1 ? '' : 's'} · engine {stats.provider}
+            {stats.lastActive !== '—' ? ` · last active ${stats.lastActive}` : ''}
+          </p>
         ) : null}
 
         <ScriptChatPanel />

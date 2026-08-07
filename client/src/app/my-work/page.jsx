@@ -18,8 +18,9 @@ import {
 } from 'lucide-react';
 
 import AppShell from '../../components/layout/AppShell';
-import { Badge, Button, EmptyState, Notice, Page, Section, Skeleton } from '../../components/ds';
+import { Badge, Button, EmptyState, Page, Section, Skeleton } from '../../components/ds';
 import { api } from '../../lib/api';
+import { useToastState } from '../../components/ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -36,7 +37,7 @@ export default function MyWorkPage() {
   const [tasks, setTasks] = useState(null);
   const [handoffs, setHandoffs] = useState([]);
   const [deliverables, setDeliverables] = useState([]);
-  const [error, setError] = useState('');
+  const [error, setError] = useToastState('danger');
   const [busy, setBusy] = useState('');
 
   const load = async () => {
@@ -83,7 +84,6 @@ export default function MyWorkPage() {
           </p>
         </div>
 
-        {error ? <Notice tone="danger">{error}</Notice> : null}
 
         {incoming.length > 0 ? (
           <Section title="Handed to you" description="Work a teammate passed over.">

@@ -38,6 +38,7 @@ import { getSocket } from '../../lib/socket';
 import { getUser } from '../../lib/auth';
 import { formatPlatform } from '../../lib/platforms';
 import { canEngageWithSocial } from '../../lib/roles';
+import { useToastState } from '../../components/ui/toast';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -165,7 +166,7 @@ export default function AnalyticsPage() {
   const [groups, setGroups] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [selectedPlatform, setSelectedPlatform] = useState('');
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useToastState('info');
   const [syncResults, setSyncResults] = useState([]);
   const [replyText, setReplyText] = useState({});
   const [busy, setBusy] = useState('');
@@ -334,7 +335,6 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {message ? <Notice tone="neutral">{message}</Notice> : null}
         {summary?.unavailableMessage ? <Notice tone="warning">{summary.unavailableMessage}</Notice> : null}
 
         {/* Workspace roll-up — totalPublishedPosts / totalMetricSnapshots were unused */}
