@@ -21,18 +21,20 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Images, Trash2, Pencil, HardDrive, Film, Image as ImageIcon, Clock,
-  Search, LayoutGrid, List as ListIcon, ExternalLink, Check, X, Upload
+  Search, LayoutGrid, List as ListIcon, ExternalLink, Check, X, Upload, FolderLock
 } from 'lucide-react';
 
 import AppShell from '../../components/layout/AppShell';
+import ProjectPinControl from '../../components/media/ProjectPinControl';
 import { TextGenerateEffect } from '../../components/ui/text-generate-effect';
 import { BackgroundBeams } from '../../components/ui/background-beams';
 import {
-  Page, Section, Surface, Badge, Button, Input,
+  Page, Section, Surface, Badge, Button, Input, Select,
   EmptyState, Skeleton, Notice, DataList,
   GlareStat, GlareStatGrid, GLARE_TINTS
 } from '../../components/ds';
 import { api } from '../../lib/api';
+import { getActiveWorkspaceId } from '../../lib/teams';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -63,7 +65,7 @@ const FILTERS = [
 
 /* ── Grid tile ────────────────────────────────────────────────────────────── */
 
-function MediaTile({ asset, index, hovered, setHovered, onRename, onDelete, renaming, renameValue, setRenameValue, commitRename, cancelRename }) {
+function MediaTile({ asset, index, hovered, setHovered, onRename, onDelete, renaming, renameValue, setRenameValue, commitRename, cancelRename, projects, inTeam, onPinned, onPinError }) {
   const id = asset._id || asset.id;
   const isVideo = asset.mediaType === 'video';
   const dims = asset.width && asset.height ? `${asset.width}×${asset.height}` : null;
@@ -104,6 +106,22 @@ function MediaTile({ asset, index, hovered, setHovered, onRename, onDelete, rena
           <Badge tone={STATUS_TONE[asset.status] || 'neutral'}>{asset.status || 'unknown'}</Badge>
           {isTemp ? <Badge tone="warning"><Clock className="h-2.5 w-2.5" />temp</Badge> : null}
         </div>
+
+        {/*
+         * Who can see this file. Always visible rather than hover-only: a pinned
+         * asset is hidden from most of the team, and that is not something to
+         * discover by accident.
+         */}
+        {inTeam ? (
+          <div className="absolute right-2 top-2 z-10">
+            <ProjectPinControl
+              asset={asset}
+              projects={projects}
+              onChanged={onPinned}
+              onError={onPinError}
+            />
+          </div>
+        ) : null}
         {dur ? (
           <span className="pointer-events-none absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-white">
             {dur}
@@ -186,6 +204,9 @@ export default function MediaPage() {
   const [hovered, setHovered] = useState(null);
   const [renaming, setRenaming] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [projects, setProjects] = useState([]);
+  const [scope, setScope] = useState('all');
+  const [inTeam, setInTeam] = useState(false);
 
   const load = () =>
     api
@@ -193,7 +214,25 @@ export default function MediaPage() {
       .then(p => setAssets(p?.data?.mediaAssets || []))
       .catch(e => setError(e.message));
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    /*
+     * Projects only mean something in a team — a solo creator sees everything
+     * they own regardless, so pinning would be a choice with no consequence.
+     */
+    if (!getActiveWorkspaceId()) return;
+    setInTeam(true);
+    api
+      .get('/api/campaigns')
+      .then(p => setProjects(p?.data?.campaigns || []))
+      .catch(() => setProjects([]));
+  }, []);
+
+  const onPinned = async message => {
+    setError('');
+    setNotice(message);
+    await load();
+  };
 
   const startRename = asset => {
     setRenaming(asset._id || asset.id);
@@ -224,9 +263,12 @@ export default function MediaPage() {
     return assets.filter(a => {
       const matchesType = filter === 'all' || a.mediaType === filter;
       const matchesQuery = !q || a.originalName?.toLowerCase().includes(q);
-      return matchesType && matchesQuery;
+      const assetProjectId = String(a.projectId?._id || a.projectId || '');
+      const matchesScope =
+        scope === 'all' || (scope === 'shared' ? !assetProjectId : assetProjectId === scope);
+      return matchesType && matchesQuery && matchesScope;
     });
-  }, [assets, query, filter]);
+  }, [assets, query, filter, scope]);
 
   const stats = useMemo(() => {
     if (!assets) return null;
@@ -235,7 +277,8 @@ export default function MediaPage() {
       images: assets.filter(a => a.mediaType === 'image').length,
       videos: assets.filter(a => a.mediaType === 'video').length,
       bytes: assets.reduce((s, a) => s + (a.size || 0), 0),
-      temporary: assets.filter(a => a.storageIntent === 'temporary_publish' || a.cleanupAt).length
+      temporary: assets.filter(a => a.storageIntent === 'temporary_publish' || a.cleanupAt).length,
+      pinned: assets.filter(a => a.projectId).length
     };
   }, [assets]);
 
@@ -260,6 +303,23 @@ export default function MediaPage() {
     },
     { key: 'size', header: 'Size', align: 'right', render: a => <span className="tabular-nums">{fmtBytes(a.size)}</span> },
     { key: 'status', header: 'Status', render: a => <Badge tone={STATUS_TONE[a.status] || 'neutral'}>{a.status || 'unknown'}</Badge> },
+    ...(inTeam
+      ? [
+          {
+            key: 'visibility',
+            header: 'Visible to',
+            render: a => (
+              <ProjectPinControl
+                asset={a}
+                projects={projects}
+                onChanged={onPinned}
+                onError={setError}
+                compact
+              />
+            )
+          }
+        ]
+      : []),
     { key: 'createdAt', header: 'Added', align: 'right', render: a => <span className="tabular-nums">{fmtDate(a.createdAt)}</span> },
     {
       key: 'actions',
@@ -309,7 +369,11 @@ export default function MediaPage() {
             <GlareStat label="Images"    value={stats.images}         icon={ImageIcon}  tint={GLARE_TINTS[1]} />
             <GlareStat label="Videos"    value={stats.videos}         icon={Film}       tint={GLARE_TINTS[2]} />
             <GlareStat label="Stored"    value={fmtBytes(stats.bytes)} icon={HardDrive} tint={GLARE_TINTS[3]} />
-            <GlareStat label="Temporary" value={stats.temporary}      icon={Clock}      tint={GLARE_TINTS[4]} hint="Pending cleanup" />
+            {inTeam ? (
+              <GlareStat label="Pinned" value={stats.pinned} icon={FolderLock} tint={GLARE_TINTS[4]} hint="Limited to one project's crew" />
+            ) : (
+              <GlareStat label="Temporary" value={stats.temporary} icon={Clock} tint={GLARE_TINTS[4]} hint="Pending cleanup" />
+            )}
           </GlareStatGrid>
         ) : null}
 
@@ -318,6 +382,24 @@ export default function MediaPage() {
           description={filtered ? `${filtered.length} shown` : undefined}
           actions={
             <div className="flex flex-wrap items-center gap-2">
+              {/* Who a file is visible to — only meaningful inside a team. */}
+              {inTeam ? (
+                <Select
+                  value={scope}
+                  onChange={e => setScope(e.target.value)}
+                  aria-label="Filter by who can see the file"
+                  className="h-8 w-auto py-1 text-[11px]"
+                >
+                  <option value="all">All files</option>
+                  <option value="shared">Shared with the team</option>
+                  {projects.map(project => (
+                    <option key={project._id} value={String(project._id)}>
+                      Pinned to {project.name}
+                    </option>
+                  ))}
+                </Select>
+              ) : null}
+
               {/* Type filter */}
               <div className="flex rounded-lg border border-[var(--border)] bg-[var(--surface2)] p-0.5">
                 {FILTERS.map(f => {
@@ -428,6 +510,10 @@ export default function MediaPage() {
                     setRenameValue={setRenameValue}
                     commitRename={commitRename}
                     cancelRename={cancelRename}
+                    projects={projects}
+                    inTeam={inTeam}
+                    onPinned={onPinned}
+                    onPinError={setError}
                   />
                 ))}
               </AnimatePresence>

@@ -14,6 +14,8 @@ import {
   uploadResumableChunk
 } from '../controllers/media.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
+import { requireTeamPermission } from '../middleware/role.middleware.js';
+import { TEAM_PERMISSIONS } from '../constants/teamPermissions.js';
 
 const router = express.Router();
 
@@ -24,7 +26,14 @@ const resumableChunkLimitBytes = Number.isFinite(env.mediaUploadLimitBytes)
 
 router.use(authenticate);
 
-router.post('/resumable/start', startResumableUpload);
+/*
+ * Only the start of an upload is gated. The chunk/pause/resume/cancel steps act
+ * on a session the caller already owns, so re-checking the permission mid-upload
+ * would only be able to strand a transfer that was legitimate when it began.
+ * Reads are scoped inside the service by project membership rather than gated
+ * here, so a member always sees the library slice that belongs to them.
+ */
+router.post('/resumable/start', requireTeamPermission(TEAM_PERMISSIONS.MEDIA_UPLOAD), startResumableUpload);
 router.get('/resumable/:sessionId', getResumableUpload);
 router.post(
   '/resumable/:sessionId/chunk',
@@ -37,6 +46,6 @@ router.delete('/resumable/:sessionId', cancelResumableUpload);
 router.get('/', listMedia);
 router.get('/:id', getMedia);
 router.patch('/:id', updateMedia);
-router.delete('/:id', removeMedia);
+router.delete('/:id', requireTeamPermission(TEAM_PERMISSIONS.MEDIA_DELETE), removeMedia);
 
 export default router;

@@ -1,4 +1,5 @@
 import { normalizeRoles, primaryRole } from './roles';
+import { clearActiveWorkspace } from './teams';
 
 const TOKEN_KEY = 'creatorops.token';
 const USER_KEY = 'creatorops.user';
@@ -79,6 +80,19 @@ export const getUser = () => {
 };
 
 export const saveSession = ({ token, user }) => {
+  /*
+   * A different account must never inherit the previous one's active team.
+   * The stale header 403s every authenticated request, and the shell reads that
+   * as a dead session — which showed up as being logged straight back out on
+   * sign-in. Signing out clears it too, but people also just sign in as someone
+   * else, or return after a token expired.
+   */
+  const previousUserId = getUserId(getUser());
+  const nextUserId = getUserId(normalizeSessionUser(user));
+  if (previousUserId && nextUserId && previousUserId !== nextUserId) {
+    clearActiveWorkspace();
+  }
+
   memoryToken = token;
   memoryUser = normalizeSessionUser(user);
   const serializedUser = JSON.stringify(memoryUser);
@@ -93,6 +107,9 @@ export const saveSession = ({ token, user }) => {
 export const clearSession = () => {
   memoryToken = null;
   memoryUser = null;
+  /* Otherwise the next account to sign in on this browser inherits the last
+     one's active team and is immediately refused by the server. */
+  clearActiveWorkspace();
   const storage = getStorage();
   storage?.removeItem(TOKEN_KEY);
   storage?.removeItem(USER_KEY);

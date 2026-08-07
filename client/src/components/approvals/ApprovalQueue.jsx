@@ -218,7 +218,17 @@ export default function ApprovalQueue({ user, onStats }) {
     setMessage('');
     try {
       const payload = await api.get('/api/approvals/pending');
-      setApprovals(payload.data.approvals || []);
+      /*
+       * The endpoint now returns deliverable submissions and release requests
+       * alongside per-variant reviews. Those are rendered by TeamReviewQueue,
+       * which knows how to show a bundle of media; here they arrived with no
+       * variant attached and drew as "Untitled content / unknown".
+       */
+      setApprovals(
+        (payload.data.approvals || []).filter(
+          approval => approval.variantId && (approval.subjectType || 'PlatformVariant') === 'PlatformVariant'
+        )
+      );
       setForbidden(false);
     } catch (err) {
       setApprovals([]);

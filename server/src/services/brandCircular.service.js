@@ -5,6 +5,7 @@ import PublishedPost from '../models/PublishedPost.js';
 import Review from '../models/Review.js';
 import SocialMetricSnapshot from '../models/SocialMetricSnapshot.js';
 import User from '../models/User.js';
+import Workspace from '../models/Workspace.js';
 import { normalizePlatforms } from '../constants/platforms.js';
 import { isBrandRepRole } from '../constants/roles.js';
 import { emitRealtimeEvent } from '../sockets/socket.js';
@@ -19,6 +20,28 @@ import {
   getCreatorMeanStatistics,
   getCreatorStatistics
 } from './statistics.service.js';
+
+/*
+ * Every workspace a creator owns: their personal one plus any team they run.
+ * Marketplace figures are drawn from all of them, because a head who publishes
+ * through their team is still publishing on their own accounts.
+ */
+const listOwnedWorkspaceIds = async creator => {
+  const owned = await Workspace.find({ ownerId: creator._id }).select('_id');
+  const ids = owned.map(workspace => workspace._id);
+  const personalId = creator.personalWorkspaceId || creator.workspaceId;
+  if (personalId && !ids.some(id => String(id) === String(personalId))) ids.push(personalId);
+  return ids;
+};
+
+/* Refresh follower counts everywhere the creator owns accounts, not just the
+   workspace they happen to be switched into while browsing circulars. */
+const syncOwnedAudience = async ({ user, platforms }) => {
+  const workspaceIds = await listOwnedWorkspaceIds(user);
+  await Promise.all(
+    workspaceIds.map(workspaceId => syncWorkspaceAudience({ workspaceId, platforms }).catch(() => []))
+  );
+};
 
 const createHttpError = (message, statusCode, code = '') => {
   const error = new Error(message);
@@ -212,7 +235,7 @@ export const getCircularApplicationEligibility = async ({ user, circularId }) =>
   const deadlinePassed = Boolean(circular.deadline && circular.deadline < new Date());
 
   /* Follower counts are read live so the preview matches what submitting stores. */
-  await syncWorkspaceAudience({ workspaceId: user.workspaceId, platforms: circular.platforms }).catch(() => []);
+  await syncOwnedAudience({ user, platforms: circular.platforms });
 
   const eligibility = await getCircularPlatformEligibility({
     creator: user,
@@ -289,7 +312,7 @@ export const applyToCircular = async ({ user, circularId, input }) => {
   }
 
   /* Refresh follower counts, then freeze the means onto the application. */
-  await syncWorkspaceAudience({ workspaceId: user.workspaceId, platforms: eligibility.commonPlatforms }).catch(() => []);
+  await syncOwnedAudience({ user, platforms: eligibility.commonPlatforms });
   const [statistics, meanStatistics] = await Promise.all([
     getCreatorStatistics({ user }),
     getCreatorMeanStatistics({ creator: user, platforms: eligibility.commonPlatforms })
@@ -433,9 +456,21 @@ export const getApplicantCreatorProfile = async ({ user, applicationId }) => {
     ? [...application.commonPlatforms]
     : normalizePlatforms(circular.platforms || []);
 
+  /*
+   * Every workspace this creator owns, matched on attribution rather than on who
+   * pressed publish. A head whose team composes and publishes on their accounts
+   * owns that output exactly as if they had posted it solo; a hired member is
+   * not an owner, so none of it follows them.
+   */
+  const ownedWorkspaceIds = await listOwnedWorkspaceIds(creator);
+
   const [meanStatistics, posts, reviews, populatedApplication] = await Promise.all([
     getCreatorMeanStatistics({ creator, platforms: commonPlatforms }),
-    PublishedPost.find({ workspaceId: creator.workspaceId, createdBy: creator._id, status: 'published' })
+    PublishedPost.find({
+      workspaceId: { $in: ownedWorkspaceIds },
+      status: 'published',
+      $or: [{ attributedToId: creator._id }, { attributedToId: null, createdBy: creator._id }]
+    })
       .sort({ publishedAt: -1, createdAt: -1 })
       .populate({ path: 'mediaAssetIds', select: '+objectKey' })
       .populate('contentItemId', 'title'),
@@ -452,7 +487,7 @@ export const getApplicantCreatorProfile = async ({ user, applicationId }) => {
   ]);
 
   const metricMap = await SocialMetricSnapshot.find({
-    workspaceId: creator.workspaceId,
+    workspaceId: { $in: ownedWorkspaceIds },
     publishedPostId: { $in: posts.map(post => post._id) }
   })
     .sort({ collectedAt: -1 })

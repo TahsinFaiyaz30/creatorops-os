@@ -3,6 +3,54 @@ import jwt from 'jsonwebtoken';
 import env from '../config/env.js';
 import { normalizeRoles, primaryRole } from '../constants/roles.js';
 import User from '../models/User.js';
+import { resolveTeamContext } from '../services/teamMembership.service.js';
+
+export const WORKSPACE_HEADER = 'x-workspace-id';
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Active workspace resolution.
+ *
+ * Every model in this codebase is scoped by workspaceId, and this is the single
+ * place that decides which workspace a request runs in. That is what makes teams
+ * possible without threading a team id through ~370 query sites: a team simply
+ * IS a workspace, and membership decides which ones you may act in.
+ *
+ * No header → the user's own workspace, exactly as before teams existed. Every
+ * pre-existing endpoint, page and test therefore behaves identically, and teams
+ * are purely additive.
+ *
+ * A header naming a workspace the user is not an active member of is rejected
+ * rather than silently falling back, because silently serving someone their own
+ * data when they asked for a team's is how cross-tenant bugs get missed.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+const resolveActiveWorkspace = async (req, user) => {
+  const requested = String(req.get(WORKSPACE_HEADER) || '').trim();
+
+  if (!requested || requested === String(user.workspaceId)) {
+    const context = await resolveTeamContext({ userId: user._id, workspaceId: user.workspaceId });
+    return { workspaceId: user.workspaceId, team: context, denied: false };
+  }
+
+  /*
+   * A coded refusal, because the client has to be able to tell "this workspace is
+   * not yours" apart from a genuine authorisation failure. A stale id in browser
+   * storage — a team you were removed from, or the previous account's — otherwise
+   * breaks every request, and the shell reads that as a dead session and bounces
+   * you to the login page.
+   */
+  if (!/^[a-f\d]{24}$/i.test(requested)) {
+    return { denied: true, code: 'WORKSPACE_ACCESS_DENIED', message: 'The requested workspace id is not valid.' };
+  }
+
+  const context = await resolveTeamContext({ userId: user._id, workspaceId: requested });
+  if (!context) {
+    return { denied: true, code: 'WORKSPACE_ACCESS_DENIED', message: 'You are not an active member of that team.' };
+  }
+
+  return { workspaceId: context.workspaceId, team: context, denied: false };
+};
 
 export const authenticate = async (req, res, next) => {
   try {
@@ -24,12 +72,38 @@ export const authenticate = async (req, res, next) => {
     const roles = normalizeRoles(user.roles, user.role);
     user.roles = roles;
     user.role = primaryRole(roles);
+
+    /* The account's own workspace, before any team switch is applied. */
+    const personalWorkspaceId = user.workspaceId;
+    const active = await resolveActiveWorkspace(req, user);
+    if (active.denied) {
+      return res.status(403).json({ message: active.message, code: active.code });
+    }
+
+    /*
+     * Reassigning user.workspaceId is deliberate: every service reads scope from
+     * it, so the switch lands everywhere at once. The document is never saved
+     * after this point in the request, so nothing is persisted.
+     */
+    user.workspaceId = active.workspaceId;
+    /*
+     * Carried alongside so services that must ignore the team switch can find it
+     * — marketplace statistics in particular, which are always a creator's own
+     * reach and must not become the team's just because they were browsing
+     * circulars while switched into it.
+     */
+    user.personalWorkspaceId = personalWorkspaceId;
+
     req.user = user;
+    req.personalWorkspaceId = personalWorkspaceId;
+    req.team = active.team;
     req.auth = {
       userId: user._id,
-      workspaceId: user.workspaceId,
+      workspaceId: active.workspaceId,
+      personalWorkspaceId,
       role: user.role,
-      roles
+      roles,
+      teamPermissions: active.team?.permissions || []
     };
 
     return next();

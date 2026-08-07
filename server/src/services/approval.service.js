@@ -1,13 +1,18 @@
 import ApprovalRequest from '../models/ApprovalRequest.js';
 import ContentItem from '../models/ContentItem.js';
+import Deliverable from '../models/Deliverable.js';
 import PlatformVariant from '../models/PlatformVariant.js';
 import { isContentCreatorRole } from '../constants/roles.js';
+import { TEAM_PERMISSIONS } from '../constants/teamPermissions.js';
 import { createWorkflowEvent } from './event.service.js';
+import { hydrateMediaAssetPublicUrls } from './media.service.js';
+import { scopeByVisibleProjects } from './projectAccess.service.js';
 import { createVariantVersion } from './versioning.service.js';
 
-const createHttpError = (message, statusCode) => {
+const createHttpError = (message, statusCode, code = '') => {
   const error = new Error(message);
   error.statusCode = statusCode;
+  if (code) error.code = code;
   return error;
 };
 
@@ -15,6 +20,19 @@ const requireContentCreator = user => {
   if (!isContentCreatorRole(user)) {
     throw createHttpError('Forbidden: Content Creator role is required for this review action.', 403);
   }
+};
+
+/*
+ * A solo creator has no team context and reviews their own work, so the team
+ * check degrades to "allow". Inside a team the position decides.
+ */
+const requireDecidePermission = team => {
+  if (!team || team.isOwner || team.can(TEAM_PERMISSIONS.APPROVAL_DECIDE)) return;
+  throw createHttpError(
+    'Your position in this team does not allow approving work.',
+    403,
+    'TEAM_PERMISSION_DENIED'
+  );
 };
 
 const findScopedVariant = async (user, variantId) => {
@@ -168,22 +186,69 @@ export const requestApproval = async ({ variantId, comment = '', user }) => {
     .populate('variantId');
 };
 
-export const getPendingApprovals = async ({ user }) => {
+/**
+ * The review queue.
+ *
+ * Previously this returned every pending approval in the workspace, which inside
+ * a team would show a Designer the whole company's work. It is now scoped twice:
+ * to the projects the caller can see, and — for anyone without approval.decide —
+ * to their own submissions, so a member can still track what they sent in.
+ *
+ * Deliverable submissions and the original per-variant compose flow both land
+ * here, because a head wants one queue, not two.
+ */
+export const getPendingApprovals = async ({ user, team = null, query = {} }) => {
   requireContentCreator(user);
 
-  return ApprovalRequest.find({
-    workspaceId: user.workspaceId,
-    status: 'pending'
-  })
+  const canDecide = !team || team.isOwner || team.can(TEAM_PERMISSIONS.APPROVAL_DECIDE);
+
+  const baseFilter = { workspaceId: user.workspaceId, status: 'pending' };
+  if (query.kind) baseFilter.kind = query.kind;
+  if (!canDecide) baseFilter.requestedBy = user._id;
+
+  /*
+   * Rows carrying a projectId are filtered by project visibility; legacy rows
+   * without one predate projects and stay visible to anyone who may decide.
+   */
+  const scoped = await scopeByVisibleProjects({ user, team, filter: baseFilter, field: 'projectId' });
+  const filter =
+    scoped === baseFilter
+      ? baseFilter
+      : { ...baseFilter, $or: [{ projectId: null }, { projectId: scoped.projectId }] };
+
+  const approvals = await ApprovalRequest.find(filter)
     .sort({ createdAt: -1 })
-    .populate('requestedBy', 'name email role')
+    .populate('requestedBy', 'name email role profile.avatarUrl')
     .populate('reviewedBy', 'name email role')
     .populate('contentItemId', 'title rawIdea status')
+    .populate('projectId', 'name status')
     .populate('variantId', 'platform caption hook cta hashtags brandScore readinessScore status warnings suggestions aiProvider');
+
+  /* Deliverable approvals carry their bundle so the queue can show the work. */
+  const deliverableIds = approvals
+    .filter(approval => approval.subjectType === 'Deliverable' && approval.subjectId)
+    .map(approval => approval.subjectId);
+
+  const deliverables = deliverableIds.length
+    ? await Deliverable.find({ _id: { $in: deliverableIds } })
+        .populate('ownerId', 'name email profile.avatarUrl')
+        .populate({ path: 'mediaAssetIds', select: '+objectKey' })
+        .populate('variantIds', 'platform caption hook cta status')
+    : [];
+
+  await Promise.all(deliverables.map(deliverable => hydrateMediaAssetPublicUrls(deliverable.mediaAssetIds)));
+  const deliverableById = Object.fromEntries(deliverables.map(item => [String(item._id), item]));
+
+  return approvals.map(approval => ({
+    ...approval.toObject(),
+    deliverable: approval.subjectType === 'Deliverable' ? deliverableById[String(approval.subjectId)] || null : null,
+    canDecide
+  }));
 };
 
-const completeApprovalDecision = async ({ approvalId, user, comment = '', decisionStatus, eventType }) => {
+const completeApprovalDecision = async ({ approvalId, user, team = null, comment = '', decisionStatus, eventType }) => {
   requireContentCreator(user);
+  requireDecidePermission(team);
 
   const approval = await findPendingApproval(user, approvalId);
   const variant = await findScopedVariant(user, approval.variantId);
@@ -238,28 +303,31 @@ const completeApprovalDecision = async ({ approvalId, user, comment = '', decisi
   };
 };
 
-export const approveApproval = ({ approvalId, user, comment = '' }) =>
+export const approveApproval = ({ approvalId, user, team = null, comment = '' }) =>
   completeApprovalDecision({
     approvalId,
     user,
+    team,
     comment,
     decisionStatus: 'approved',
     eventType: 'approval.approved'
   });
 
-export const rejectApproval = ({ approvalId, user, comment = '' }) =>
+export const rejectApproval = ({ approvalId, user, team = null, comment = '' }) =>
   completeApprovalDecision({
     approvalId,
     user,
+    team,
     comment,
     decisionStatus: 'rejected',
     eventType: 'approval.rejected'
   });
 
-export const requestChanges = ({ approvalId, user, comment = '' }) =>
+export const requestChanges = ({ approvalId, user, team = null, comment = '' }) =>
   completeApprovalDecision({
     approvalId,
     user,
+    team,
     comment,
     decisionStatus: 'changes_requested',
     eventType: 'approval.changes_requested'

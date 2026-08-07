@@ -103,6 +103,17 @@ const mediaUploadSessionSchema = new Schema(
       enum: MEDIA_STORAGE_INTENTS,
       default: 'library'
     },
+    /*
+     * Carried from upload start onto the finished MediaAsset. The project has to
+     * be chosen before the bytes go up, because that is the only moment the
+     * uploader has the context; asking afterwards would mean the file sits in the
+     * shared library — visible to the whole team — until someone remembers.
+     */
+    projectId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Campaign',
+      default: null
+    },
     cleanupGroupId: {
       type: String,
       default: '',

@@ -7,7 +7,16 @@ export const CREATOR_NOTIFICATION_TYPES = [
   'creator_shortlisted',
   'application_rejected',
   'application_accepted',
-  'calendar_reminder'
+  'calendar_reminder',
+  /* Team events */
+  'team_invited',
+  'team_joined',
+  'task_assigned',
+  'handoff_received',
+  'approval_requested',
+  'approval_decided',
+  'publish_released',
+  'project_message'
 ];
 
 const creatorNotificationSchema = new Schema(

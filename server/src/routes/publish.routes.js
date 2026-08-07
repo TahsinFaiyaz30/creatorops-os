@@ -15,6 +15,12 @@ import {
   schedulePublish,
   validatePublish
 } from '../controllers/publish.controller.js';
+import {
+  getPendingReleases,
+  postApproveRelease,
+  postRejectRelease,
+  postRequestRelease
+} from '../controllers/publishRelease.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requireRole } from '../middleware/role.middleware.js';
 import { BRAND_REP_ROLE, CONTENT_CREATOR_ROLE } from '../constants/roles.js';
@@ -37,5 +43,15 @@ router.post('/jobs/:id/resume', requireRole(publishRoles), resumeJob);
 router.post('/jobs/:id/cancel', requireRole(publishRoles), cancelJob);
 router.post('/jobs/:id/retry', requireRole(publishRoles), retryJob);
 router.post('/jobs/:id/delete', requireRole(publishRoles), deleteJobDispatch);
+
+/*
+ * The release gate. A member with publish.dispatch can queue a post, but in a
+ * team it does not leave the queue until the head releases it — the worker's
+ * atomic claim refuses to pick up a job whose releaseStatus is pending.
+ */
+router.get('/releases', getPendingReleases);
+router.post('/releases/:postGroupId/request', requireRole(publishRoles), postRequestRelease);
+router.post('/releases/:postGroupId/approve', requireRole(publishRoles), postApproveRelease);
+router.post('/releases/:postGroupId/reject', requireRole(publishRoles), postRejectRelease);
 
 export default router;

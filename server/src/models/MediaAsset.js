@@ -20,6 +20,23 @@ const mediaAssetSchema = new Schema(
       ref: 'User',
       required: true
     },
+    /*
+     * Project scoping. MediaAsset is workspace-scoped, so without this every
+     * project member would see the whole team library — including assets from
+     * projects they were deliberately kept out of, which would leave the
+     * isolation promise only half true. null = shared team library.
+     */
+    projectId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Campaign',
+      default: null,
+      index: true
+    },
+    visibility: {
+      type: String,
+      enum: ['team', 'project'],
+      default: 'team'
+    },
     originalName: {
       type: String,
       required: true

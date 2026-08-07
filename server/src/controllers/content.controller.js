@@ -3,13 +3,14 @@ import {
   getContentVersions,
   listContentVariants,
   listContentByCampaign,
+  listMyTasks,
   updateContentItem,
   updateContentStatus
 } from '../services/content.service.js';
 
 export const createContentHandler = async (req, res, next) => {
   try {
-    const contentItem = await createContentItem(req.user, req.body);
+    const contentItem = await createContentItem(req.user, req.body, req.team);
     res.status(201).json({ data: { contentItem } });
   } catch (error) {
     next(error);
@@ -18,8 +19,18 @@ export const createContentHandler = async (req, res, next) => {
 
 export const listContentByCampaignHandler = async (req, res, next) => {
   try {
-    const contentItems = await listContentByCampaign(req.user, req.params.campaignId);
+    const contentItems = await listContentByCampaign(req.user, req.params.campaignId, req.team);
     res.json({ data: { contentItems } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** Everything assigned to me across every project I can see. */
+export const listMyTasksHandler = async (req, res, next) => {
+  try {
+    const tasks = await listMyTasks(req.user, req.team);
+    res.json({ data: { tasks } });
   } catch (error) {
     next(error);
   }
@@ -27,7 +38,7 @@ export const listContentByCampaignHandler = async (req, res, next) => {
 
 export const updateContentHandler = async (req, res, next) => {
   try {
-    const result = await updateContentItem(req.user, req.params.id, req.body);
+    const result = await updateContentItem(req.user, req.params.id, req.body, req.team);
     res.json({ data: result });
   } catch (error) {
     next(error);
@@ -36,7 +47,7 @@ export const updateContentHandler = async (req, res, next) => {
 
 export const updateContentStatusHandler = async (req, res, next) => {
   try {
-    const contentItem = await updateContentStatus(req.user, req.params.id, req.body);
+    const contentItem = await updateContentStatus(req.user, req.params.id, req.body, req.team);
     res.json({ data: { contentItem } });
   } catch (error) {
     next(error);
@@ -45,7 +56,7 @@ export const updateContentStatusHandler = async (req, res, next) => {
 
 export const getContentVersionsHandler = async (req, res, next) => {
   try {
-    const versions = await getContentVersions(req.user, req.params.id);
+    const versions = await getContentVersions(req.user, req.params.id, req.team);
     res.json({ data: { versions } });
   } catch (error) {
     next(error);
@@ -54,7 +65,7 @@ export const getContentVersionsHandler = async (req, res, next) => {
 
 export const listContentVariantsHandler = async (req, res, next) => {
   try {
-    const variants = await listContentVariants(req.user, req.params.id);
+    const variants = await listContentVariants(req.user, req.params.id, req.team);
     res.json({ data: { variants } });
   } catch (error) {
     next(error);

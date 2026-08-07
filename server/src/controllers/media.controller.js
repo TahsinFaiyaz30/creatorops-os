@@ -13,7 +13,7 @@ import {
 
 export const startResumableUpload = async (req, res, next) => {
   try {
-    const uploadSession = await startResumableMediaUpload({ user: req.user, input: req.body });
+    const uploadSession = await startResumableMediaUpload({ user: req.user, input: req.body, team: req.team });
     res.status(201).json({ data: { uploadSession } });
   } catch (error) {
     next(error);
@@ -72,7 +72,7 @@ export const cancelResumableUpload = async (req, res, next) => {
 
 export const listMedia = async (req, res, next) => {
   try {
-    const mediaAssets = await listMediaAssets({ user: req.user });
+    const mediaAssets = await listMediaAssets({ user: req.user, team: req.team });
     res.json({ data: { mediaAssets } });
   } catch (error) {
     next(error);
@@ -81,7 +81,7 @@ export const listMedia = async (req, res, next) => {
 
 export const getMedia = async (req, res, next) => {
   try {
-    const mediaAsset = await getMediaAssetById({ user: req.user, mediaAssetId: req.params.id });
+    const mediaAsset = await getMediaAssetById({ user: req.user, mediaAssetId: req.params.id, team: req.team });
     res.json({ data: { mediaAsset } });
   } catch (error) {
     next(error);
@@ -93,7 +93,8 @@ export const updateMedia = async (req, res, next) => {
     const mediaAsset = await updateMediaAsset({
       user: req.user,
       mediaAssetId: req.params.id,
-      input: req.body
+      input: req.body,
+      team: req.team
     });
     res.json({ data: { mediaAsset } });
   } catch (error) {
@@ -103,7 +104,7 @@ export const updateMedia = async (req, res, next) => {
 
 export const removeMedia = async (req, res, next) => {
   try {
-    const mediaAsset = await deleteMediaAsset({ user: req.user, mediaAssetId: req.params.id });
+    const mediaAsset = await deleteMediaAsset({ user: req.user, mediaAssetId: req.params.id, team: req.team });
     res.json({ data: { mediaAsset } });
   } catch (error) {
     next(error);

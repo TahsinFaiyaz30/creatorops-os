@@ -8,6 +8,7 @@ import PublishJob from '../models/PublishJob.js';
 import SocialComment from '../models/SocialComment.js';
 import SocialMetricSnapshot from '../models/SocialMetricSnapshot.js';
 import SocialReply from '../models/SocialReply.js';
+import Workspace from '../models/Workspace.js';
 import { normalizePlatform } from '../constants/platforms.js';
 import { BRAND_REP_ROLE, CONTENT_CREATOR_ROLE, roleMatches } from '../constants/roles.js';
 import { getConnector } from '../platforms/connectorRegistry.js';
@@ -22,6 +23,7 @@ import {
   TEMPORARY_UPLOAD_STORAGE_EXPIRED_MESSAGE
 } from './media.service.js';
 import { refreshStoredConnectionIfNeeded, sanitizeConnection } from './platformConnection.service.js';
+import { requestPublishRelease, resolveInitialReleaseStatus } from './publishRelease.service.js';
 import {
   getTemporaryMediaRetentionSeconds,
   getTemporaryMediaStorageHardDeleteSeconds,
@@ -36,6 +38,12 @@ import {
 import { createVariantVersion } from './versioning.service.js';
 
 const createPostGroupId = () => `post_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+/** The workspace owner, who owns the connected accounts a post goes out on. */
+const resolveAttributedOwner = async workspaceId => {
+  const workspace = await Workspace.findById(workspaceId).select('ownerId');
+  return workspace?.ownerId || null;
+};
 const VISIBILITIES = ['public', 'private', 'friends_only'];
 const VISIBILITY_OPTIONS_BY_PLATFORM = {
   youtube: ['public', 'private'],
@@ -888,10 +896,19 @@ export const createPublishJob = async ({ user, input, publishNow = false }) => {
     throw createHttpError('scheduledAt must be a valid date.', 400);
   }
 
+  /*
+   * In a team, a queued job is not a released job. This marks it pending so the
+   * worker will not claim it until the head releases the post — see
+   * publishRelease.service. Solo workspaces get 'not_required' and behave exactly
+   * as they did before teams existed.
+   */
+  const releaseStatus = await resolveInitialReleaseStatus({ workspaceId: user.workspaceId });
+
   const job = await PublishJob.create({
     workspaceId: user.workspaceId,
     postGroupId: normalized.postGroupId,
     groupTargetCount: normalized.groupTargetCount,
+    releaseStatus,
     campaignId: normalized.campaignId || variant?.campaignId || contentItem?.campaignId || null,
     contentItemId: contentItem?._id || null,
     variantId: variant?._id || null,
@@ -909,6 +926,25 @@ export const createPublishJob = async ({ user, input, publishNow = false }) => {
     mediaProcessing: normalized.mediaProcessing,
     createdBy: user._id
   });
+
+  /*
+   * Queuing IS the request for release.
+   *
+   * Setting releaseStatus alone froze the post in a place nobody could see it:
+   * the worker would not claim it, the head had nothing in their review queue,
+   * and the member had no way to ask. One request per post group, so a
+   * cross-platform post asks once rather than once per platform.
+   */
+  if (releaseStatus === 'pending') {
+    await requestPublishRelease({
+      user,
+      team: null,
+      postGroupId: job.postGroupId,
+      comment: normalized.releaseNote || ''
+    }).catch(error => {
+      console.error('[publish.release_request_failed]', error.message);
+    });
+  }
 
   if (variant) {
     const previousStatus = variant.status;
@@ -1685,7 +1721,14 @@ export const processPublishJob = async ({ jobId }) => {
     {
       _id: jobId,
       status: 'queued',
-      temporaryMediaExpiredAt: null
+      temporaryMediaExpiredAt: null,
+      /*
+       * The release gate, re-checked inside the atomic claim. A scheduled job
+       * dispatches minutes or days after it was queued, and the head may have
+       * revoked the release in between — checking only at creation time would
+       * let that post go out anyway.
+       */
+      releaseStatus: { $in: ['not_required', 'approved'] }
     },
     {
       status: 'publishing',
@@ -1911,7 +1954,15 @@ export const processPublishJob = async ({ jobId }) => {
       providerPostUrl: lockedJob.providerPostUrl,
       providerRawResponse: lockedJob.providerRawResponse,
       publishedAt: lockedJob.publishedAt,
-      createdBy: lockedJob.createdBy
+      createdBy: lockedJob.createdBy,
+      /*
+       * The audience belongs to the account, and the account belongs to the
+       * workspace owner — not to whoever pressed publish. This is what keeps a
+       * hired member from claiming the head's reach as their own marketplace
+       * statistics. Falls back to the dispatcher only if a workspace somehow has
+       * no owner, which the backfill rules out.
+       */
+      attributedToId: (await resolveAttributedOwner(lockedJob.workspaceId)) || lockedJob.createdBy
     });
 
     if (lockedJob.variantId) {

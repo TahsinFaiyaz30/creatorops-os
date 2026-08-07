@@ -49,6 +49,16 @@ const contentItemSchema = new Schema(
       ref: 'User',
       default: null
     },
+    /* Several people can work one task; assignedTo stays the primary owner. */
+    assignedToIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    /*
+     * The gate. This task stays locked until every listed deliverable is
+     * approved — that is the mechanism behind "once the head approves, the next
+     * member can start". Enforced in content.service, not just rendered.
+     */
+    blockedByDeliverableIds: [{ type: Schema.Types.ObjectId, ref: 'Deliverable' }],
+    dueAt: { type: Date, default: null },
+    order: { type: Number, default: 0 },
     currentVersion: {
       type: Number,
       default: 1,
@@ -62,6 +72,8 @@ contentItemSchema.index({ workspaceId: 1 });
 contentItemSchema.index({ campaignId: 1 });
 contentItemSchema.index({ status: 1 });
 contentItemSchema.index({ createdAt: 1 });
+/* "what is on my plate" across every project in a team. */
+contentItemSchema.index({ workspaceId: 1, assignedToIds: 1, status: 1 });
 
 const ContentItem = mongoose.model('ContentItem', contentItemSchema);
 

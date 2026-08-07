@@ -5,6 +5,8 @@ import env from '../config/env.js';
 import { CONTENT_CREATOR_ROLE, PUBLIC_USER_ROLES, normalizeRoles, primaryRole } from '../constants/roles.js';
 import User from '../models/User.js';
 import Workspace from '../models/Workspace.js';
+import { claimPendingInvitations } from './team.service.js';
+import { ensureOwnerMembership } from './teamMembership.service.js';
 
 const createHttpError = (message, statusCode) => {
   const error = new Error(message);
@@ -86,6 +88,16 @@ export const registerUser = async input => {
     roles,
     workspaceId
   });
+
+  /*
+   * Positions and an owner membership from the first second. A personal
+   * workspace is simply a team of one, so it takes the same shape as any team
+   * and no code path has to special-case "workspace without membership".
+   */
+  await ensureOwnerMembership({ workspaceId, ownerId: userId });
+
+  /* A pending invite sent before this account existed now has a user to attach to. */
+  await claimPendingInvitations({ user }).catch(() => {});
 
   return {
     user: sanitizeUser(user),

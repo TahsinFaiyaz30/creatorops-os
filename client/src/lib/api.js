@@ -1,4 +1,5 @@
 import { clearSession, getToken } from './auth';
+import { clearActiveWorkspace, getActiveWorkspaceId } from './teams';
 
 /*
  * ─────────────────────────────────────────────────────────────────────────────
@@ -43,10 +44,12 @@ const CONFIG_HINT =
 
 const normalizeError = async response => {
   let message = `Request failed with ${response.status}`;
+  let code = '';
 
   try {
     const payload = await response.json();
     message = payload.message || message;
+    code = payload.code || '';
   } catch (_error) {
     /*
      * A non-JSON 404 on an /api path means the request was answered by Next
@@ -60,10 +63,11 @@ const normalizeError = async response => {
 
   const error = new Error(message);
   error.status = response.status;
+  error.code = code;
   return error;
 };
 
-export const apiFetch = async (path, options = {}) => {
+export const apiFetch = async (path, options = {}, retriedWithoutWorkspace = false) => {
   const token = getToken();
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const isRawBody = Boolean(options.rawBody);
@@ -74,6 +78,16 @@ export const apiFetch = async (path, options = {}) => {
 
   if (token) {
     headers.Authorization = `Bearer ${token}`;
+  }
+
+  /*
+   * Which team this request acts in. Attached here rather than at call sites so
+   * a page cannot forget it and silently read the caller's personal workspace
+   * instead of the team they are looking at. Absent = personal workspace.
+   */
+  const activeWorkspaceId = retriedWithoutWorkspace ? '' : getActiveWorkspaceId();
+  if (activeWorkspaceId && !headers['X-Workspace-Id']) {
+    headers['X-Workspace-Id'] = activeWorkspaceId;
   }
 
   let response;
@@ -99,7 +113,22 @@ export const apiFetch = async (path, options = {}) => {
     if (response.status === 401) {
       clearSession();
     }
-    throw await normalizeError(response);
+
+    const error = await normalizeError(response);
+
+    /*
+     * The stored team is no longer usable — you were removed from it, it was
+     * deleted, or it belonged to the account that was signed in before this one.
+     * Drop it and retry against the personal workspace instead of surfacing a
+     * failure the caller cannot act on: every screen would otherwise break at
+     * once, and the shell treats a failed /api/auth/me as a dead session.
+     */
+    if (error.code === 'WORKSPACE_ACCESS_DENIED' && activeWorkspaceId && !retriedWithoutWorkspace) {
+      clearActiveWorkspace();
+      return apiFetch(path, options, true);
+    }
+
+    throw error;
   }
 
   if (response.status === 204) {

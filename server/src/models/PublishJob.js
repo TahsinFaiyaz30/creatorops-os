@@ -7,6 +7,16 @@ const { Schema } = mongoose;
 export const PUBLISH_JOB_STATUSES = ['queued', 'publishing', 'paused', 'published', 'failed', 'blocked', 'cancelled'];
 export const PUBLISH_VISIBILITIES = ['public', 'private', 'friends_only'];
 
+/*
+ * The release gate, kept separate from `status` on purpose.
+ *
+ * A job waiting on the head's release is still a perfectly normal queued job —
+ * it simply must not be claimed. Modelling that as a status would have meant
+ * touching every existing status transition; as its own axis, the worker's
+ * atomic claim just adds one more condition and nothing else changes.
+ */
+export const PUBLISH_RELEASE_STATUSES = ['not_required', 'pending', 'approved', 'rejected'];
+
 const accountSnapshotSchema = new Schema(
   {
     platform: { type: String, default: '' },
@@ -217,7 +227,16 @@ const publishJobSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true
-    }
+    },
+    releaseStatus: {
+      type: String,
+      enum: PUBLISH_RELEASE_STATUSES,
+      default: 'not_required',
+      index: true
+    },
+    releaseApprovalId: { type: Schema.Types.ObjectId, ref: 'ApprovalRequest', default: null },
+    releasedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    releasedAt: { type: Date, default: null }
   },
   { timestamps: true }
 );

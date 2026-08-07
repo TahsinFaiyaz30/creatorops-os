@@ -6,8 +6,11 @@ import PublishJob from '../models/PublishJob.js';
 import SocialComment from '../models/SocialComment.js';
 import SocialMetricSnapshot from '../models/SocialMetricSnapshot.js';
 import WorkflowEvent from '../models/WorkflowEvent.js';
+import TeamMembership from '../models/TeamMembership.js';
 import { normalizePlatforms } from '../constants/platforms.js';
 import { createWorkflowEvent } from './event.service.js';
+import { createNotification } from './notification.service.js';
+import { assertProjectAccess, projectScopeFilter } from './projectAccess.service.js';
 
 const createHttpError = (message, statusCode) => {
   const error = new Error(message);
@@ -15,7 +18,38 @@ const createHttpError = (message, statusCode) => {
   return error;
 };
 
-export const createCampaign = async (user, input) => {
+const idOf = value => String(value?._id || value || '');
+
+/**
+ * Only people who are actually in this team can be put on a project. Without
+ * this a stale user id — someone who left, or was never here — silently becomes
+ * a project member and starts receiving work they can no longer open.
+ */
+const resolveTeamMemberIds = async ({ workspaceId, userIds }) => {
+  /*
+   * Drop empties BEFORE stringifying: String(undefined) is "undefined", which is
+   * truthy and reaches Mongo as a malformed ObjectId.
+   */
+  const requested = [
+    ...new Set(
+      (Array.isArray(userIds) ? userIds : [])
+        .filter(Boolean)
+        .map(String)
+        .filter(value => /^[a-f\d]{24}$/i.test(value))
+    )
+  ];
+  if (requested.length === 0) return [];
+
+  const memberships = await TeamMembership.find({
+    workspaceId,
+    userId: { $in: requested },
+    status: 'active'
+  }).select('userId');
+
+  return memberships.map(membership => membership.userId);
+};
+
+export const createCampaign = async (user, input, team = null) => {
   const name = String(input.name || '').trim();
 
   if (!name) {
@@ -28,6 +62,9 @@ export const createCampaign = async (user, input) => {
     throw createHttpError('Campaign must include at least one supported platform.', 400);
   }
 
+  const memberIds = await resolveTeamMemberIds({ workspaceId: user.workspaceId, userIds: input.memberIds });
+  const leadIds = await resolveTeamMemberIds({ workspaceId: user.workspaceId, userIds: [input.leadId] });
+
   const campaign = await Campaign.create({
     workspaceId: user.workspaceId,
     name,
@@ -35,8 +72,16 @@ export const createCampaign = async (user, input) => {
     targetAudience: input.targetAudience || '',
     platforms,
     status: input.status || 'active',
-    createdBy: user._id
+    createdBy: user._id,
+    leadId: leadIds[0] || null,
+    memberIds,
+    brief: String(input.brief || '').trim(),
+    deadline: input.deadline ? new Date(input.deadline) : null,
+    priority: ['low', 'normal', 'high'].includes(input.priority) ? input.priority : 'normal',
+    visibility: input.visibility === 'team' ? 'team' : 'project_members'
   });
+
+  await notifyProjectMembers({ user, campaign, memberIds, title: 'You were added to a project' });
 
   await createWorkflowEvent({
     workspaceId: user.workspaceId,
@@ -54,24 +99,93 @@ export const createCampaign = async (user, input) => {
   return campaign;
 };
 
-export const listCampaigns = async user =>
-  Campaign.find({
-    workspaceId: user.workspaceId
-  })
+const notifyProjectMembers = async ({ user, campaign, memberIds, title }) => {
+  const recipients = (memberIds || []).filter(memberId => idOf(memberId) !== idOf(user._id));
+  await Promise.all(
+    recipients.map(memberId =>
+      createNotification({
+        workspaceId: campaign.workspaceId,
+        userId: memberId,
+        type: 'task_assigned',
+        title,
+        message: `${user.name} put you on "${campaign.name}".`,
+        entityType: 'Campaign',
+        entityId: campaign._id
+      }).catch(() => {})
+    )
+  );
+};
+
+const POPULATE_PROJECT = [
+  { path: 'createdBy', select: 'name email role profile.avatarUrl' },
+  { path: 'leadId', select: 'name email profile.avatarUrl' },
+  { path: 'memberIds', select: 'name email profile.avatarUrl' }
+];
+
+/* Scoped at the query, not filtered after: a member never reads a project row
+   belonging to work they were deliberately kept out of. */
+export const listCampaigns = async (user, team = null) =>
+  Campaign.find(projectScopeFilter({ user, team }))
     .sort({ createdAt: -1 })
-    .populate('createdBy', 'name email role');
+    .populate(POPULATE_PROJECT);
 
-export const getCampaignById = async (user, campaignId) => {
-  const campaign = await Campaign.findOne({
-    _id: campaignId,
-    workspaceId: user.workspaceId
-  }).populate('createdBy', 'name email role');
+export const getCampaignById = async (user, campaignId, team = null) => {
+  await assertProjectAccess({ user, team, projectId: campaignId });
+  return Campaign.findOne({ _id: campaignId, workspaceId: user.workspaceId }).populate(POPULATE_PROJECT);
+};
 
-  if (!campaign) {
-    throw createHttpError('Campaign not found.', 404);
+export const updateCampaign = async (user, campaignId, input, team = null) => {
+  const campaign = await assertProjectAccess({ user, team, projectId: campaignId, requireManage: true });
+
+  if (input.name !== undefined) {
+    const name = String(input.name).trim();
+    if (!name) throw createHttpError('Campaign name is required.', 400);
+    campaign.name = name;
+  }
+  if (input.goal !== undefined) campaign.goal = String(input.goal);
+  if (input.brief !== undefined) campaign.brief = String(input.brief);
+  if (input.targetAudience !== undefined) campaign.targetAudience = String(input.targetAudience);
+  if (input.platforms !== undefined) campaign.platforms = normalizePlatforms(input.platforms);
+  if (input.status !== undefined && ['active', 'paused', 'archived'].includes(input.status)) {
+    campaign.status = input.status;
+  }
+  if (input.priority !== undefined && ['low', 'normal', 'high'].includes(input.priority)) {
+    campaign.priority = input.priority;
+  }
+  if (input.visibility !== undefined) {
+    campaign.visibility = input.visibility === 'team' ? 'team' : 'project_members';
+  }
+  if (input.deadline !== undefined) campaign.deadline = input.deadline ? new Date(input.deadline) : null;
+
+  if (input.leadId !== undefined) {
+    const leadIds = await resolveTeamMemberIds({ workspaceId: user.workspaceId, userIds: [input.leadId] });
+    campaign.leadId = leadIds[0] || null;
   }
 
-  return campaign;
+  let addedMembers = [];
+  if (input.memberIds !== undefined) {
+    const before = new Set((campaign.memberIds || []).map(idOf));
+    const memberIds = await resolveTeamMemberIds({ workspaceId: user.workspaceId, userIds: input.memberIds });
+    addedMembers = memberIds.filter(memberId => !before.has(idOf(memberId)));
+    campaign.memberIds = memberIds;
+  }
+
+  await campaign.save();
+  if (addedMembers.length) {
+    await notifyProjectMembers({ user, campaign, memberIds: addedMembers, title: 'You were added to a project' });
+  }
+
+  await createWorkflowEvent({
+    workspaceId: user.workspaceId,
+    actorId: user._id,
+    eventType: 'campaign.updated',
+    message: `Project "${campaign.name}" updated.`,
+    entityType: 'Campaign',
+    entityId: campaign._id,
+    metadata: { campaignId: campaign._id, memberCount: (campaign.memberIds || []).length }
+  });
+
+  return Campaign.findById(campaign._id).populate(POPULATE_PROJECT);
 };
 
 const countByField = async ({ Model, match, field }) => {
@@ -86,8 +200,8 @@ const countByField = async ({ Model, match, field }) => {
   }, {});
 };
 
-export const getCampaignTracking = async (user, campaignId) => {
-  const campaign = await getCampaignById(user, campaignId);
+export const getCampaignTracking = async (user, campaignId, team = null) => {
+  const campaign = await getCampaignById(user, campaignId, team);
   const matchCampaign = { workspaceId: user.workspaceId, campaignId: campaign._id };
   const contentItems = await ContentItem.find(matchCampaign).select('_id title status');
   const contentItemIds = contentItems.map(item => item._id);

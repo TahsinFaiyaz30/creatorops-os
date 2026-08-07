@@ -58,14 +58,46 @@ export const initSocket = server => {
     }
   });
 
-  io.on('connection', socket => {
+  io.on('connection', async socket => {
     if (socket.data.user?.workspaceId) {
       socket.join(`workspace:${socket.data.user.workspaceId}`);
     }
     if (socket.data.user?.userId) {
       socket.join(`user:${socket.data.user.userId}`);
     }
+
+    /*
+     * Every team the user belongs to, not just their personal workspace.
+     *
+     * The token carries the account's own workspaceId, but team events are
+     * emitted to workspace:<team id>. Joining only the personal room left every
+     * live feed, publishing progress bar and approval ping silent inside a team
+     * until the page was reloaded — the REST layer was right and the socket was
+     * quietly talking to the wrong room.
+     */
+    for (const workspaceId of await listMemberWorkspaceIds(socket.data.user?.userId)) {
+      socket.join(`workspace:${workspaceId}`);
+    }
+
     console.log(`Socket connected: ${socket.id} workspace=${socket.data.user?.workspaceId || 'unknown'}`);
+
+    /*
+     * Project rooms. Project chat is only visible to project members, and a REST
+     * layer that gets that right is undone if the socket broadcasts every message
+     * to the whole workspace. Membership is re-checked here rather than trusted
+     * from the client, because the room name arrives from the browser.
+     */
+    socket.on('project:join', async projectId => {
+      const room = toRoomId(projectId);
+      if (!room || !socket.data.user) return;
+      const allowed = await canJoinProjectRoom({ user: socket.data.user, projectId: room });
+      if (allowed) socket.join(`project:${room}`);
+    });
+
+    socket.on('project:leave', projectId => {
+      const room = toRoomId(projectId);
+      if (room) socket.leave(`project:${room}`);
+    });
 
     socket.on('disconnect', reason => {
       console.log(`Socket disconnected: ${socket.id} (${reason})`);
@@ -73,6 +105,58 @@ export const initSocket = server => {
   });
 
   return io;
+};
+
+/*
+ * Imported lazily: the models pull in services that import this module, and a
+ * top-level import here would close that cycle at load time.
+ */
+const listMemberWorkspaceIds = async userId => {
+  if (!userId) return [];
+  try {
+    const { default: TeamMembership } = await import('../models/TeamMembership.js');
+    const memberships = await TeamMembership.find({ userId, status: 'active' }).select('workspaceId');
+    return memberships.map(membership => String(membership.workspaceId));
+  } catch (_error) {
+    return [];
+  }
+};
+
+const canJoinProjectRoom = async ({ user, projectId }) => {
+  try {
+    const [{ default: Campaign }, { default: TeamMembership }] = await Promise.all([
+      import('../models/Campaign.js'),
+      import('../models/TeamMembership.js')
+    ]);
+
+    const project = await Campaign.findById(projectId).select('workspaceId memberIds leadId createdBy visibility');
+    if (!project) return false;
+
+    const membership = await TeamMembership.findOne({
+      workspaceId: project.workspaceId,
+      userId: user.userId,
+      status: 'active'
+    }).select('_id');
+    if (!membership) return false;
+
+    if (project.visibility === 'team') return true;
+    const userId = String(user.userId);
+    return (
+      String(project.createdBy) === userId ||
+      String(project.leadId) === userId ||
+      (project.memberIds || []).some(memberId => String(memberId) === userId)
+    );
+  } catch (_error) {
+    return false;
+  }
+};
+
+/** Emits only into one project's room. */
+export const emitProjectEvent = (projectId, eventName, payload) => {
+  if (!io) return;
+  const room = toRoomId(projectId);
+  if (!room) return;
+  io.to(`project:${room}`).emit(eventName, payload);
 };
 
 export const getIO = () => io;

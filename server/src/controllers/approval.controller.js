@@ -22,7 +22,7 @@ export const requestApprovalHandler = async (req, res, next) => {
 
 export const getPendingApprovalsHandler = async (req, res, next) => {
   try {
-    const approvals = await getPendingApprovals({ user: req.user });
+    const approvals = await getPendingApprovals({ user: req.user, team: req.team, query: req.query });
     res.json({ data: { approvals } });
   } catch (error) {
     next(error);
@@ -34,6 +34,7 @@ export const approveApprovalHandler = async (req, res, next) => {
     const result = await approveApproval({
       approvalId: req.params.id,
       user: req.user,
+      team: req.team,
       comment: req.body.comment
     });
 
@@ -48,6 +49,7 @@ export const rejectApprovalHandler = async (req, res, next) => {
     const result = await rejectApproval({
       approvalId: req.params.id,
       user: req.user,
+      team: req.team,
       comment: req.body.comment
     });
 
@@ -62,6 +64,7 @@ export const requestChangesHandler = async (req, res, next) => {
     const result = await requestChanges({
       approvalId: req.params.id,
       user: req.user,
+      team: req.team,
       comment: req.body.comment
     });
 

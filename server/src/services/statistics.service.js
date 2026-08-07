@@ -2,6 +2,7 @@ import CreatorStatisticSnapshot from '../models/CreatorStatisticSnapshot.js';
 import PlatformConnection from '../models/PlatformConnection.js';
 import PublishedPost from '../models/PublishedPost.js';
 import SocialMetricSnapshot from '../models/SocialMetricSnapshot.js';
+import Workspace from '../models/Workspace.js';
 import { PLATFORM_LABELS, SUPPORTED_PLATFORMS } from '../constants/platforms.js';
 import { getConnector } from '../platforms/connectorRegistry.js';
 
@@ -33,10 +34,10 @@ const addMetrics = (target, source = {}) => {
   return target;
 };
 
-const latestMetricSnapshots = async ({ workspaceId, postIds }) => {
+const latestMetricSnapshots = async ({ workspaceId, workspaceIds, postIds }) => {
   if (!postIds.length) return new Map();
   const snapshots = await SocialMetricSnapshot.find({
-    workspaceId,
+    workspaceId: workspaceIds ? { $in: workspaceIds } : workspaceId,
     publishedPostId: { $in: postIds }
   }).sort({ collectedAt: -1 });
   const map = new Map();
@@ -218,9 +219,51 @@ export const computeApplicantRankingScore = meanStatistics => {
 
 const platformLabel = platform => PLATFORM_LABELS[platform] || platform;
 
-const creatorScope = creator => ({
-  workspaceId: creator.workspaceId,
-  createdBy: creator._id
+/*
+ * Marketplace statistics are the creator's OWN reach — every workspace they own,
+ * not just the personal one.
+ *
+ * A head who runs their whole operation through a team publishes onto accounts
+ * that belong to that team, which belongs to them. Reading only the personal
+ * workspace made those posts vanish: a creator with a 25k-view post on their own
+ * Facebook page read as zero and could not even apply to a circular that
+ * required Facebook.
+ *
+ * Ownership is the right boundary rather than membership. A hired member is not
+ * an owner, so a team's output never becomes theirs — which is the thing the
+ * personal-workspace restriction was originally protecting against.
+ *
+ * Never the *active* workspace: the auth middleware reassigns `workspaceId` to
+ * whichever team a request runs in, so keying off it would make a creator's
+ * marketplace numbers change depending on which team they happened to be
+ * browsing circulars from.
+ */
+const listOwnedWorkspaceIds = async creator => {
+  const owned = await Workspace.find({ ownerId: creator._id }).select('_id');
+  const ids = owned.map(workspace => workspace._id);
+
+  /* A workspace row could be missing on legacy data; keep their own either way. */
+  const personalId = creator.personalWorkspaceId || creator.workspaceId;
+  if (personalId && !ids.some(id => String(id) === String(personalId))) ids.push(personalId);
+  return ids;
+};
+
+/*
+ * Whose audience a post reached. attributedToId is the account owner; createdBy
+ * is whoever pressed publish, and inside a team those differ. Rows written
+ * before attribution existed have no attributedToId, so they fall back.
+ *
+ * Kept as its own clause rather than spread into a filter: it uses $or, and so
+ * does the publish-window match below — merging them into one object literal
+ * would silently drop whichever came first.
+ */
+const attributionMatch = creator => ({
+  $or: [{ attributedToId: creator._id }, { attributedToId: null, createdBy: creator._id }]
+});
+
+const creatorScope = async creator => ({
+  workspaceId: { $in: await listOwnedWorkspaceIds(creator) },
+  ...attributionMatch(creator)
 });
 
 /** Connections that back a given post platform (`youtube` also backs Shorts). */
@@ -232,7 +275,7 @@ const connectionPlatformsFor = platform => (platform === 'youtube_shorts' ? ['yo
  */
 export const getCreatorPlatformCoverage = async ({ creator }) => {
   const rows = await PublishedPost.aggregate([
-    { $match: { ...creatorScope(creator), status: 'published' } },
+    { $match: { ...(await creatorScope(creator)), status: 'published' } },
     { $group: { _id: '$platform', postCount: { $sum: 1 }, lastPublishedAt: { $max: '$publishedAt' } } }
   ]);
 
@@ -282,7 +325,7 @@ export const getCircularPlatformEligibility = async ({ creator, requiredPlatform
 const readAudience = async ({ creator, platforms }) => {
   const connectionPlatforms = [...new Set(platforms.flatMap(connectionPlatformsFor))];
   const connections = await PlatformConnection.find({
-    workspaceId: creator.workspaceId,
+    workspaceId: { $in: await listOwnedWorkspaceIds(creator) },
     platform: { $in: connectionPlatforms }
   });
 
@@ -323,17 +366,25 @@ const mean = (total, count) => (count > 0 ? Number((total / count).toFixed(2)) :
  */
 export const getCreatorMeanStatistics = async ({ creator, platforms = [], windowDays = ANALYTICS_WINDOW_DAYS }) => {
   const commonPlatforms = [...new Set((platforms || []).filter(Boolean))];
+  /* Every workspace this creator owns — their own, plus any team they run. */
+  const ownedWorkspaceIds = await listOwnedWorkspaceIds(creator);
   const windowEnd = new Date();
   const windowStart = new Date(windowEnd.getTime() - windowDays * 24 * 60 * 60 * 1000);
 
   const posts = commonPlatforms.length
     ? await PublishedPost.find({
-        ...creatorScope(creator),
+        workspaceId: { $in: ownedWorkspaceIds },
         status: 'published',
         platform: { $in: commonPlatforms },
-        $or: [
-          { publishedAt: { $gte: windowStart, $lte: windowEnd } },
-          { publishedAt: null, createdAt: { $gte: windowStart, $lte: windowEnd } }
+        /* Two independent $or clauses — attribution and the publish window. */
+        $and: [
+          attributionMatch(creator),
+          {
+            $or: [
+              { publishedAt: { $gte: windowStart, $lte: windowEnd } },
+              { publishedAt: null, createdAt: { $gte: windowStart, $lte: windowEnd } }
+            ]
+          }
         ]
       })
         .sort({ publishedAt: 1, createdAt: 1 })
@@ -341,7 +392,7 @@ export const getCreatorMeanStatistics = async ({ creator, platforms = [], window
     : [];
 
   const [metricMap, audienceByPlatform] = await Promise.all([
-    latestMetricSnapshots({ workspaceId: creator.workspaceId, postIds: posts.map(post => post._id) }),
+    latestMetricSnapshots({ workspaceIds: ownedWorkspaceIds, postIds: posts.map(post => post._id) }),
     commonPlatforms.length ? readAudience({ creator, platforms: commonPlatforms }) : Promise.resolve({})
   ]);
 

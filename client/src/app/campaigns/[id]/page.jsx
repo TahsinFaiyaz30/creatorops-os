@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import AppShell from '../../../components/layout/AppShell';
 import ContentIdeaForm from '../../../components/campaign/ContentIdeaForm';
 import ContentBoard from '../../../components/campaign/ContentBoard';
+import ProjectTeamPanel from '../../../components/campaign/ProjectTeamPanel';
 import LiveEventFeed from '../../../components/events/LiveEventFeed';
 import { api } from '../../../lib/api';
 import { getUser } from '../../../lib/auth';
@@ -129,6 +130,8 @@ export default function CampaignDetailPage() {
               </button>
             </form>
             <ContentIdeaForm onCreate={createContent} />
+            {/* Crew, deliverables and the project-only conversation. */}
+            <ProjectTeamPanel project={campaign} onRefresh={load} />
           </div>
 
           <div className="space-y-4">

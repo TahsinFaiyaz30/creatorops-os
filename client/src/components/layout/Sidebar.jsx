@@ -25,6 +25,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
@@ -32,11 +33,13 @@ import {
   LayoutDashboard, GitBranch, Edit3, Bot, Images, ShieldCheck,
   RadioTower, Ruler, Send, BarChart3, Rss, MessagesSquare,
   BriefcaseBusiness, ClipboardList, Building2, Activity, Network,
-  ServerCog, LogOut, PanelLeftClose, PanelLeftOpen
+  ServerCog, LogOut, PanelLeftClose, PanelLeftOpen, Users, ListTodo
 } from 'lucide-react';
 
 import { AnimatedButton } from '../ui/AnimatedButton';
+import WorkspaceSwitcher from './WorkspaceSwitcher';
 import { ROLES, hasRole, getRoleLabel } from '../../lib/roles';
+import { TEAM_PERMISSIONS, canInTeam, getActiveTeam, onWorkspaceChange } from '../../lib/teams';
 
 /* ── Group accent colours — each section gets a unique gradient tint ──────── */
 const GROUP_ACCENTS = {
@@ -54,15 +57,18 @@ export const NAV_GROUPS = [
     label: 'Plan',
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-      { href: '/campaigns', label: 'Campaigns', icon: GitBranch,       roles: [ROLES.CONTENT_CREATOR] }
+      { href: '/campaigns', label: 'Projects',  icon: GitBranch,       roles: [ROLES.CONTENT_CREATOR] },
+      { href: '/my-work',   label: 'My Work',   icon: ListTodo,        roles: [ROLES.CONTENT_CREATOR] },
+      /* Always the team you are currently in — the switcher above is the list. */
+      { href: '/team',      label: 'Members',   icon: Users,           roles: [ROLES.CONTENT_CREATOR] }
     ]
   },
   {
     label: 'Create',
     items: [
-      { href: '/compose',   label: 'Compose',   icon: Edit3,  roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-      { href: '/scripting', label: 'Script AI', icon: Bot,    roles: [ROLES.CONTENT_CREATOR] },
-      { href: '/media',     label: 'Media',     icon: Images, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] }
+      { href: '/compose',   label: 'Compose',   icon: Edit3,  roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP], permission: TEAM_PERMISSIONS.VARIANT_GENERATE },
+      { href: '/scripting', label: 'Script AI', icon: Bot,    roles: [ROLES.CONTENT_CREATOR], permission: TEAM_PERMISSIONS.SCRIPT_USE },
+      { href: '/media',     label: 'Media',     icon: Images, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP], permission: TEAM_PERMISSIONS.MEDIA_UPLOAD }
     ]
   },
   {
@@ -74,17 +80,17 @@ export const NAV_GROUPS = [
   {
     label: 'Distribute',
     items: [
-      { href: '/accounts',   label: 'Connections',  icon: RadioTower, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
+      { href: '/accounts',   label: 'Connections',  icon: RadioTower, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP], permission: TEAM_PERMISSIONS.ACCOUNTS_MANAGE },
       { href: '/formats',    label: 'Format Rules', icon: Ruler,      roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-      { href: '/publishing', label: 'Dispatch',     icon: Send,       roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] }
+      { href: '/publishing', label: 'Dispatch',     icon: Send,       roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP], permission: TEAM_PERMISSIONS.PUBLISH_SCHEDULE }
     ]
   },
   {
     label: 'Measure',
     items: [
-      { href: '/analytics', label: 'Analytics', icon: BarChart3,      roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-      { href: '/posts',     label: 'Posts',     icon: Rss,            roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] },
-      { href: '/inbox',     label: 'Inbox',     icon: MessagesSquare, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP] }
+      { href: '/analytics', label: 'Analytics', icon: BarChart3,      roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP], permission: TEAM_PERMISSIONS.ANALYTICS_VIEW },
+      { href: '/posts',     label: 'Posts',     icon: Rss,            roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP], permission: TEAM_PERMISSIONS.ANALYTICS_VIEW },
+      { href: '/inbox',     label: 'Inbox',     icon: MessagesSquare, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP], permission: TEAM_PERMISSIONS.INBOX_REPLY }
     ]
   },
   {
@@ -105,9 +111,24 @@ export const NAV_GROUPS = [
   }
 ];
 
-export function visibleGroupsFor(user) {
+/*
+ * Two filters, deliberately independent: the platform role decides what the
+ * account is, the team position decides what you may do in the team you are
+ * currently acting in. A Designer in someone else's team should not be looking
+ * at a Connections page they cannot use.
+ *
+ * `/teams` and `/my-work` carry no permission — they are how a member reaches
+ * their own work and their own memberships, so hiding them could strand someone
+ * with no route back.
+ */
+export function visibleGroupsFor(user, team = null) {
   return NAV_GROUPS
-    .map(g => ({ ...g, items: g.items.filter(i => !i.roles || i.roles.some(r => hasRole(user, r))) }))
+    .map(g => ({
+      ...g,
+      items: g.items.filter(
+        i => (!i.roles || i.roles.some(r => hasRole(user, r))) && (!i.permission || canInTeam(team, i.permission))
+      )
+    }))
     .filter(g => g.items.length > 0);
 }
 
@@ -391,7 +412,18 @@ function ProfileFooter({ user, expanded, onSignOut, pinned, onTogglePin }) {
 export default function Sidebar({ user, expanded, onSignOut, pinned, onTogglePin }) {
   const pathname = usePathname();
   const reduce = useReducedMotion();
-  const groups = visibleGroupsFor(user);
+  /*
+   * The cached active team drives nav gating on first paint; canInTeam treats an
+   * unknown team as "allow", so a slow first load never blacks out the rail.
+   */
+  const [activeTeam, setActiveTeam] = useState(null);
+
+  useEffect(() => {
+    setActiveTeam(getActiveTeam());
+    return onWorkspaceChange(() => setActiveTeam(getActiveTeam()));
+  }, []);
+
+  const groups = visibleGroupsFor(user, activeTeam);
 
   return (
     <>
@@ -413,6 +445,9 @@ export default function Sidebar({ user, expanded, onSignOut, pinned, onTogglePin
             </span>
           </motion.span>
         </Link>
+
+        {/* Which team every request below runs in. */}
+        <WorkspaceSwitcher expanded={expanded} />
 
         {/* Navigation groups with staggered entrance */}
         <motion.div

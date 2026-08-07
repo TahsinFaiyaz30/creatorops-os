@@ -11,6 +11,7 @@ import brandCircularRoutes from './routes/brandCircular.routes.js';
 import brandRoutes from './routes/brand.routes.js';
 import calendarRoutes from './routes/calendar.routes.js';
 import campaignRoutes from './routes/campaign.routes.js';
+import collaborationRoutes from './routes/collaboration.routes.js';
 import contentRoutes from './routes/content.routes.js';
 import eventRoutes from './routes/event.routes.js';
 import mediaRoutes from './routes/media.routes.js';
@@ -22,6 +23,7 @@ import publishRoutes from './routes/publish.routes.js';
 import scriptRoutes from './routes/script.routes.js';
 import socialRoutes from './routes/social.routes.js';
 import statisticsRoutes from './routes/statistics.routes.js';
+import teamRoutes from './routes/team.routes.js';
 import userRoutes from './routes/user.routes.js';
 
 const app = express();
@@ -44,7 +46,13 @@ const corsOptions = {
 };
 
 app.use(
-  cors(corsOptions)
+  cors({
+    ...corsOptions,
+    /* The active-team header must survive the preflight or every team-scoped
+       request silently falls back to the caller's personal workspace. */
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Workspace-Id', 'Content-Range'],
+    exposedHeaders: ['Content-Range']
+  })
 );
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -68,6 +76,7 @@ app.use('/api', brandCircularRoutes);
 app.use('/api/brand-profile', brandRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/campaigns', campaignRoutes);
+app.use('/api/collab', collaborationRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/media', mediaRoutes);
@@ -79,6 +88,7 @@ app.use('/api/publish', publishRoutes);
 app.use('/api/scripts', scriptRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/statistics', statisticsRoutes);
+app.use('/api/teams', teamRoutes);
 app.use('/api/users', userRoutes);
 
 app.use(notFoundHandler);

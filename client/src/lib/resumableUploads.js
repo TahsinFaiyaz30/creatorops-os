@@ -1,5 +1,6 @@
 import { API_URL, api } from './api';
 import { getToken } from './auth';
+import { getActiveWorkspaceId } from './teams';
 
 const DB_NAME = 'creatorops-resumable-uploads';
 const DB_VERSION = 1;
@@ -254,6 +255,15 @@ const uploadRawWithProgress = (path, body, { signal, headers = {}, onUploadProgr
     xhr.open('POST', `${API_URL}${path}`);
     const token = getToken();
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    /*
+     * This path bypasses `apiFetch` to get upload progress out of XHR, so it has
+     * to attach the active team itself. Without it a chunk resolved against the
+     * uploader's personal workspace while the session had been created in a team,
+     * and every chunk failed with "Upload session not found" — media upload was
+     * broken inside a team while working fine solo.
+     */
+    const activeWorkspaceId = getActiveWorkspaceId();
+    if (activeWorkspaceId) xhr.setRequestHeader('X-Workspace-Id', activeWorkspaceId);
     for (const [key, value] of Object.entries(headers)) {
       xhr.setRequestHeader(key, value);
     }

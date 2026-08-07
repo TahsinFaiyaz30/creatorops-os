@@ -10,10 +10,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ShieldCheck, Check, MessageSquareWarning, X } from 'lucide-react';
+import { ShieldCheck, Check, MessageSquareWarning, X, PackageCheck, Send } from 'lucide-react';
 
 import AppShell from '../../components/layout/AppShell';
 import ApprovalQueue from '../../components/approvals/ApprovalQueue';
+import TeamReviewQueue from '../../components/approvals/TeamReviewQueue';
 import LiveEventFeed from '../../components/events/LiveEventFeed';
 import { TextGenerateEffect } from '../../components/ui/text-generate-effect';
 import { BackgroundBeams } from '../../components/ui/background-beams';
@@ -23,6 +24,7 @@ import { getUser } from '../../lib/auth';
 export default function CreatorReviewPage() {
   const [user, setUser] = useState(null);
   const [queue, setQueue] = useState({ pending: 0, decisions: [] });
+  const [teamCounts, setTeamCounts] = useState({ deliverables: 0, releases: 0 });
 
   useEffect(() => { setUser(getUser()); }, []);
 
@@ -63,20 +65,35 @@ export default function CreatorReviewPage() {
           </div>
         </div>
 
-        <GlareStatGrid className="xl:grid-cols-4">
-          <GlareStat label="Awaiting review" value={stats.pending}  icon={ShieldCheck}          tint={GLARE_TINTS[0]} />
-          <GlareStat label="Approved"        value={stats.approved} icon={Check}                tint={GLARE_TINTS[3]} hint="This session" />
-          <GlareStat label="Changes asked"   value={stats.changes}  icon={MessageSquareWarning} tint={GLARE_TINTS[2]} hint="This session" />
-          <GlareStat label="Rejected"        value={stats.rejected} icon={X}                    tint={GLARE_TINTS[4]} hint="This session" />
+        <GlareStatGrid className="xl:grid-cols-5">
+          <GlareStat label="Team submissions" value={teamCounts.deliverables} icon={PackageCheck} tint={GLARE_TINTS[0]} hint="Work waiting on you" />
+          <GlareStat label="Releases held"    value={teamCounts.releases}     icon={Send}         tint={GLARE_TINTS[4]} hint="Posts awaiting your go-ahead" />
+          <GlareStat label="Awaiting review"  value={stats.pending}           icon={ShieldCheck}  tint={GLARE_TINTS[1]} />
+          <GlareStat label="Approved"         value={stats.approved}          icon={Check}        tint={GLARE_TINTS[3]} hint="This session" />
+          <GlareStat label="Changes asked"    value={stats.changes}           icon={MessageSquareWarning} tint={GLARE_TINTS[2]} hint="This session" />
         </GlareStatGrid>
 
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <Section
-            title="Review queue"
-            description={queue.pending ? `${queue.pending} awaiting a decision` : undefined}
-          >
-            <ApprovalQueue user={user} onStats={handleStats} />
-          </Section>
+          <div className="space-y-5">
+            {/* Team work and release requests — the gate that unlocks other people. */}
+            <Section
+              title="Team work"
+              description={
+                teamCounts.deliverables || teamCounts.releases
+                  ? `${teamCounts.deliverables} submission${teamCounts.deliverables === 1 ? '' : 's'} · ${teamCounts.releases} release${teamCounts.releases === 1 ? '' : 's'}`
+                  : 'Submissions and release requests from your team.'
+              }
+            >
+              <TeamReviewQueue onCounts={setTeamCounts} />
+            </Section>
+
+            <Section
+              title="Variant review queue"
+              description={queue.pending ? `${queue.pending} awaiting a decision` : undefined}
+            >
+              <ApprovalQueue user={user} onStats={handleStats} />
+            </Section>
+          </div>
 
           <div className="xl:sticky xl:top-20">
             <Section

@@ -3,7 +3,9 @@ import path from 'path';
 
 import MediaAsset from '../models/MediaAsset.js';
 import MediaUploadSession from '../models/MediaUploadSession.js';
+import { TEAM_PERMISSIONS } from '../constants/teamPermissions.js';
 import { inspectVideoMetadata } from './mediaMetadata.service.js';
+import { assertProjectAccess, visibleProjectIds } from './projectAccess.service.js';
 import {
   abortResumableObjectUpload,
   completeResumableObjectUpload,
@@ -143,6 +145,9 @@ const createMediaAssetFromCompletedUpload = async ({ user, session, sha256 }) =>
   return MediaAsset.create({
     workspaceId: user.workspaceId,
     uploadedBy: user._id,
+    /* Chosen at upload start; 'project' visibility is what mediaScopeFilter reads. */
+    projectId: session.projectId || null,
+    visibility: session.projectId ? 'project' : 'team',
     originalName: session.originalName,
     mimeType: session.mimeType,
     size: session.size,
@@ -274,7 +279,7 @@ const assertTemporaryUploadSessionNotExpired = async session => {
   }
 };
 
-export const startResumableMediaUpload = async ({ user, input = {} }) => {
+export const startResumableMediaUpload = async ({ user, input = {}, team = null }) => {
   const originalName = String(input.originalName || '').trim();
   const mimeType = String(input.mimeType || '').trim();
   const mediaType = detectMediaType(mimeType);
@@ -309,9 +314,22 @@ export const startResumableMediaUpload = async ({ user, input = {} }) => {
   const storageHardDeleteAt = storageIntent === 'temporary_publish'
     ? calculateTemporaryUploadHardDeleteAt({ startedAt: new Date(), hardDeleteSeconds })
     : null;
+
+  /*
+   * Pinning an upload to a project is checked here, not trusted: an uploader
+   * could otherwise attach a file to a project they cannot open, which would
+   * then be visible to that project's crew and invisible to them.
+   */
+  let projectId = null;
+  if (input.projectId) {
+    const project = await assertProjectAccess({ user, team, projectId: input.projectId });
+    projectId = project._id;
+  }
+
   const session = new MediaUploadSession({
     workspaceId: user.workspaceId,
     uploadedBy: user._id,
+    projectId,
     uploadKey,
     originalName,
     mimeType,
@@ -640,22 +658,46 @@ export const cancelResumableMediaUpload = async ({ user, sessionId }) => {
   return serializeUploadSession(session);
 };
 
-export const listMediaAssets = async ({ user }) => {
-  const assets = await MediaAsset.find({ workspaceId: user.workspaceId })
+/**
+ * Media a caller may see: the shared team library, plus assets belonging to
+ * projects they are on. Someone with media.view_all (or a solo creator, who has
+ * no team context) sees everything.
+ *
+ * Their own uploads are always included — an asset you uploaded and then pinned
+ * to a project you were later removed from would otherwise vanish on you.
+ */
+const mediaScopeFilter = async ({ user, team }) => {
+  const base = { workspaceId: user.workspaceId };
+  if (!team || team.isOwner || team.can(TEAM_PERMISSIONS.MEDIA_VIEW_ALL)) return base;
+
+  const allowedProjectIds = await visibleProjectIds({ user, team });
+  if (allowedProjectIds === null) return base;
+
+  return {
+    ...base,
+    $or: [
+      { projectId: null },
+      { visibility: 'team' },
+      { projectId: { $in: allowedProjectIds } },
+      { uploadedBy: user._id }
+    ]
+  };
+};
+
+export const listMediaAssets = async ({ user, team = null }) => {
+  const filter = await mediaScopeFilter({ user, team });
+  const assets = await MediaAsset.find(filter)
     .select('+objectKey')
     .sort({ createdAt: -1 })
-    .populate('uploadedBy', 'name email role');
+    .populate('uploadedBy', 'name email role')
+    .populate('projectId', 'name');
   await Promise.all(assets.map(hydrateAssetPublicUrl));
   return assets;
 };
 
-export const getMediaAssetById = async ({ user, mediaAssetId }) => {
-  const query = MediaAsset.findOne({
-    _id: mediaAssetId,
-    workspaceId: user.workspaceId
-  }).select('+objectKey');
-
-  const asset = await query;
+export const getMediaAssetById = async ({ user, mediaAssetId, team = null }) => {
+  const filter = await mediaScopeFilter({ user, team });
+  const asset = await MediaAsset.findOne({ ...filter, _id: mediaAssetId }).select('+objectKey');
 
   if (!asset) {
     throw createHttpError('Media asset not found.', 404);
@@ -665,20 +707,54 @@ export const getMediaAssetById = async ({ user, mediaAssetId }) => {
   return asset;
 };
 
-export const updateMediaAsset = async ({ user, mediaAssetId, input }) => {
-  const asset = await getMediaAssetById({ user, mediaAssetId });
+/** Pin an asset to a project, or return it to the shared team library. */
+export const setMediaAssetProject = async ({ user, team, mediaAssetId, projectId }) => {
+  const asset = await getMediaAssetById({ user, mediaAssetId, team });
+
+  if (projectId) {
+    await assertProjectAccess({ user, team, projectId });
+    asset.projectId = projectId;
+    asset.visibility = 'project';
+  } else {
+    asset.projectId = null;
+    asset.visibility = 'team';
+  }
+
+  await asset.save();
+  return asset;
+};
+
+export const updateMediaAsset = async ({ user, mediaAssetId, input, team = null }) => {
+  const asset = await getMediaAssetById({ user, mediaAssetId, team });
   if (input.cropMetadata) {
     asset.cropMetadata = {
       ...asset.cropMetadata,
       ...input.cropMetadata
     };
   }
+
+  /*
+   * Move an asset between the shared team library and one project. `null` sends
+   * it back to the library; anything else is checked against project access
+   * first, so nobody can file a file into a project they cannot open.
+   */
+  if (input.projectId !== undefined) {
+    if (input.projectId) {
+      const project = await assertProjectAccess({ user, team, projectId: input.projectId });
+      asset.projectId = project._id;
+      asset.visibility = 'project';
+    } else {
+      asset.projectId = null;
+      asset.visibility = 'team';
+    }
+  }
+
   await asset.save();
   return asset;
 };
 
-export const deleteMediaAsset = async ({ user, mediaAssetId }) => {
-  const asset = await getMediaAssetById({ user, mediaAssetId });
+export const deleteMediaAsset = async ({ user, mediaAssetId, team = null }) => {
+  const asset = await getMediaAssetById({ user, mediaAssetId, team });
   await deleteStoredObject({
     objectKey: asset.objectKey
   });

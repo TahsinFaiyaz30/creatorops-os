@@ -35,7 +35,17 @@ const publishedPostSchema = new Schema(
     lastCommentsErrorMessage: { type: String, default: '' },
     lastCommentCount: { type: Number, default: 0 },
     publishedAt: { type: Date, default: null },
-    createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true }
+    /* Who pressed publish. */
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    /*
+     * Whose audience this post reached — the owner of the account it went out on,
+     * which is the workspace owner, NOT whoever dispatched it.
+     *
+     * Without this a hired editor becomes `createdBy` on every post they push and
+     * would accumulate the head's followers, views and engagement as their own
+     * marketplace statistics, while the head loses credit for their own posts.
+     */
+    attributedToId: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true }
   },
   { timestamps: true }
 );
