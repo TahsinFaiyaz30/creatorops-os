@@ -219,14 +219,19 @@ export default function WorkspaceSwitcher({ expanded = true }) {
               ) : null}
             </div>
 
-            {/* This list IS the team list, so the footer goes to the current
-                team's members rather than to another page of the same list. */}
+            {/*
+              Always "Create a team". This list IS the team list, so the one
+              thing it cannot already do is add a row to itself — and a creator
+              can own several teams, so the action stays available while you
+              are inside one. Managing the current team's people is the
+              Members nav item, which is a click away and always visible.
+            */}
             <a
-              href="/team"
+              href="/team?create=1"
               className="focus-ring flex items-center gap-2 border-t border-[var(--border)] px-3 py-2 text-[11px] font-semibold text-[var(--muted)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]"
             >
-              {isTeam ? <Users className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-              {isTeam ? 'Members & positions' : 'Create a team'}
+              <Plus className="h-3.5 w-3.5" />
+              Create a team
             </a>
           </motion.div>
         ) : null}

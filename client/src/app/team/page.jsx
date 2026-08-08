@@ -46,6 +46,9 @@ export default function TeamCurrentPage() {
   const [tab, setTab] = useState('members');
   const [editingRole, setEditingRole] = useState(null);
   const [personal, setPersonal] = useState(false);
+  /* `?create=1` from the workspace switcher: show the create surface even when
+     a team is already active, since a creator can own several. */
+  const [creating, setCreating] = useState(false);
 
   const load = async () => {
     const [overview, permissions] = await Promise.all([
@@ -57,9 +60,15 @@ export default function TeamCurrentPage() {
   };
 
   useEffect(() => {
+    /* Read from `location` rather than useSearchParams: this route prerenders
+       static, and the hook would drag it into a Suspense boundary to keep it
+       that way. */
+    const wantsCreate = new URLSearchParams(window.location.search).get('create') === '1';
+    setCreating(wantsCreate);
+
     /* No active team means the personal workspace: nothing to manage, so this
        becomes the join-or-create surface instead of an error. */
-    if (!getActiveWorkspaceId()) {
+    if (wantsCreate || !getActiveWorkspaceId()) {
       setPersonal(true);
       return;
     }
@@ -86,7 +95,7 @@ export default function TeamCurrentPage() {
   if (personal) {
     return (
       <AppShell>
-        <PersonalWorkspaceView />
+        <PersonalWorkspaceView creating={creating} />
       </AppShell>
     );
   }
@@ -239,7 +248,7 @@ export default function TeamCurrentPage() {
  * one. Both used to live on a separate list page that duplicated the sidebar
  * switcher; the switcher is the list now, so these landed here instead.
  */
-function PersonalWorkspaceView() {
+function PersonalWorkspaceView({ creating = false }) {
   const [invitations, setInvitations] = useState(null);
   const [form, setForm] = useState({ name: '', description: '' });
   const [busy, setBusy] = useState('');
@@ -294,10 +303,13 @@ function PersonalWorkspaceView() {
     <Page>
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">Plan</p>
-        <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-[var(--text)] sm:text-3xl">Team</h1>
+        <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-[var(--text)] sm:text-3xl">
+          {creating ? 'New team' : 'Team'}
+        </h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--muted)]">
-          You are in your personal workspace — your own accounts, media and posts, visible to nobody else. Start a team
-          to hire other creators into positions you define, or accept an invitation to join someone else's.
+          {creating
+            ? 'You become its owner and define every position in it. Creating it switches you into it — the workspaces you already belong to stay in the switcher.'
+            : "You are in your personal workspace — your own accounts, media and posts, visible to nobody else. Start a team to hire other creators into positions you define, or accept an invitation to join someone else's."}
         </p>
       </div>
 

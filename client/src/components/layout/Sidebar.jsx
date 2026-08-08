@@ -58,7 +58,6 @@ import { TEAM_PERMISSIONS, canInTeam, getActiveTeam, onWorkspaceChange } from '.
 const GROUP_ACCENTS = {
   Plan:        { from: '#818CF8', to: '#6366F1' },
   Create:      { from: '#F472B6', to: '#EC4899' },
-  Review:      { from: '#34D399', to: '#10B981' },
   Distribute:  { from: '#38BDF8', to: '#0EA5E9' },
   Measure:     { from: '#FBBF24', to: '#F59E0B' },
   Marketplace: { from: '#C084FC', to: '#A855F7' },
@@ -73,7 +72,14 @@ export const NAV_GROUPS = [
       { href: '/campaigns', label: 'Projects',  icon: GitBranch,       roles: [ROLES.CONTENT_CREATOR] },
       { href: '/my-work',   label: 'My Work',   icon: ListTodo,        roles: [ROLES.CONTENT_CREATOR] },
       /* Always the team you are currently in — the switcher above is the list. */
-      { href: '/team',      label: 'Members',   icon: Users,           roles: [ROLES.CONTENT_CREATOR] }
+      { href: '/team',      label: 'Members',   icon: Users,           roles: [ROLES.CONTENT_CREATOR] },
+      /*
+       * Approvals belong here, not in a section of their own further down.
+       * Reviewing is what a team head does about their team's work: it sits
+       * beside the project the work came from and the members who submitted
+       * it, and it gates whether anything reaches Distribute at all.
+       */
+      { href: '/review',    label: 'Approvals', icon: ShieldCheck,     roles: [ROLES.CONTENT_CREATOR] }
     ]
   },
   {
@@ -82,12 +88,6 @@ export const NAV_GROUPS = [
       { href: '/compose',   label: 'Compose',   icon: Edit3,  roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP], permission: TEAM_PERMISSIONS.VARIANT_GENERATE },
       { href: '/scripting', label: 'Script AI', icon: Bot,    roles: [ROLES.CONTENT_CREATOR], permission: TEAM_PERMISSIONS.SCRIPT_USE },
       { href: '/media',     label: 'Media',     icon: Images, roles: [ROLES.CONTENT_CREATOR, ROLES.BRAND_REP], permission: TEAM_PERMISSIONS.MEDIA_UPLOAD }
-    ]
-  },
-  {
-    label: 'Review',
-    items: [
-      { href: '/review', label: 'Approvals', icon: ShieldCheck, roles: [ROLES.CONTENT_CREATOR] }
     ]
   },
   {
@@ -343,58 +343,85 @@ export default function Sidebar({ user, expanded, onSignOut, onToggleRail }) {
 
   return (
     <>
+      {/*
+        Pinned header. The brand, the collapse control and the workspace
+        switcher are the rail's fixed furniture — they identify where you are
+        and what scope you are in, so scrolling the nav used to carry them off
+        the top of the rail and leave an unlabelled strip of icons behind.
+        Only the group list below this scrolls.
+      */}
+      <div className="shrink-0">
+        {/*
+          Brand and collapse control share the top row when there is width for
+          it — the button on its own line above the logo cost a whole row of
+          rail height to hold one 32px icon. Collapsed, they stack, because a
+          46px rail cannot hold both side by side.
+
+          The control is explicit, the way every assistant UI does it: one
+          button, state persists. It replaced hover-to-expand, which made the
+          rail move whenever the pointer merely passed over it. The mobile sheet
+          has no rail to collapse, so it passes no handler and gets no button.
+        */}
+        <div className={`mb-4 flex items-center gap-2 ${expanded ? '' : 'flex-col'}`}>
+          {onToggleRail && !expanded ? (
+            <button
+              type="button"
+              onClick={onToggleRail}
+              aria-label="Expand sidebar"
+              aria-expanded={false}
+              title="Expand sidebar"
+              className="focus-ring mb-2 flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]"
+            >
+              <PanelLeftOpen size={17} />
+            </button>
+          ) : null}
+
+          <Link
+            href="/dashboard"
+            title={expanded ? undefined : 'CreatorOps.OS'}
+            className={`focus-ring flex min-w-0 items-center rounded-xl py-1 ${
+              expanded ? 'flex-1 gap-2.5 px-1' : 'justify-center'
+            }`}
+          >
+            <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface2)] ${SQUARE}`}>
+              <img src="/logo.jpeg" alt="" width={26} height={26} className="rounded-lg" />
+            </span>
+            {expanded ? (
+              <span className="min-w-0 overflow-hidden whitespace-nowrap">
+                <span className="block text-sm font-bold leading-tight tracking-tight text-[var(--text)]">
+                  CreatorOps<span className="text-[var(--accent)]">.OS</span>
+                </span>
+                <span className="block text-[9px] uppercase tracking-[0.16em] text-[var(--muted)]">
+                  Command Center
+                </span>
+              </span>
+            ) : null}
+          </Link>
+
+          {onToggleRail && expanded ? (
+            <button
+              type="button"
+              onClick={onToggleRail}
+              aria-label="Collapse sidebar"
+              aria-expanded
+              title="Collapse sidebar"
+              className="focus-ring flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--muted)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]"
+            >
+              <PanelLeftClose size={17} />
+            </button>
+          ) : null}
+        </div>
+
+        {/* Which team every request below runs in. */}
+        {showWorkspaces ? <WorkspaceSwitcher expanded={expanded} /> : null}
+      </div>
+
       <div className="relative flex min-h-0 flex-1 flex-col">
       {/* `rail-scroll` hides the scrollbar: the collapsed rail has 46px of
           content width and a 10px gutter shoved every icon off centre. The
           fade at the bottom of this container is what signals more nav below
           instead. */}
       <div className="rail-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
-        {/*
-          Explicit collapse control, the way every assistant UI does it: one
-          button, state persists. Replaces hover-to-expand, which made the rail
-          move whenever the pointer merely passed over it. The mobile sheet has
-          no rail to collapse, so it passes no handler and gets no button.
-        */}
-        {onToggleRail ? (
-          <div className={`mb-2 flex ${expanded ? 'justify-end' : 'justify-center'}`}>
-            <button
-              type="button"
-              onClick={onToggleRail}
-              aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
-              aria-expanded={expanded}
-              title={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
-              className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]"
-            >
-              {expanded ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
-            </button>
-          </div>
-        ) : null}
-
-        <Link
-          href="/dashboard"
-          title={expanded ? undefined : 'CreatorOps.OS'}
-          className={`focus-ring mb-4 flex items-center rounded-xl py-1 ${
-            expanded ? 'gap-2.5 px-1' : 'justify-center'
-          }`}
-        >
-          <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface2)] ${SQUARE}`}>
-            <img src="/logo.jpeg" alt="" width={26} height={26} className="rounded-lg" />
-          </span>
-          {expanded ? (
-            <span className="min-w-0 overflow-hidden whitespace-nowrap">
-              <span className="block text-sm font-bold leading-tight tracking-tight text-[var(--text)]">
-                CreatorOps<span className="text-[var(--accent)]">.OS</span>
-              </span>
-              <span className="block text-[9px] uppercase tracking-[0.16em] text-[var(--muted)]">
-                Command Center
-              </span>
-            </span>
-          ) : null}
-        </Link>
-
-        {/* Which team every request below runs in. */}
-        {showWorkspaces ? <WorkspaceSwitcher expanded={expanded} /> : null}
-
         <div className="flex flex-col gap-0.5">
           {groups.map((group, groupIndex) => {
             const isActiveGroup = group.items.some(

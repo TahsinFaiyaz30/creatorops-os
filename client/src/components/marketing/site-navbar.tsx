@@ -28,11 +28,15 @@ export default function SiteNavbar() {
   /*
    * Auth state decides which door to show. "Sign in" pointed at /login, which
    * bounces an already-signed-in visitor straight back out — so to someone with
-   * a session the button looked broken. Read in an effect, not during render:
-   * the token lives in localStorage, and touching it while rendering would make
-   * the server and client markup disagree.
+   * a session the button looked broken.
+   *
+   * `null` until resolved, and the slot renders empty in that state. The token
+   * lives in localStorage, which cannot be read during render without the
+   * server and client markup disagreeing — so the effect decides, and showing
+   * "Sign in / Get started" first would visibly swap to "Dashboard" a beat
+   * later on every load.
    */
-  const [signedIn, setSignedIn] = useState(false);
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
   useEffect(() => setSignedIn(Boolean(getToken())), []);
 
   return (
@@ -46,8 +50,9 @@ export default function SiteNavbar() {
           link because returning users know where it is; the emphasis belongs on
           the action a first-time visitor should take.
         */}
-        <div className="flex items-center gap-4">
-          {signedIn ? (
+        {/* Reserves its own height so resolving the session cannot reflow the bar. */}
+        <div className="flex h-[34px] items-center gap-4">
+          {signedIn === null ? null : signedIn ? (
             <NavbarButton href="/dashboard" variant="dark" className="px-4 py-1.5 text-sm">
               Dashboard
             </NavbarButton>
@@ -85,7 +90,7 @@ export default function SiteNavbar() {
             </Link>
           ))}
           <div className="mt-2 flex w-full flex-col gap-3">
-            {signedIn ? (
+            {signedIn === null ? null : signedIn ? (
               <NavbarButton href="/dashboard" variant="dark" className="w-full text-center">
                 Dashboard
               </NavbarButton>

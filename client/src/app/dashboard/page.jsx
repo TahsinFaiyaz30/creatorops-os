@@ -8,8 +8,6 @@ import {
   GitBranch,
   Radio,
   RadioTower,
-  Camera,
-  Sparkles,
   ArrowUpRight
 } from 'lucide-react';
 import { motion, cubicBezier, useReducedMotion } from 'motion/react';
@@ -23,13 +21,11 @@ import BrandDashboard from '../../components/dashboard/BrandDashboard';
 import { api } from '../../lib/api';
 import { getUser } from '../../lib/auth';
 import { isBrandRep } from '../../lib/roles';
+import { useToastState } from '../../components/ui/toast';
 
-import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
-import { GlareStat } from '../../components/ds';
-import { AnimatedButton } from '@/components/ui/AnimatedButton';
+import { Button, GLARE_TINTS, GlareStat, GlareStatGrid, Notice, Section } from '../../components/ds';
 import { BackgroundBeams } from '@/components/ui/background-beams';
 import { TextGenerateEffect } from '@/components/ui/text-generate-effect';
-import { Meteors } from '@/components/ui/meteors';
 
 /* Aceternity's showcase easing — the long expo settle. */
 const easeOutExpo = cubicBezier(0.16, 1, 0.3, 1);
@@ -41,7 +37,8 @@ export default function DashboardPage() {
   const [user, setUser] = useState(null);
   const [stats, setStats] = useState({ campaigns: 0, accounts: 0, queued: 0, published: 0, events: 0 });
   const [statistics, setStatistics] = useState(null);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useToastState('info');
+  const [busy, setBusy] = useState(false);
 
   const load = async () => {
     const results = await Promise.allSettled([
@@ -71,12 +68,15 @@ export default function DashboardPage() {
   }, []);
 
   const snapshot = async () => {
+    setBusy(true);
     try {
       await api.post('/api/statistics/snapshot', {});
       setMessage('Statistics snapshot created for applications.');
       await load();
     } catch (err) {
       setMessage(err.message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -103,11 +103,11 @@ export default function DashboardPage() {
   };
 
   const METRICS = [
-    { icon: GitBranch,     label: 'Campaigns',      value: stats.campaigns, tint: 'from-[#6344F5]/40' },
-    { icon: RadioTower,    label: 'Accounts',       value: stats.accounts,  tint: 'from-sky-500/40' },
-    { icon: CalendarClock, label: 'Queued jobs',    value: stats.queued,    tint: 'from-amber-500/40' },
-    { icon: CheckCircle2,  label: 'Published jobs', value: stats.published, tint: 'from-emerald-500/40' },
-    { icon: Radio,         label: 'Recent events',  value: stats.events,    tint: 'from-rose-500/40' }
+    { icon: GitBranch,     label: 'Projects',       value: stats.campaigns, tint: GLARE_TINTS[0], hint: 'In flight right now' },
+    { icon: RadioTower,    label: 'Accounts',       value: stats.accounts,  tint: GLARE_TINTS[1], hint: 'Connected platforms' },
+    { icon: CalendarClock, label: 'Queued jobs',    value: stats.queued,    tint: GLARE_TINTS[2], hint: 'Waiting to publish' },
+    { icon: CheckCircle2,  label: 'Published jobs', value: stats.published, tint: GLARE_TINTS[3], hint: 'Shipped from here' },
+    { icon: Radio,         label: 'Recent events',  value: stats.events,    tint: GLARE_TINTS[4], hint: 'Last 30 in the feed' }
   ];
 
   /*
@@ -173,185 +173,70 @@ export default function DashboardPage() {
             </div>
           </motion.header>
 
-          {message && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              className="rounded-xl border border-[var(--border)] bg-[var(--surface2)] px-4 py-3 text-sm text-[var(--text-2)]"
-            >
-              {message}
-            </motion.div>
-          )}
+          {/*
+            One system, top to bottom.
 
-          {/* ── Top-level metrics — shared GlareStat, same as Campaigns ─── */}
+            This was three different card languages stacked on one page: five
+            glare tiles, then a bento grid, then a bordered statistics panel —
+            and they disagreed as well as clashed. The bento repeated numbers
+            the statistics panel showed directly underneath (views, likes,
+            comments, engagement rate), duplicated the Campaigns tile as
+            "Active Campaigns", and labelled the queued-*jobs* count "Pending
+            Approvals", which is a different thing entirely. Its bars were
+            invented too — widths of `30 + i * 22`% and a hardcoded
+            `[38,62,45,78,56,88,70]` sparkline, drawn regardless of the data.
+
+            What is left is one metric row and two sections built from the same
+            `ds` primitives every other page uses, each number appearing once.
+          */}
+
           <motion.section variants={rise}>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-              {METRICS.map(({ icon, label, value, tint }) => (
-                <GlareStat key={label} label={label} value={value} icon={icon} tint={tint} />
+            <GlareStatGrid>
+              {METRICS.map(({ icon, label, value, tint, hint }) => (
+                <GlareStat key={label} label={label} value={value} icon={icon} tint={tint} hint={hint} />
               ))}
-            </div>
+            </GlareStatGrid>
           </motion.section>
 
-          {/* ── Bento grid ──────────────────────────────────────────── */}
           <motion.section variants={rise}>
-            <BentoGrid className="md:auto-rows-[15rem] md:grid-cols-3">
-              {/* Latest Cinematic Short — wide */}
-              <BentoGridItem
-                className="border-[var(--border)] bg-[var(--surface)] md:col-span-2"
-                title="Latest Cinematic Short — Stats"
-                description="Combined reach across every synced platform for the most recent release."
-                icon={<Camera className="h-4 w-4 text-[var(--accent)]" />}
-                header={
-                  <div className="flex h-full min-h-[6rem] w-full flex-col justify-end gap-2 rounded-xl border border-[var(--border)] bg-gradient-to-br from-[#6344F5]/25 to-transparent p-4">
-                    {[
-                      { k: 'Views', v: combined.views || 0 },
-                      { k: 'Likes', v: combined.likes || 0 },
-                      { k: 'Comments', v: combined.comments || 0 }
-                    ].map((row, i) => (
-                      <div key={row.k} className="flex items-center gap-3">
-                        <span className="w-20 shrink-0 text-[10px] uppercase tracking-wider text-[var(--muted)]">
-                          {row.k}
-                        </span>
-                        <motion.div
-                          className="h-2 rounded-full bg-gradient-to-r from-[#6344F5] to-[#AE48FF]"
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(90, 30 + i * 22)}%` }}
-                          transition={{ duration: 1.1, delay: 0.2 + i * 0.1, ease: easeOutExpo }}
-                        />
-                        <span className="ml-auto text-xs font-semibold tabular-nums text-[var(--text)]">
-                          {row.v}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                }
-              />
-
-              {/* Active Campaigns */}
-              <BentoGridItem
-                className="border-[var(--border)] bg-[var(--surface)]"
-                title="Active Campaigns"
-                description={`${stats.campaigns} campaign${stats.campaigns === 1 ? '' : 's'} in flight right now.`}
-                icon={<GitBranch className="h-4 w-4 text-sky-400" />}
-                header={
-                  <div className="relative flex h-full min-h-[6rem] w-full items-center justify-center overflow-hidden rounded-xl border border-[var(--border)] bg-gradient-to-br from-sky-500/20 to-transparent">
-                    <Meteors number={12} />
-                    <span className="relative text-5xl font-bold tabular-nums text-[var(--text)]">
-                      {stats.campaigns}
-                    </span>
-                  </div>
-                }
-              />
-
-              {/* Pending Approvals */}
-              <BentoGridItem
-                className="border-[var(--border)] bg-[var(--surface)]"
-                title="Pending Approvals"
-                description="Variants waiting on a reviewer before they can ship."
-                icon={<CheckCircle2 className="h-4 w-4 text-amber-400" />}
-                header={
-                  <div className="flex h-full min-h-[6rem] w-full flex-col justify-center gap-2 rounded-xl border border-[var(--border)] bg-gradient-to-br from-amber-500/20 to-transparent p-4">
-                    <div className="text-5xl font-bold tabular-nums text-[var(--text)]">{stats.queued}</div>
-                    <p className="text-[11px] text-[var(--muted)]">
-                      {stats.published} already published
-                    </p>
-                  </div>
-                }
-              />
-
-              {/* Engagement */}
-              <BentoGridItem
-                className="border-[var(--border)] bg-[var(--surface)] md:col-span-2"
-                title="Engagement Rate"
-                description="Official synced platform engagement — unsupported metrics stay unavailable."
-                icon={<Sparkles className="h-4 w-4 text-emerald-400" />}
-                header={
-                  <div className="flex h-full min-h-[6rem] w-full items-end justify-between rounded-xl border border-[var(--border)] bg-gradient-to-br from-emerald-500/20 to-transparent p-4">
-                    <span className="text-5xl font-bold tabular-nums text-[var(--text)]">
-                      {combined.engagementRate || 0}%
-                    </span>
-                    <div className="flex items-end gap-1.5">
-                      {[38, 62, 45, 78, 56, 88, 70].map((h, i) => (
-                        <motion.span
-                          key={i}
-                          className="w-2 rounded-sm bg-gradient-to-t from-emerald-500/40 to-emerald-300"
-                          initial={{ height: 0 }}
-                          animate={{ height: `${h * 0.5}px` }}
-                          transition={{ duration: 0.8, delay: 0.3 + i * 0.06, ease: easeOutExpo }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                }
-              />
-            </BentoGrid>
-          </motion.section>
-
-          {/* ── Statistics panel (real data, behaviour unchanged) ────── */}
-          <motion.section variants={rise} className="space-y-4">
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface2)] p-6 backdrop-blur-sm">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
-                    Real creator statistics
-                  </p>
-                  <h2 className="mt-2 text-2xl font-bold tracking-tight text-[var(--text)]">Statistics</h2>
-                  <p className="mt-2 max-w-3xl text-sm text-[var(--muted)]">
-                    Combined and per-platform metrics come from synced official platform data.
-                    Unsupported or unsynced metrics stay unavailable.
-                  </p>
-                </div>
-                <AnimatedButton
-                  id="dashboard-stats-snapshot-btn"
-                  variant="primary"
-                  size="lg"
-                  onClick={snapshot}
-                  className="group shrink-0"
-                >
+            <Section
+              title="Performance"
+              description="Combined and per-platform metrics, synced from official platform APIs. Unsupported or unsynced metrics stay unavailable."
+              actions={
+                <Button variant="secondary" size="sm" onClick={snapshot} loading={busy}>
                   Create application snapshot
-                  <ArrowUpRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                </AnimatedButton>
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </Button>
+              }
+            >
+              {statistics?.unavailableMessage ? (
+                <Notice tone="warning">{statistics.unavailableMessage}</Notice>
+              ) : null}
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <CreatorStatsCard label="Views" value={combined.views || 0} />
+                <CreatorStatsCard label="Likes" value={combined.likes || 0} />
+                <CreatorStatsCard label="Comments" value={combined.comments || 0} />
+                <CreatorStatsCard label="Engagement rate" value={`${combined.engagementRate || 0}%`} />
               </div>
-            </div>
 
-            {statistics?.unavailableMessage && (
-              <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-                {statistics.unavailableMessage}
-              </div>
-            )}
-
-            <div className="grid gap-4 md:grid-cols-4">
-              <CreatorStatsCard label="Views" value={combined.views || 0} />
-              <CreatorStatsCard label="Likes" value={combined.likes || 0} />
-              <CreatorStatsCard label="Comments" value={combined.comments || 0} />
-              <CreatorStatsCard label="Engagement rate" value={`${combined.engagementRate || 0}%`} />
-            </div>
-
-            <CombinedStatsGraph platformStats={statistics?.platformStats || []} />
+              <CombinedStatsGraph platformStats={statistics?.platformStats || []} />
+            </Section>
           </motion.section>
 
-          {/* ── Demo path + live feed ───────────────────────────────── */}
-          <motion.section variants={rise} className="grid gap-4 lg:grid-cols-[1fr_420px]">
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface2)] p-6 backdrop-blur-sm">
-              <h2 className="text-lg font-semibold tracking-tight text-[var(--text)]">Demo path</h2>
-              <ol className="mt-4 space-y-3">
-                {[
-                  'Create a campaign and raw idea.',
-                  'Generate platform variants and submit one for review.',
-                  'Connect real accounts, approve the variant, and publish from the creator workflow.',
-                  'Schedule or publish through official connector checks and watch events appear live.',
-                  'Sync analytics, then review real statistics here on the dashboard.'
-                ].map((step, i) => (
-                  <li key={step} className="flex gap-3 text-sm text-[var(--text-2)]">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface2)] text-[10px] font-semibold text-[var(--accent)]">
-                      {i + 1}
-                    </span>
-                    {step}
-                  </li>
-                ))}
-              </ol>
-            </div>
-            <LiveEventFeed compact />
+          <motion.section variants={rise}>
+            <Section
+              title="Operations"
+              description="Everything the workspace has done recently, as it happens."
+              actions={
+                <Button as="a" href="/activity" variant="ghost" size="sm">
+                  Full activity
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </Button>
+              }
+            >
+              <LiveEventFeed compact />
+            </Section>
           </motion.section>
         </motion.div>
       </div>

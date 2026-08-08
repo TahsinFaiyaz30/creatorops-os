@@ -10,7 +10,8 @@ import {
   IconUsersGroup,
 } from "@tabler/icons-react";
 
-import { BentoGridItem } from "@/components/ui/bento-grid";
+import { InfiniteMovingCards } from "@/components/ui/infinite-moving-cards";
+import { GlowingEffect } from "@/components/ui/glowing-effect";
 import { WobbleCard } from "@/components/ui/wobble-card";
 import { Meteors } from "@/components/ui/meteors";
 import { ContainerScroll } from "@/components/ui/container-scroll-animation";
@@ -29,67 +30,46 @@ function SectionKicker({ children }: { children: React.ReactNode }) {
 /* ───────────────── 1. The pipeline ───────────────── */
 
 /*
- * The pipeline, stated plainly.
+ * The pipeline, on the rolling marquee it always used.
  *
- * This was a lone kicker line floating above a marquee of placeholder
- * testimonials — a headline with nothing under it and social proof that proved
- * nothing. It now shows the five stages the product actually runs, which is the
- * claim the headline was making.
+ * The marquee was replaced with a static five-column grid, which lost the
+ * motion and left a wide band of dead space under the heading. The rolling
+ * cards are back — but carrying the five stages the product actually runs,
+ * not the four "Placeholder testimonial" quotes they used to hold. The
+ * component wants { quote, name, title }, so the stage copy is the quote, the
+ * stage is the name, and the position in the run is the title.
  */
 const PIPELINE_STAGES = [
   { label: "Plan", copy: "Briefs, deadlines and deliverables on one timeline." },
-  { label: "Create", copy: "One idea in, platform-native drafts out." },
+  { label: "Create", copy: "One idea in, platform-native drafts out — tuned per network." },
   { label: "Review", copy: "Approvals that gate what ships, and unlock what's next." },
   { label: "Publish", copy: "Real OAuth connections, validated before anything goes live." },
   { label: "Measure", copy: "Numbers read back from the platforms themselves." },
 ];
 
+const PIPELINE_CARDS = PIPELINE_STAGES.map((stage, index) => ({
+  quote: stage.copy,
+  name: stage.label,
+  title: `Stage ${index + 1} of ${PIPELINE_STAGES.length}`,
+}));
+
 export function SocialProof() {
   return (
-    <section className="relative overflow-hidden bg-[var(--bg)] py-24">
+    <section className="relative overflow-hidden bg-[var(--bg)] py-16">
       <div className="mx-auto max-w-6xl px-6">
         <div className="mx-auto max-w-2xl text-center">
           <SectionKicker>Built for the whole pipeline</SectionKicker>
-          <h2 className="mt-4 text-balance text-3xl font-bold tracking-tight text-[var(--text)] sm:text-4xl">
+          <h2 className="text-balance text-3xl font-bold tracking-tight text-[var(--text)] sm:text-4xl">
             Five stages. One workspace.
           </h2>
-          <p className="mt-4 text-pretty text-sm leading-relaxed text-[var(--muted)] sm:text-base">
+          <p className="mt-3 text-pretty text-sm leading-relaxed text-[var(--muted)] sm:text-base">
             Every stage hands off to the next without an export, a re-upload, or a status meeting.
           </p>
         </div>
+      </div>
 
-        <ol className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {PIPELINE_STAGES.map((stage, index) => (
-            <motion.li
-              key={stage.label}
-              initial={{ opacity: 0, y: 16 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-80px" }}
-              transition={{ duration: 0.5, delay: index * 0.07, ease: [0.16, 1, 0.3, 1] }}
-              className="group relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 p-5 backdrop-blur-xl transition-colors hover:border-[var(--accent-line)]"
-            >
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_0%,var(--accent-soft),transparent_65%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-              />
-              <span className="relative block text-[11px] font-bold tabular-nums text-[var(--accent)]">
-                {String(index + 1).padStart(2, "0")}
-              </span>
-              <h3 className="relative mt-2 text-base font-bold tracking-tight text-[var(--text)]">
-                {stage.label}
-              </h3>
-              <p className="relative mt-1.5 text-xs leading-relaxed text-[var(--muted)]">{stage.copy}</p>
-
-              {/* Connector — the hand-off the copy above is describing. */}
-              {index < PIPELINE_STAGES.length - 1 ? (
-                <span
-                  aria-hidden
-                  className="pointer-events-none absolute right-0 top-1/2 hidden h-px w-3 -translate-y-1/2 translate-x-full bg-[var(--border-strong)] lg:block"
-                />
-              ) : null}
-            </motion.li>
-          ))}
-        </ol>
+      <div className="mt-10">
+        <InfiniteMovingCards items={PIPELINE_CARDS} direction="left" speed="slow" />
       </div>
     </section>
   );
@@ -106,23 +86,24 @@ export function SocialProof() {
  * of nothing). The grid is now the screen's contents, so the frame shows the
  * product instead of a mock of it, and nothing here claims a number.
  *
- * `GlowingEffect` is deliberately not reinstated around the cards. It measures
- * the cursor against a card's own bounding box, and inside a `rotateX`-ed,
- * scaled container those coordinates no longer correspond to where the pointer
- * appears to be — the glow tracked several centimetres away from the mouse.
+ * Cards are built here rather than through `BentoGridItem`, because that
+ * component sizes itself to its content: dropped into fixed grid rows it pushed
+ * its own description past the card edge and the screen clipped it mid-word.
+ * Every text block below is `shrink-0` with a line clamp, and only the gradient
+ * header flexes, so a card can shrink to fit its row instead of overflowing it.
  */
 
 /** Animated gradient skeleton used as a card header. */
 function Skeleton({ from, to, bars = 3 }: { from: string; to: string; bars?: number }) {
   return (
     <div
-      className="relative flex h-full min-h-[3.5rem] w-full flex-col justify-end gap-1.5 overflow-hidden rounded-lg border border-[var(--border)] p-3"
+      className="relative flex min-h-0 w-full flex-1 flex-col justify-end gap-1 overflow-hidden rounded-lg border border-[var(--border)] p-2.5"
       style={{ background: `linear-gradient(135deg, ${from}, ${to})` }}
     >
       {Array.from({ length: bars }).map((_, i) => (
         <motion.div
           key={i}
-          className="h-1.5 rounded-full bg-[var(--border-strong)]"
+          className="h-1 shrink-0 rounded-full bg-[var(--border-strong)]"
           initial={{ width: "35%" }}
           animate={{ width: ["35%", "82%", "35%"] }}
           transition={{
@@ -147,26 +128,63 @@ const FEATURES = [
   },
   {
     title: "Campaign planning",
-    description: "Briefs, deadlines, and deliverables on one timeline.",
+    description: "Briefs, deadlines and deliverables on one timeline.",
     icon: <IconCalendarStats className="h-3.5 w-3.5 text-sky-400" />,
     header: <Skeleton from="rgba(14,165,233,0.32)" to="rgba(99,68,245,0.10)" />,
     className: "col-span-1",
   },
   {
     title: "Creator review with RBAC",
-    description: "Approvals that respect who actually owns the decision.",
+    description: "Approvals that respect who owns the decision.",
     icon: <IconChecklist className="h-3.5 w-3.5 text-emerald-400" />,
     header: <Skeleton from="rgba(16,185,129,0.30)" to="rgba(14,165,233,0.10)" />,
     className: "col-span-1",
   },
   {
     title: "Live publishing pipeline",
-    description: "Real OAuth connections, pre-flight validation, and a resumable queue.",
+    description: "Real OAuth connections, pre-flight validation, a resumable queue.",
     icon: <IconRocket className="h-3.5 w-3.5 text-amber-400" />,
     header: <Skeleton from="rgba(245,158,11,0.32)" to="rgba(251,113,133,0.10)" bars={4} />,
     className: "col-span-2",
   },
 ];
+
+/*
+ * One card. The wrapper carries the same `rounded-xl` as the card itself:
+ * GlowingEffect draws its border with `rounded-[inherit]`, so a square wrapper
+ * gave the trace square corners around a rounded card.
+ */
+function ConsoleCard({
+  title,
+  description,
+  header,
+  icon,
+  className,
+}: {
+  title: string;
+  description: string;
+  header: React.ReactNode;
+  icon: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`group/card relative min-h-0 rounded-xl ${className ?? ""}`}>
+      <GlowingEffect spread={38} glow proximity={64} inactiveZone={0.01} borderWidth={2} />
+      <div className="relative flex h-full min-h-0 flex-col gap-2 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2.5">
+        {header}
+        <div className="shrink-0 transition-transform duration-200 group-hover/card:translate-x-1">
+          {icon}
+          <h3 className="mt-1 truncate text-[13px] font-bold tracking-tight text-[var(--text)]">
+            {title}
+          </h3>
+          <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-[var(--muted)]">
+            {description}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function ShowcaseScroll() {
   return (
@@ -189,54 +207,41 @@ export function ShowcaseScroll() {
         }
       >
         <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl bg-[var(--surface)]">
-          <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-3">
+          <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-2.5">
             <span className="h-2.5 w-2.5 rounded-full bg-[#fb7185]" />
             <span className="h-2.5 w-2.5 rounded-full bg-[#f59e0b]" />
             <span className="h-2.5 w-2.5 rounded-full bg-[#10b981]" />
             <span className="ml-3 text-xs text-[var(--muted)]">creatorops · workspace</span>
           </div>
 
-          {/* min-h-0 on the scroller and every row: without it the grid rows
-              size to their content and push the last card out of the frame. */}
-          <div className="grid min-h-0 flex-1 grid-cols-3 grid-rows-3 gap-2 p-3 md:gap-3 md:p-4">
+          {/* min-h-0 on the grid and on every cell: without it the rows size to
+              their content and push the last card out through the frame. */}
+          <div className="grid min-h-0 flex-1 grid-cols-3 grid-rows-3 gap-2 p-2.5 md:gap-2.5 md:p-3">
             {FEATURES.map((feature) => (
-              <BentoGridItem
-                key={feature.title}
-                title={feature.title}
-                description={feature.description}
-                header={feature.header}
-                icon={feature.icon}
-                className={`${feature.className} min-h-0 border-[var(--border)] bg-[var(--surface)] p-2.5 md:p-3`}
-              />
+              <ConsoleCard key={feature.title} {...feature} />
             ))}
 
-            <WobbleCard
-              containerClassName="col-span-2 min-h-0 h-full bg-[var(--surface2)]"
-              className="p-4 md:p-6"
-            >
-              <div className="max-w-sm">
-                <IconChartBar className="mb-2 h-5 w-5 text-[var(--accent)]" />
-                <h3 className="text-left text-base font-semibold tracking-tight text-[var(--text)] md:text-xl">
+            <WobbleCard containerClassName="col-span-2 min-h-0 h-full bg-[var(--surface2)]" className="p-4">
+              <div className="max-w-md">
+                <IconChartBar className="mb-1.5 h-4 w-4 text-[var(--accent)]" />
+                <h3 className="text-left text-sm font-semibold tracking-tight text-[var(--text)] md:text-lg">
                   Analytics that close the loop
                 </h3>
-                <p className="mt-1.5 text-left text-[11px] leading-relaxed text-[var(--text-2)] md:text-sm">
+                <p className="mt-1 line-clamp-3 text-left text-[11px] leading-snug text-[var(--text-2)] md:text-xs">
                   Every publish reports back. See what landed, on which network, and what
                   to make more of — without exporting a single CSV.
                 </p>
               </div>
             </WobbleCard>
 
-            <WobbleCard
-              containerClassName="col-span-1 min-h-0 h-full bg-[var(--surface)]"
-              className="p-4 md:p-6"
-            >
+            <WobbleCard containerClassName="col-span-1 min-h-0 h-full bg-[var(--surface)]" className="p-4">
               <div className="relative">
-                <Meteors number={12} />
-                <IconUsersGroup className="mb-2 h-5 w-5 text-sky-400" />
-                <h3 className="text-left text-base font-semibold tracking-tight text-[var(--text)] md:text-xl">
+                <Meteors number={10} />
+                <IconUsersGroup className="mb-1.5 h-4 w-4 text-sky-400" />
+                <h3 className="text-left text-sm font-semibold tracking-tight text-[var(--text)] md:text-lg">
                   Brand circulars &amp; applications
                 </h3>
-                <p className="mt-1.5 text-left text-[11px] leading-relaxed text-[var(--text-2)] md:text-sm">
+                <p className="mt-1 line-clamp-3 text-left text-[11px] leading-snug text-[var(--text-2)] md:text-xs">
                   Brands post briefs. Creators apply. The match becomes a campaign.
                 </p>
               </div>

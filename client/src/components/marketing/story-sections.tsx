@@ -143,7 +143,7 @@ const ROUTES = DESTINATIONS.map(end => ({ start: ORIGIN, end }));
 
 export function GlobalReach() {
   return (
-    <section id="reach" className="relative overflow-hidden bg-[var(--bg)] py-24">
+    <section id="reach" className="relative overflow-hidden bg-[var(--bg)] py-16">
       <div className="mx-auto max-w-6xl px-6">
         <div className="text-center">
           <span className="mb-4 inline-block rounded-full border border-[var(--border)] bg-[var(--surface2)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
@@ -158,7 +158,7 @@ export function GlobalReach() {
           </p>
         </div>
 
-        <div className="mt-12">
+        <div className="mt-10">
           <WorldMap
             dots={ROUTES}
             lineColor="#AE48FF"
@@ -169,7 +169,7 @@ export function GlobalReach() {
         </div>
 
         {/* Encrypted-feel security card */}
-        <div className="mt-16 grid grid-cols-1 items-center gap-8 md:grid-cols-2">
+        <div className="mt-12 grid grid-cols-1 items-center gap-8 md:grid-cols-2">
           <div className="mx-auto w-full max-w-sm">
             <EvervaultCard text="secure" className="h-full" />
           </div>
@@ -182,11 +182,13 @@ export function GlobalReach() {
               account, and never handed to the browser. Sessions normalise roles on
               every read so a stale token can&apos;t widen its own permissions.
             </p>
+            {/* The /architecture page no longer exists, so this pointed at a
+                404. Send people to the door instead. */}
             <Link
-              href="/architecture"
+              href="/signup"
               className="mt-6 inline-block text-sm font-semibold text-[var(--accent)] hover:underline"
             >
-              Read the architecture →
+              Create an account →
             </Link>
           </div>
         </div>
@@ -306,7 +308,9 @@ export function SiteFooter() {
         would be dead. Links opt back in individually.
       */}
       <div className="pointer-events-none absolute inset-x-0 top-12 z-0 flex select-none justify-center px-6">
-        <div className="pointer-events-auto h-40 w-full max-w-6xl md:h-52">
+        {/* Held at 45%: at full strength the outline competed with the links
+            sitting on top of it, and at the original 25% it was invisible. */}
+        <div className="pointer-events-auto h-40 w-full max-w-6xl opacity-45 md:h-52">
           <TextHoverEffect text="CREATOROPS" />
         </div>
       </div>

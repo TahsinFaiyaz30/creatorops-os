@@ -278,8 +278,13 @@ export function GlareStat({ label, value, icon: Icon, tint = GLARE_TINTS[0], hin
       whileHover={reduce ? undefined : { y: -3 }}
       transition={{ type: 'spring', stiffness: 400, damping: 26 }}
     >
+      {/*
+        16/7, not 16/11. At five across the taller ratio made every tile ~200px
+        of mostly empty gradient with a label pinned to the top and a number to
+        the bottom — the metric read as an afterthought in its own card.
+      */}
       <GlareCard
-        containerClassName="w-full [aspect-ratio:16/11]"
+        containerClassName="w-full [aspect-ratio:16/7]"
         className={cn('flex flex-col justify-between bg-gradient-to-br p-5', tint, 'to-[var(--surface)]')}
       >
         <div className="flex items-start justify-between gap-2">
