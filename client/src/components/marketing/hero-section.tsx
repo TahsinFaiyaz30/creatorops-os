@@ -93,10 +93,21 @@ export default function HeroSection() {
           </HoverBorderGradient>
         </motion.div>
 
-        {/* Headline — LayoutTextFlip rotating noun */}
-        <motion.div variants={rise} className="flex justify-center">
+        {/*
+          Headline — LayoutTextFlip rotating noun.
+
+          `items-center` and a real `gap`: the two halves are flex siblings, so
+          the default `stretch` left the plain text sitting on its line box's
+          top edge while the padded word box centred its own text, and the
+          trailing space in "One system for " was collapsed away because
+          whitespace at the end of a flex item never renders.
+        */}
+        <motion.div
+          variants={rise}
+          className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2"
+        >
           <LayoutTextFlip
-            text="One system for "
+            text="One system for"
             words={["campaigns", "repurposing", "reviews", "publishing", "analytics"]}
             duration={2600}
           />

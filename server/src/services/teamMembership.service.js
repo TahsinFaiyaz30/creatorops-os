@@ -69,19 +69,35 @@ export const ensureOwnerMembership = async ({ workspaceId, ownerId }) => {
  * The owner short-circuits to every permission rather than reading their role
  * row: an owner who accidentally edits their own position must not be able to
  * lock themselves out of their own team.
+ *
+ * `homeWorkspaceId` is the workspace named on the caller's own User document.
+ * Passing it grants the same short-circuit, and that is what keeps accounts
+ * created before teams existed working: their workspace predates both
+ * `Workspace.ownerId` and TeamMembership, so they own it in every sense the app
+ * recognises while matching neither check. Without this they resolve to no
+ * context at all and every permission-gated route refuses them — which is
+ * exactly what the seeded demo accounts hit, since the seed puts several users
+ * in one shared workspace that only one of them owns.
+ *
+ * It cannot be spoofed: the value comes from the authenticated User document,
+ * never from the request.
  */
-export const resolveTeamContext = async ({ userId, workspaceId }) => {
+export const resolveTeamContext = async ({ userId, workspaceId, homeWorkspaceId = null }) => {
   const workspace = await Workspace.findById(workspaceId);
   if (!workspace) return null;
 
   const isOwner = idOf(workspace.ownerId) === idOf(userId);
+  const isHome = Boolean(homeWorkspaceId) && idOf(homeWorkspaceId) === idOf(workspace._id);
 
   const membership = await TeamMembership.findOne({ workspaceId, userId }).populate('teamRoleId');
 
-  if (!isOwner && (!membership || membership.status !== 'active')) return null;
+  if (!isOwner && !isHome && (!membership || membership.status !== 'active')) return null;
 
   const role = membership?.teamRoleId || null;
-  const permissions = isOwner || role?.isOwner ? [...ALL_TEAM_PERMISSIONS] : normalizeTeamPermissions(role?.permissions);
+  const permissions =
+    isOwner || isHome || role?.isOwner
+      ? [...ALL_TEAM_PERMISSIONS]
+      : normalizeTeamPermissions(role?.permissions);
 
   return {
     workspace,

@@ -29,7 +29,13 @@ const resolveActiveWorkspace = async (req, user) => {
   const requested = String(req.get(WORKSPACE_HEADER) || '').trim();
 
   if (!requested || requested === String(user.workspaceId)) {
-    const context = await resolveTeamContext({ userId: user._id, workspaceId: user.workspaceId });
+    /* `homeWorkspaceId`: this IS the caller's own workspace, so they hold every
+       permission in it even if it predates ownerId and TeamMembership. */
+    const context = await resolveTeamContext({
+      userId: user._id,
+      workspaceId: user.workspaceId,
+      homeWorkspaceId: user.workspaceId
+    });
     return { workspaceId: user.workspaceId, team: context, denied: false };
   }
 
@@ -44,7 +50,11 @@ const resolveActiveWorkspace = async (req, user) => {
     return { denied: true, code: 'WORKSPACE_ACCESS_DENIED', message: 'The requested workspace id is not valid.' };
   }
 
-  const context = await resolveTeamContext({ userId: user._id, workspaceId: requested });
+  const context = await resolveTeamContext({
+    userId: user._id,
+    workspaceId: requested,
+    homeWorkspaceId: user.workspaceId
+  });
   if (!context) {
     return { denied: true, code: 'WORKSPACE_ACCESS_DENIED', message: 'You are not an active member of that team.' };
   }

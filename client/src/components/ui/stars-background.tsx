@@ -100,6 +100,15 @@ export const StarsBackground: React.FC<StarBackgroundProps> = ({
     generateStars,
   ]);
 
+  /*
+   * The loop only runs while the canvas is actually on screen.
+   *
+   * Every frame clears the canvas and redraws every star — roughly 180 arc
+   * fills on a desktop hero. That kept running the whole time you were reading
+   * the rest of the page, five thousand pixels below, for a field nobody could
+   * see. An IntersectionObserver parks it instead, and `render` is only ever
+   * scheduled once because `start` is a no-op while a frame is already queued.
+   */
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -107,9 +116,10 @@ export const StarsBackground: React.FC<StarBackgroundProps> = ({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let animationFrameId: number;
+    let animationFrameId = 0;
 
     const render = () => {
+      animationFrameId = 0;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       stars.forEach((star) => {
         ctx.beginPath();
@@ -127,10 +137,23 @@ export const StarsBackground: React.FC<StarBackgroundProps> = ({
       animationFrameId = requestAnimationFrame(render);
     };
 
-    render();
+    const start = () => {
+      if (!animationFrameId) animationFrameId = requestAnimationFrame(render);
+    };
+    const stop = () => {
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      animationFrameId = 0;
+    };
+
+    const observer = new IntersectionObserver(
+      ([entry]) => (entry.isIntersecting ? start() : stop()),
+      { rootMargin: "128px" },
+    );
+    observer.observe(canvas);
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
+      observer.disconnect();
+      stop();
     };
   }, [stars]);
 

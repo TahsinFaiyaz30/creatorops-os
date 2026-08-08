@@ -41,7 +41,15 @@ export const GlareCard = ({
     "--duration": "300ms",
     "--foil-size": "100%",
     "--opacity": "0",
-    "--radius": "48px",
+    /*
+     * 16px, matching `rounded-2xl` — the radius every other panel in the app
+     * uses. Upstream ships 48px, which is fine on the tall trading-card shape
+     * this component was designed for but turns a short stat tile into an
+     * oval: the corner arcs meet before the straight edge starts, so the
+     * roundness appeared to change with the tile's height. A fixed 16px reads
+     * the same at any size and matches the cards beside it.
+     */
+    "--radius": "16px",
     "--easing": "ease",
     "--transition": "var(--duration) var(--easing)",
   } as any;

@@ -65,12 +65,21 @@ export const WobbleCard = ({
   );
 };
 
+/*
+ * The grain is generated, not fetched. Upstream points at `/noise.webp`, an
+ * asset this project never shipped, so every wobble card fired a request that
+ * 404ed and then rendered nothing — the texture has been silently missing.
+ * feTurbulence draws the same fractal grain inline, with no request at all.
+ */
+const NOISE_TEXTURE =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E\")";
+
 const Noise = () => {
   return (
     <div
       className="absolute inset-0 w-full h-full scale-[1.2] transform opacity-10 [mask-image:radial-gradient(#fff,transparent,75%)]"
       style={{
-        backgroundImage: "url(/noise.webp)",
+        backgroundImage: NOISE_TEXTURE,
         backgroundSize: "30%",
       }}
     ></div>

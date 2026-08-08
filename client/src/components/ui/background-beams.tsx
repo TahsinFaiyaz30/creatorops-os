@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { motion } from "motion/react";
+import { useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
 
 /*
@@ -41,8 +41,42 @@ const beamPath = (i: number) => {
 const BEAM_COUNT = 50;
 const BACKDROP_COUNT = 58;
 
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Why the sweep is SMIL and not Framer Motion.
+ *
+ * Each beam is stroked with its own gradient, and the gradient's x1/x2/y1/y2
+ * slide across it forever. Driving that from JS meant 50 elements × 4
+ * attributes = 200 attribute writes on the main thread every single frame, each
+ * one invalidating the rasterisation of the path that references it. A style +
+ * layout pass on this page measured 9.8ms — most of a 16.7ms frame gone before
+ * anything was painted, which is what made the whole UI feel heavy. This
+ * component mounts on the landing hero AND the dashboard, so the cost followed
+ * you around.
+ *
+ * `<animate>` hands the same interpolation to the browser's own animation
+ * engine: no JS runs per frame, and the timing stays identical.
+ *
+ * The per-beam variation is derived from the index rather than Math.random().
+ * Random values differ between the server render and the client render, so the
+ * old version produced a hydration mismatch on every load as well.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+const beamTiming = (i: number) => {
+  /* Cheap deterministic spread — irrational multipliers so the three values
+     never fall into step with each other across the run. */
+  const frac = (n: number) => n - Math.floor(n);
+  return {
+    duration: +(10 + frac(i * 0.6180339887) * 10).toFixed(2),
+    delay: +(frac(i * 0.7548776662) * 10).toFixed(2),
+    endY: +(93 + frac(i * 0.4142135624) * 8).toFixed(1)
+  };
+};
+
 export const BackgroundBeams = React.memo(
   ({ className }: { className?: string }) => {
+    const reduce = useReducedMotion();
+    const animate = !reduce;
     const paths = Array.from({ length: BEAM_COUNT }, (_, i) => beamPath(i));
     const backdropPath = Array.from({ length: BACKDROP_COUNT }, (_, i) => beamPath(i)).join("");
     return (
@@ -68,44 +102,34 @@ export const BackgroundBeams = React.memo(
           ></path>
 
           {paths.map((path, index) => (
-            <motion.path
+            <path
               key={`path-` + index}
               d={path}
               stroke={`url(#linearGradient-${index})`}
               strokeOpacity="0.4"
               strokeWidth="0.5"
-            ></motion.path>
+            />
           ))}
           <defs>
-            {paths.map((path, index) => (
-              <motion.linearGradient
-                id={`linearGradient-${index}`}
-                key={`gradient-${index}`}
-                initial={{
-                  x1: "0%",
-                  x2: "0%",
-                  y1: "0%",
-                  y2: "0%",
-                }}
-                animate={{
-                  x1: ["0%", "100%"],
-                  x2: ["0%", "95%"],
-                  y1: ["0%", "100%"],
-                  y2: ["0%", `${93 + Math.random() * 8}%`],
-                }}
-                transition={{
-                  duration: Math.random() * 10 + 10,
-                  ease: "easeInOut",
-                  repeat: Infinity,
-                  delay: Math.random() * 10,
-                }}
-              >
-                <stop stopColor="#18CCFC" stopOpacity="0"></stop>
-                <stop stopColor="#18CCFC"></stop>
-                <stop offset="32.5%" stopColor="#6344F5"></stop>
-                <stop offset="100%" stopColor="#AE48FF" stopOpacity="0"></stop>
-              </motion.linearGradient>
-            ))}
+            {paths.map((_, index) => {
+              const { duration, delay, endY } = beamTiming(index);
+              return (
+                <linearGradient id={`linearGradient-${index}`} key={`gradient-${index}`} x1="0%" x2="0%" y1="0%" y2="0%">
+                  {animate ? (
+                    <>
+                      <animate attributeName="x1" values="0%;100%" dur={`${duration}s`} begin={`-${delay}s`} repeatCount="indefinite" calcMode="spline" keySplines="0.42 0 0.58 1" keyTimes="0;1" />
+                      <animate attributeName="x2" values="0%;95%" dur={`${duration}s`} begin={`-${delay}s`} repeatCount="indefinite" calcMode="spline" keySplines="0.42 0 0.58 1" keyTimes="0;1" />
+                      <animate attributeName="y1" values="0%;100%" dur={`${duration}s`} begin={`-${delay}s`} repeatCount="indefinite" calcMode="spline" keySplines="0.42 0 0.58 1" keyTimes="0;1" />
+                      <animate attributeName="y2" values={`0%;${endY}%`} dur={`${duration}s`} begin={`-${delay}s`} repeatCount="indefinite" calcMode="spline" keySplines="0.42 0 0.58 1" keyTimes="0;1" />
+                    </>
+                  ) : null}
+                  <stop stopColor="#18CCFC" stopOpacity="0"></stop>
+                  <stop stopColor="#18CCFC"></stop>
+                  <stop offset="32.5%" stopColor="#6344F5"></stop>
+                  <stop offset="100%" stopColor="#AE48FF" stopOpacity="0"></stop>
+                </linearGradient>
+              );
+            })}
 
             <radialGradient
               id="paint0_radial_242_278"

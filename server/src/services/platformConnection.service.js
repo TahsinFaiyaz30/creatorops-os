@@ -10,6 +10,7 @@ import {
   createCodeVerifier,
   createOAuthState
 } from './oauthState.service.js';
+import { resolveTeamContext } from './teamMembership.service.js';
 
 const createHttpError = (message, statusCode, code = '') => {
   const error = new Error(message);
@@ -558,15 +559,57 @@ export const completeOAuthCallback = async ({ platform: rawPlatform, code, state
     throw attachReturnUrl(createHttpError('OAuth callback platform does not match stored state.', 400), debugState.redirectTarget);
   }
 
-  const user = await User.findOne({
-    _id: oauthState.userId,
-    workspaceId: oauthState.workspaceId
-  });
+  /*
+   * ───────────────────────────────────────────────────────────────────────────
+   * Recover who started this flow, and which workspace they started it in.
+   *
+   * This used to be one query — `User.findOne({ _id, workspaceId })` — matching
+   * the state's workspace against the User document's own. Those are different
+   * things: `User.workspaceId` is the account's PERSONAL workspace and never
+   * changes, while the state stores whatever workspace the request was acting
+   * in, because `auth.middleware` reassigns `user.workspaceId` to the active
+   * team for the duration of a request.
+   *
+   * Inside a team the two therefore disagree, the query matched nothing, and
+   * every connection attempt died on "OAuth user context was not found" — which
+   * is why this only ever failed for a team, and only for the owner or a member
+   * with accounts.manage, since nobody else can reach the button.
+   *
+   * So: find the user by id, then re-derive the workspace through the same
+   * membership check the middleware uses. Re-checking matters because a
+   * round-trip to Google is unauthenticated and takes as long as the person
+   * takes — they may have been removed from the team in between, and the token
+   * must not land in a workspace they no longer belong to.
+   * ───────────────────────────────────────────────────────────────────────────
+   */
+  const user = await User.findById(oauthState.userId);
 
   if (!user) {
     logOAuthCallback(debugState);
     throw attachReturnUrl(createHttpError('OAuth user context was not found.', 404), debugState.redirectTarget);
   }
+
+  const context = await resolveTeamContext({
+    userId: user._id,
+    workspaceId: oauthState.workspaceId,
+    homeWorkspaceId: user.workspaceId
+  });
+
+  if (!context) {
+    logOAuthCallback(debugState);
+    throw attachReturnUrl(
+      createHttpError(
+        'You no longer have access to the workspace this connection was started in.',
+        403,
+        'WORKSPACE_ACCESS_DENIED'
+      ),
+      debugState.redirectTarget
+    );
+  }
+
+  /* The connection belongs to the workspace the flow began in, not to whichever
+     workspace the User document happens to name. */
+  user.workspaceId = context.workspaceId;
   debugState.userWorkspaceRecovered = true;
 
   const connector = getConnector(platform);

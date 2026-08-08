@@ -107,13 +107,21 @@ const Pointer = ({ ...props }: React.SVGProps<SVGSVGElement>) => {
       strokeWidth="1"
       strokeLinecap="round"
       strokeLinejoin="round"
-      viewBox="0 16"
+      /*
+        Same lossy paste as the beams background: this arrived with
+        `viewBox="0 16"` — two numbers where four are required — and every arc
+        command stripped of its flags, so `a rx ry rot large-arc sweep dx dy`
+        was arriving with 4 to 6 numbers instead of 7. The browser rejected both
+        on every render of the landing headline. Flags restored as `0 0 1`,
+        which is what the surviving `1` in three of the four arcs was.
+      */
+      viewBox="0 0 16 16"
       height="1em"
       width="1em"
       xmlns="http://www.w3.org/2000/svg"
       {...props}
     >
-      <path d="M14.082 2.182a.5.5 0 1 .103.557L8.528 15.467a.5.5 1-.917-.007L5.57 10.694.803 8.652a.5.5 1-.006-.916l12.728-5.657a.5.5 .556.103z"></path>
+      <path d="M14.082 2.182a.5.5 0 0 1 .103.557L8.528 15.467a.5.5 0 0 1-.917-.007L5.57 10.694.803 8.652a.5.5 0 0 1-.006-.916l12.728-5.657a.5.5 0 0 1 .556.103z"></path>
     </svg>
   );
 };
