@@ -692,6 +692,49 @@ export default class XConnector extends BasePlatformConnector {
     return okResult({ mediaId: uploadState.providerMediaId, rawResponse: uploadState.rawResponse }, 'X media uploaded through the official chunked media API.');
   }
 
+  /*
+   * Media read back from X. Nothing here is stored: this workspace
+   * deletes its own copy once a post ships, and these URLs are the platform's
+   * own and mostly expire. See BasePlatformConnector.fetchPostMedia.
+   */
+  async fetchPostMedia(connection, providerPostId) {
+    if (!providerPostId) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'X media lookup requires a provider post id.' });
+    }
+
+    const token = this.getAccessToken(connection);
+    const result = await this.requestJson(
+      `https://api.x.com/2/tweets/${encodeURIComponent(providerPostId)}?expansions=attachments.media_keys&media.fields=type,url,preview_image_url,width,height,variants,duration_ms`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!result.ok) return result;
+
+    const media = result.data?.includes?.media || [];
+    const items = media
+      .map(entry => {
+        const isVideo = ['video', 'animated_gif'].includes(String(entry.type || ''));
+        /* Videos arrive as a variant ladder — take the highest-bitrate mp4. */
+        const mp4 = (entry.variants || [])
+          .filter(variant => variant.content_type === 'video/mp4')
+          .sort((a, b) => (b.bit_rate || 0) - (a.bit_rate || 0))[0];
+        return {
+          kind: isVideo ? 'video' : 'image',
+          embed: false,
+          url: isVideo ? mp4?.url || '' : entry.url || '',
+          thumbnailUrl: entry.preview_image_url || entry.url || '',
+          width: entry.width || null,
+          height: entry.height || null,
+          durationSeconds: entry.duration_ms ? Math.round(entry.duration_ms / 1000) : null
+        };
+      })
+      .filter(item => item.url || item.thumbnailUrl);
+
+    if (items.length === 0) {
+      return connectorResult({ code: 'NOT_FOUND', message: 'X returned no media for this post.' });
+    }
+    return okResult({ items });
+  }
+
   async publish(payload, connection) {
     const validation = this.validatePublishPayload(payload, connection);
     if (!validation.ok) return validation;

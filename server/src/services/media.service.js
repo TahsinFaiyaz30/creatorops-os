@@ -845,6 +845,22 @@ export const prepareMediaAssetsForPublishing = async ({ mediaAssets = [] }) => {
 
   for (const asset of mediaAssets) {
     const raw = toPlainAsset(asset);
+
+    /*
+     * `toPlainAsset` passes `transform: false`, so the model's serializer — the
+     * thing that hides pre-migration `/uploads/...` URLs from the API — does not
+     * run here. Publishing must refuse those outright: the file is gone, and
+     * handing a connector a dead URL turns a knowable problem into an opaque
+     * upload failure against a live platform.
+     */
+    if (!asset.objectKey && /^\/?uploads\//i.test(asset.publicUrl || '')) {
+      throw createHttpError(
+        `"${asset.originalName || 'This file'}" was uploaded before the move to cloud storage and is no longer available. Re-upload it before publishing.`,
+        409,
+        'MEDIA_ASSET_UNAVAILABLE'
+      );
+    }
+
     raw.publicUrl = asset.objectKey
       ? await getStoredObjectUrl({ storageProvider: asset.storageProvider, objectKey: asset.objectKey })
       : asset.publicUrl || '';

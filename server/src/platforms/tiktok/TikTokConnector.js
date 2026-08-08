@@ -153,6 +153,48 @@ export default class TikTokConnector extends BasePlatformConnector {
     return okResult({}, 'TikTok payload is publishable when Content Posting API access is approved.');
   }
 
+  /*
+   * Media read back from TikTok. Nothing here is stored: this workspace
+   * deletes its own copy once a post ships, and these URLs are the platform's
+   * own and mostly expire. See BasePlatformConnector.fetchPostMedia.
+   */
+  async fetchPostMedia(connection, providerPostId) {
+    if (!providerPostId) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'TikTok media lookup requires a provider video id.' });
+    }
+
+    const token = this.getAccessToken(connection);
+    const result = await this.requestJson(
+      'https://open.tiktokapis.com/v2/video/query/?fields=id,cover_image_url,embed_link,duration',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filters: { video_ids: [String(providerPostId)] } })
+      }
+    );
+    if (!result.ok) return result;
+
+    const video = result.data?.data?.videos?.[0];
+    if (!video) {
+      return connectorResult({ code: 'NOT_FOUND', message: 'TikTok returned no video for this post.' });
+    }
+
+    /* TikTok never serves the file: the cover is the still, embed_link plays it. */
+    return okResult({
+      items: [
+        {
+          kind: 'video',
+          embed: true,
+          url: video.embed_link || '',
+          thumbnailUrl: video.cover_image_url || '',
+          width: null,
+          height: null,
+          durationSeconds: Number(video.duration) || null
+        }
+      ]
+    });
+  }
+
   async publish(payload, connection) {
     const validation = this.validatePublishPayload(payload, connection);
     if (!validation.ok) return validation;

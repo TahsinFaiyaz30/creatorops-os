@@ -7,6 +7,43 @@ export const MEDIA_STATUSES = ['uploaded', 'ready', 'failed'];
 export const MEDIA_STORAGE_INTENTS = ['library', 'temporary_publish'];
 export const MEDIA_STORAGE_PROVIDERS = ['s3'];
 
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Media uploaded before this workspace moved to object storage.
+ *
+ * Those assets were written to the API server's local disk and served from
+ * `app.use('/uploads', express.static(...))`. The R2/S3 migration removed that
+ * route, and on an ephemeral host the files went with the next deploy — but the
+ * rows survived, still carrying `publicUrl: "/uploads/<workspace>/<file>"` and
+ * no `objectKey`.
+ *
+ * The API kept handing that path to the client, so opening one of these assets
+ * navigated to the API and got `{"message":"Route not found: GET /uploads/…"}`.
+ * There is no file to serve and nothing to repoint at, so the only honest
+ * answer is to stop advertising a URL and say why.
+ *
+ * Detection deliberately keys on the URL shape rather than on a missing
+ * `objectKey`: `objectKey` is `select: false`, so a caller that forgot to ask
+ * for it would otherwise see every healthy asset as broken.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+const LEGACY_LOCAL_DISK_URL = /^\/?uploads\//i;
+
+const serializeAsset = ret => {
+  delete ret.objectKey;
+
+  if (LEGACY_LOCAL_DISK_URL.test(ret.publicUrl || '')) {
+    ret.publicUrl = '';
+    ret.isStored = false;
+    ret.unavailableReason =
+      'Uploaded before this workspace moved to cloud storage. The original file lived on the old server and did not survive the move — re-upload it to use it again.';
+  } else {
+    ret.isStored = Boolean(ret.publicUrl);
+  }
+
+  return ret;
+};
+
 const mediaAssetSchema = new Schema(
   {
     workspaceId: {
@@ -142,18 +179,8 @@ const mediaAssetSchema = new Schema(
   },
   {
     timestamps: true,
-    toJSON: {
-      transform: (_doc, ret) => {
-        delete ret.objectKey;
-        return ret;
-      }
-    },
-    toObject: {
-      transform: (_doc, ret) => {
-        delete ret.objectKey;
-        return ret;
-      }
-    }
+    toJSON: { transform: (_doc, ret) => serializeAsset(ret) },
+    toObject: { transform: (_doc, ret) => serializeAsset(ret) }
   }
 );
 

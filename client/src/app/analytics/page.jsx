@@ -34,6 +34,7 @@ import {
   Notice, GlareStat, GlareStatGrid, GLARE_TINTS
 } from '../../components/ds';
 import { api } from '../../lib/api';
+import PostMediaViewer from '../../components/media/PostMediaViewer';
 import { getSocket } from '../../lib/socket';
 import { getUser } from '../../lib/auth';
 import { formatPlatform } from '../../lib/platforms';
@@ -165,6 +166,8 @@ export default function AnalyticsPage() {
   const [summary, setSummary] = useState(null);
   const [groups, setGroups] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState(null);
+  /* Which group's media the platform viewer is showing, if any. */
+  const [viewingGroup, setViewingGroup] = useState(null);
   const [selectedPlatform, setSelectedPlatform] = useState('');
   const [message, setMessage] = useToastState('info');
   const [syncResults, setSyncResults] = useState([]);
@@ -478,6 +481,7 @@ export default function AnalyticsPage() {
                   busy={busy === `sync-${selectedGroup.id}`}
                   onSync={() => syncGroup(selectedGroup)}
                   onFilter={platform => openGroup(selectedGroup.id, platform)}
+                  onOpenMedia={setViewingGroup}
                 />
 
                 <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -547,6 +551,14 @@ export default function AnalyticsPage() {
           </div>
         </div>
       </Page>
+
+      {/* The group's media as every platform in it still holds it. */}
+      <PostMediaViewer
+        open={Boolean(viewingGroup)}
+        onClose={() => setViewingGroup(null)}
+        groupId={viewingGroup?.id || ''}
+        title="Post media"
+      />
     </AppShell>
   );
 }
@@ -644,9 +656,13 @@ function GroupCard({ group, index, active, busy, onOpen }) {
 
 /* ── Group hero ───────────────────────────────────────────────────────────── */
 
-function GroupHero({ group, selectedPlatform, busy, onSync, onFilter }) {
-  const media = (group.mediaAssets || []).find(asset => asset?.publicUrl) || null;
+function GroupHero({ group, selectedPlatform, busy, onSync, onFilter, remote, onOpenMedia }) {
+  const local = (group.mediaAssets || []).find(asset => asset?.publicUrl) || null;
   const [broken, setBroken] = useState(false);
+
+  /* Local media is deleted once a group ships, so fall back to the frame the
+     platform still holds — see lib/postThumbnails.js. */
+  const media = local || (remote?.thumbnailUrl ? { publicUrl: remote.thumbnailUrl, mediaType: 'image' } : null);
 
   useEffect(() => { setBroken(false); }, [media?.publicUrl]);
 
@@ -664,8 +680,11 @@ function GroupHero({ group, selectedPlatform, busy, onSync, onFilter }) {
       />
 
       <div className="relative flex flex-col gap-4 p-4 sm:flex-row">
-        {/* group.mediaAssets was returned and never rendered */}
-        <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface2)] sm:h-28 sm:w-28">
+        <button
+          type="button"
+          onClick={() => onOpenMedia?.(group)}
+          aria-label="View this post on every platform it went to"
+          className="focus-ring h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface2)] transition-colors hover:border-[var(--accent-line)] sm:h-28 sm:w-28">
           {media && !broken ? (
             media.mediaType === 'video' ? (
               <video src={media.publicUrl} className="h-full w-full object-cover" muted playsInline preload="metadata" onError={() => setBroken(true)} />
@@ -680,7 +699,7 @@ function GroupHero({ group, selectedPlatform, busy, onSync, onFilter }) {
               </span>
             </div>
           )}
-        </div>
+        </button>
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">

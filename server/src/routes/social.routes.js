@@ -2,6 +2,10 @@ import express from 'express';
 
 import {
   analyticsSummary,
+  postMedia,
+  postGroupMedia,
+  postThumbnails,
+  mediaAssetPosts,
   getComments,
   getMetrics,
   getPostGroup,
@@ -33,5 +37,13 @@ router.get('/posts/:id/comments', getComments);
 router.post('/comments/:id/reply', requireRole(socialReplyRoles), replyToComment);
 router.post('/replies/:id/reply', requireRole(socialReplyRoles), replyToReply);
 router.get('/analytics/summary', analyticsSummary);
+
+/* Media read back from the hosting platform, for screens whose local copy was
+   deleted after publishing. */
+router.get('/posts/:id/media', postMedia);
+router.get('/post-groups/:id/media', postGroupMedia);
+router.post('/post-thumbnails', postThumbnails);
+/* Walks from a library asset to every post that carried it. */
+router.get('/media-assets/:id/posts', mediaAssetPosts);
 
 export default router;

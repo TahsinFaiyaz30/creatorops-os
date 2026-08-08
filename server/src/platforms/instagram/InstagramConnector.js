@@ -226,6 +226,48 @@ export default class InstagramConnector extends BasePlatformConnector {
     return okResult({ followers: Number(result.data.followers_count), raw: result.data }, 'Instagram follower count read through the Graph API.');
   }
 
+  /*
+   * Media read back from Instagram. Nothing here is stored: this workspace
+   * deletes its own copy once a post ships, and these URLs are the platform's
+   * own and mostly expire. See BasePlatformConnector.fetchPostMedia.
+   */
+  async fetchPostMedia(connection, providerPostId) {
+    if (!providerPostId) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'Instagram media lookup requires a provider post id.' });
+    }
+
+    const token = this.getAccessToken(connection);
+    const fields = 'media_type,media_url,thumbnail_url,children{media_type,media_url,thumbnail_url}';
+    const result = await this.requestJson(
+      `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(providerPostId)}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(token)}`
+    );
+    if (!result.ok) return result;
+
+    /* A carousel carries its slides in `children`; a single post is its own item. */
+    const nodes = result.data?.children?.data?.length ? result.data.children.data : [result.data];
+
+    const items = (nodes || [])
+      .filter(Boolean)
+      .map(node => {
+        const isVideo = String(node.media_type || '').toUpperCase().includes('VIDEO');
+        return {
+          kind: isVideo ? 'video' : 'image',
+          embed: false,
+          url: node.media_url || '',
+          thumbnailUrl: node.thumbnail_url || (isVideo ? '' : node.media_url || ''),
+          width: null,
+          height: null,
+          durationSeconds: null
+        };
+      })
+      .filter(item => item.url || item.thumbnailUrl);
+
+    if (items.length === 0) {
+      return connectorResult({ code: 'NOT_FOUND', message: 'Instagram returned no media for this post.' });
+    }
+    return okResult({ items });
+  }
+
   async fetchAnalytics(connection, providerPostId) {
     const token = this.getAccessToken(connection);
     const result = await this.requestJson(

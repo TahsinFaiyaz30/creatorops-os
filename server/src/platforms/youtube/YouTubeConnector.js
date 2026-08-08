@@ -814,6 +814,58 @@ export default class YouTubeConnector extends BasePlatformConnector {
     }, 'YouTube subscriber count read through the YouTube Data API.');
   }
 
+  /*
+   * Media read back from YouTube. Nothing here is stored: this workspace
+   * deletes its own copy once a post ships, and these URLs are the platform's
+   * own and mostly expire. See BasePlatformConnector.fetchPostMedia.
+   */
+  async fetchPostMedia(connection, providerPostId) {
+    if (!providerPostId) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'YouTube media lookup requires a provider video id.' });
+    }
+
+    const scopeCheck = this.requireScopes(
+      connection,
+      ['https://www.googleapis.com/auth/youtube.readonly'],
+      'read YouTube video media'
+    );
+    if (!scopeCheck.ok) return scopeCheck;
+
+    const token = this.getAccessToken(connection);
+    const result = await this.requestJson(
+      `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${encodeURIComponent(providerPostId)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!result.ok) return result;
+
+    const video = result.data?.items?.[0];
+    if (!video) {
+      return connectorResult({
+        code: 'NOT_FOUND',
+        message: 'YouTube did not return this video. It may be private, deleted, or not owned by this account.'
+      });
+    }
+
+    const thumbnails = video.snippet?.thumbnails || {};
+    const best =
+      thumbnails.maxres || thumbnails.standard || thumbnails.high || thumbnails.medium || thumbnails.default || {};
+
+    /* The file itself is never downloadable, so the player embed is what plays. */
+    return okResult({
+      items: [
+        {
+          kind: 'video',
+          embed: true,
+          url: `https://www.youtube.com/embed/${encodeURIComponent(providerPostId)}`,
+          thumbnailUrl: best.url || '',
+          width: best.width || null,
+          height: best.height || null,
+          durationSeconds: null
+        }
+      ]
+    });
+  }
+
   async fetchAnalytics(connection, providerPostId) {
     if (!providerPostId) {
       return connectorResult({ code: 'VALIDATION_FAILED', message: 'YouTube analytics sync requires a provider video id.' });

@@ -34,6 +34,7 @@ import {
   EmptyState, Skeleton, GlareStat, GlareStatGrid, GLARE_TINTS
 } from '../../components/ds';
 import { api } from '../../lib/api';
+import { usePostThumbnails } from '../../lib/postThumbnails';
 import { formatPlatform } from '../../lib/platforms';
 import { useToastState } from '../../components/ui/toast';
 
@@ -85,8 +86,11 @@ const countNodes = nodes =>
 
 /* ── Post picker row ──────────────────────────────────────────────────────── */
 
-function PostRow({ post, active, onSelect }) {
-  const media = (post.mediaAssetIds || []).find(asset => asset?.publicUrl) || null;
+/* `remote` is the still borrowed back from the platform that published this —
+   the local file is deleted once a post ships. See lib/postThumbnails.js. */
+function PostRow({ post, active, onSelect, remote }) {
+  const local = (post.mediaAssetIds || []).find(asset => asset?.publicUrl) || null;
+  const media = local || (remote?.thumbnailUrl ? { publicUrl: remote.thumbnailUrl } : null);
   const [broken, setBroken] = useState(false);
   const connection = post.platformConnectionId || {};
 
@@ -355,6 +359,9 @@ export default function InboxPage() {
     );
   }, [posts, query]);
 
+  /* One request for the whole visible list, not one per row. */
+  const { thumbnails } = usePostThumbnails((visiblePosts || []).map(idOf));
+
   const activePost = posts?.find(p => idOf(p) === activeId) || null;
 
   return (
@@ -442,6 +449,7 @@ export default function InboxPage() {
                       post={post}
                       active={idOf(post) === activeId}
                       onSelect={() => setActiveId(idOf(post))}
+                      remote={thumbnails[idOf(post)]}
                     />
                   ))
                 )}

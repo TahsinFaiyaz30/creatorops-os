@@ -186,6 +186,64 @@ export default class FacebookConnector extends BasePlatformConnector {
     return okResult({ followers: Number(followers), raw: result.data }, 'Facebook Page follower count read through the Graph API.');
   }
 
+  /*
+   * Media read back from Facebook. Nothing here is stored: this workspace
+   * deletes its own copy once a post ships, and these URLs are the platform's
+   * own and mostly expire. See BasePlatformConnector.fetchPostMedia.
+   */
+  async fetchPostMedia(connection, providerPostId) {
+    if (!providerPostId) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'Facebook media lookup requires a provider post id.' });
+    }
+
+    const token = this.getAccessToken(connection);
+    const fields = 'full_picture,attachments{media_type,type,media,url,subattachments}';
+    const result = await this.requestJson(
+      `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(providerPostId)}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(token)}`
+    );
+    if (!result.ok) return result;
+
+    /* An album reports its slides in subattachments; a single post is its own. */
+    const attachments = result.data?.attachments?.data || [];
+    const flattened = attachments.flatMap(attachment =>
+      attachment.subattachments?.data?.length ? attachment.subattachments.data : [attachment]
+    );
+
+    const items = flattened
+      .map(attachment => {
+        const image = attachment.media?.image || {};
+        const isVideo = String(attachment.media_type || attachment.type || '').includes('video');
+        return {
+          kind: isVideo ? 'video' : 'image',
+          /* Graph exposes a still for videos, never the file, so the post link plays it. */
+          embed: isVideo,
+          url: isVideo ? attachment.url || '' : image.src || '',
+          thumbnailUrl: image.src || '',
+          width: image.width || null,
+          height: image.height || null,
+          durationSeconds: null
+        };
+      })
+      .filter(item => item.url || item.thumbnailUrl);
+
+    if (items.length === 0 && result.data?.full_picture) {
+      items.push({
+        kind: 'image',
+        embed: false,
+        url: result.data.full_picture,
+        thumbnailUrl: result.data.full_picture,
+        width: null,
+        height: null,
+        durationSeconds: null
+      });
+    }
+
+    if (items.length === 0) {
+      return connectorResult({ code: 'NOT_FOUND', message: 'This Facebook post has no media Graph will return.' });
+    }
+    return okResult({ items });
+  }
+
   async fetchAnalytics(connection, providerPostId) {
     const token = this.getAccessToken(connection);
     const result = await this.requestJson(

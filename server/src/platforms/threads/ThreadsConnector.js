@@ -130,6 +130,48 @@ export default class ThreadsConnector extends BasePlatformConnector {
     return okResult({}, 'Threads payload is publishable.');
   }
 
+  /*
+   * Media read back from Threads. Nothing here is stored: this workspace
+   * deletes its own copy once a post ships, and these URLs are the platform's
+   * own and mostly expire. See BasePlatformConnector.fetchPostMedia.
+   */
+  async fetchPostMedia(connection, providerPostId) {
+    if (!providerPostId) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'Threads media lookup requires a provider post id.' });
+    }
+
+    const token = this.getAccessToken(connection);
+    const fields = 'media_type,media_url,thumbnail_url,children{media_type,media_url,thumbnail_url}';
+    const result = await this.requestJson(
+      `https://graph.threads.net/v1.0/${encodeURIComponent(providerPostId)}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(token)}`
+    );
+    if (!result.ok) return result;
+
+    /* A carousel carries its slides in `children`; a single post is its own item. */
+    const nodes = result.data?.children?.data?.length ? result.data.children.data : [result.data];
+
+    const items = (nodes || [])
+      .filter(Boolean)
+      .map(node => {
+        const isVideo = String(node.media_type || '').toUpperCase().includes('VIDEO');
+        return {
+          kind: isVideo ? 'video' : 'image',
+          embed: false,
+          url: node.media_url || '',
+          thumbnailUrl: node.thumbnail_url || (isVideo ? '' : node.media_url || ''),
+          width: null,
+          height: null,
+          durationSeconds: null
+        };
+      })
+      .filter(item => item.url || item.thumbnailUrl);
+
+    if (items.length === 0) {
+      return connectorResult({ code: 'NOT_FOUND', message: 'Threads returned no media for this post.' });
+    }
+    return okResult({ items });
+  }
+
   async publish(payload, connection) {
     const validation = this.validatePublishPayload(payload, connection);
     if (!validation.ok) return validation;

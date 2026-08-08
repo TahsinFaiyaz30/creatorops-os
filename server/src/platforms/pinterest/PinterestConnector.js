@@ -151,6 +151,46 @@ export default class PinterestConnector extends BasePlatformConnector {
     return okResult({}, 'Pinterest payload is publishable.');
   }
 
+  /*
+   * Media read back from Pinterest. Nothing here is stored: this workspace
+   * deletes its own copy once a post ships, and these URLs are the platform's
+   * own and mostly expire. See BasePlatformConnector.fetchPostMedia.
+   */
+  async fetchPostMedia(connection, providerPostId) {
+    if (!providerPostId) {
+      return connectorResult({ code: 'VALIDATION_FAILED', message: 'Pinterest media lookup requires a provider pin id.' });
+    }
+
+    const token = this.getAccessToken(connection);
+    const result = await this.requestJson(
+      `https://api.pinterest.com/v5/pins/${encodeURIComponent(providerPostId)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!result.ok) return result;
+
+    const media = result.data?.media || {};
+    const images = media.images || {};
+    const best = images.originals || images['1200x'] || images['600x'] || images['400x300'] || images['150x150'] || {};
+    if (!best.url) {
+      return connectorResult({ code: 'NOT_FOUND', message: 'Pinterest returned no image for this pin.' });
+    }
+
+    const small = images['400x300'] || images['150x150'] || best;
+    return okResult({
+      items: [
+        {
+          kind: String(media.media_type || '').toLowerCase() === 'video' ? 'video' : 'image',
+          embed: false,
+          url: best.url,
+          thumbnailUrl: small.url || best.url,
+          width: best.width || null,
+          height: best.height || null,
+          durationSeconds: null
+        }
+      ]
+    });
+  }
+
   async publish(payload, connection) {
     const validation = this.validatePublishPayload(payload, connection);
     if (!validation.ok) return validation;

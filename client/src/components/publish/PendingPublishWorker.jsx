@@ -19,7 +19,28 @@ import {
 } from '../../lib/resumableUploads';
 
 const pendingMediaItems = pending => Array.isArray(pending?.mediaItems) ? pending.mediaItems : [];
-const GLOBAL_UPLOAD_SCAN_INTERVAL_MS = 1000;
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Scan cadence.
+ *
+ * This worker is mounted in the root layout, so it runs on every page of the
+ * app — including the marketing site and the login screen. It used to scan on a
+ * flat 1s interval forever, which meant an IndexedDB read every second for the
+ * entire life of the tab even when nothing had ever been queued. Left open, the
+ * cost is constant and never ends.
+ *
+ * It now backs off while idle and snaps back to the fast cadence the moment
+ * there is work. Responsiveness does not change: every real trigger — an upload
+ * state change, window focus, the tab becoming visible, a session change —
+ * already calls scheduleScan() directly, so the interval is only a safety net
+ * for things none of those cover.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+const SCAN_INTERVAL_ACTIVE_MS = 1000;
+const SCAN_INTERVAL_IDLE_MS = 15000;
+/** Consecutive empty scans before backing off. */
+const SCANS_BEFORE_IDLE = 3;
 
 const getConnectionTargetKey = connection =>
   connection.targetKey || `${connection.platformConnectionId || connection._id || 'connection'}:${connection.platform || 'platform'}`;
@@ -147,6 +168,8 @@ export default function PendingPublishWorker({ user = null }) {
   const scanRunningRef = useRef(false);
   const scanTimerRef = useRef(null);
   const scanIntervalRef = useRef(null);
+  /* Consecutive scans that found nothing to do — drives the backoff above. */
+  const idleScansRef = useRef(0);
   const retryTimerRef = useRef(null);
   const persistTimersRef = useRef(new Map());
   const persistPayloadsRef = useRef(new Map());
@@ -477,7 +500,12 @@ export default function PendingPublishWorker({ user = null }) {
       const currentUser = storedUser || activeUserRef.current;
       if (storedUser?._id) activeUserRef.current = storedUser;
       const currentUserId = getUserId(currentUser);
-      if (!currentUserId || !canPublish(currentUser) || !getToken()) return;
+      /* Signed out or not a publisher: nothing here will ever have work, so
+         settle straight onto the idle cadence instead of counting up to it. */
+      if (!currentUserId || !canPublish(currentUser) || !getToken()) {
+        idleScansRef.current = SCANS_BEFORE_IDLE;
+        return;
+      }
 
       const pendingItems = await getPendingPublishes().catch(() => []);
       const ownedItems = pendingItems.filter(item => !item.userId || item.userId === currentUserId);
@@ -490,6 +518,9 @@ export default function PendingPublishWorker({ user = null }) {
       }
 
       const pending = ownedItems.find(item => shouldResumePending(item) && !activeIdsRef.current.has(String(item.id)));
+      if (ownedItems.length === 0) idleScansRef.current += 1;
+      else idleScansRef.current = 0;
+
       if (pending) {
         await continuePendingRef.current?.({ ...pending });
       }
@@ -545,9 +576,20 @@ export default function PendingPublishWorker({ user = null }) {
     window.addEventListener('creatorops:session-changed', sessionHandler);
     window.addEventListener('storage', sessionHandler);
     document.addEventListener('visibilitychange', visibilityHandler);
-    scanIntervalRef.current = window.setInterval(() => {
-      scheduleScan();
-    }, GLOBAL_UPLOAD_SCAN_INTERVAL_MS);
+    /*
+      Self-scheduling rather than setInterval: the delay has to be re-read after
+      every tick, and a fixed interval cannot change its own period. Hidden tabs
+      skip the scan entirely — visibilitychange above re-scans on return.
+    */
+    const tick = () => {
+      if (document.visibilityState === 'visible') scheduleScan();
+      const idle = idleScansRef.current >= SCANS_BEFORE_IDLE;
+      scanIntervalRef.current = window.setTimeout(
+        tick,
+        idle ? SCAN_INTERVAL_IDLE_MS : SCAN_INTERVAL_ACTIVE_MS
+      );
+    };
+    scanIntervalRef.current = window.setTimeout(tick, SCAN_INTERVAL_ACTIVE_MS);
 
     return () => {
       unsubscribe();
@@ -556,7 +598,7 @@ export default function PendingPublishWorker({ user = null }) {
       window.removeEventListener('storage', sessionHandler);
       document.removeEventListener('visibilitychange', visibilityHandler);
       if (scanTimerRef.current) window.clearTimeout(scanTimerRef.current);
-      if (scanIntervalRef.current) window.clearInterval(scanIntervalRef.current);
+      if (scanIntervalRef.current) window.clearTimeout(scanIntervalRef.current);
       if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
       for (const timer of persistTimersRef.current.values()) {
         window.clearTimeout(timer);

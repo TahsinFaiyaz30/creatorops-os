@@ -11,6 +11,12 @@ import {
   syncPublishedPost,
   syncUnifiedPostGroup
 } from '../services/social.service.js';
+import {
+  getMediaAssetPosts,
+  getPostGroupMedia,
+  getPostMedia,
+  getPostThumbnails
+} from '../services/postMedia.service.js';
 
 export const getPosts = async (req, res, next) => {
   try {
@@ -118,6 +124,49 @@ export const analyticsSummary = async (req, res, next) => {
   try {
     const summary = await getAnalyticsSummary({ user: req.user });
     res.json({ data: { summary } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+ * Media borrowed back from the platforms. See postMedia.service.js — nothing
+ * these three return is stored anywhere.
+ */
+
+export const postMedia = async (req, res, next) => {
+  try {
+    const media = await getPostMedia({ user: req.user, postId: req.params.id });
+    res.json({ data: { media } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const postGroupMedia = async (req, res, next) => {
+  try {
+    const media = await getPostGroupMedia({ user: req.user, groupId: req.params.id });
+    res.json({ data: { media } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const postThumbnails = async (req, res, next) => {
+  try {
+    /* POST, not GET: a page of ids is too long for a query string once a feed
+       has more than a handful of posts on it. */
+    const result = await getPostThumbnails({ user: req.user, postIds: req.body?.postIds || [] });
+    res.json({ data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const mediaAssetPosts = async (req, res, next) => {
+  try {
+    const media = await getMediaAssetPosts({ user: req.user, mediaAssetId: req.params.id });
+    res.json({ data: { media } });
   } catch (error) {
     next(error);
   }

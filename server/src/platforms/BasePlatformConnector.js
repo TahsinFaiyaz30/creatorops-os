@@ -255,6 +255,31 @@ export default class BasePlatformConnector {
     return String(handle || '').trim().replace(/^@+/, '');
   }
 
+  /**
+   * ───────────────────────────────────────────────────────────────────────────
+   * The media of a post, read back from the platform that is now hosting it.
+   *
+   * This workspace deletes its own copy once a post has shipped, which is the
+   * whole point of the storage model — but it left every later screen with
+   * nothing to show. The platforms still have the file, and a published post
+   * already records which one and under what id, so the picture can be borrowed
+   * back on demand instead of stored twice.
+   *
+   * Nothing returned here is ever written to disk or to the database. The URLs
+   * belong to the platform, most of them expire, and treating them as anything
+   * but a short-lived view would quietly recreate the storage problem.
+   *
+   * Shape: okResult({ items: [{ kind, url, thumbnailUrl, width, height,
+   * durationSeconds }] }) — `url` plays or displays, `thumbnailUrl` is a still.
+   * Either may be empty; a connector returns what the platform actually gives.
+   * ───────────────────────────────────────────────────────────────────────────
+   */
+  async fetchPostMedia() {
+    return unavailableResult(
+      `${this.displayName} does not expose post media the current connector/scopes can read.`
+    );
+  }
+
   async fetchComments() {
     return unavailableResult(`${this.displayName} comments are unavailable with the current connector/scopes.`);
   }

@@ -29,6 +29,8 @@ import {
 import { api } from '../../lib/api';
 import { formatPlatform } from '../../lib/platforms';
 import { useToastState } from '../../components/ui/toast';
+import PostMediaViewer from '../../components/media/PostMediaViewer';
+import { usePostThumbnails } from '../../lib/postThumbnails';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -53,15 +55,26 @@ const rel = d => {
   return `${Math.floor(s / 86400)}d ago`;
 };
 
-const idOf = post => String(post._id || post.id || '');
+/* Null-safe: the viewer asks for an id while nothing is selected, and this runs
+   during prerender where that is the only state there is. */
+const idOf = post => String(post?._id || post?.id || '');
 
 const isLive = post => ['published', 'live'].includes(post.status);
 
 /* ── Media thumb ──────────────────────────────────────────────────────────── */
 
-function PostMedia({ assets }) {
-  const media = (assets || []).find(asset => asset?.publicUrl) || null;
+/*
+ * The local copy is deleted once a post ships, so `assets` is usually empty or
+ * points at nothing. `remote` is the same frame borrowed back from the platform
+ * that published it — see lib/postThumbnails.js.
+ */
+function PostMedia({ assets, remote }) {
+  const local = (assets || []).find(asset => asset?.publicUrl) || null;
   const [broken, setBroken] = useState(false);
+
+  const media = local || (remote?.thumbnailUrl
+    ? { publicUrl: remote.thumbnailUrl, mediaType: remote.kind === 'video' ? 'video' : 'image', originalName: '', poster: true }
+    : null);
 
   useEffect(() => { setBroken(false); }, [media?.publicUrl]);
 
@@ -69,8 +82,33 @@ function PostMedia({ assets }) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-[var(--surface2)]">
         <ImageOff className="h-4 w-4 text-[var(--muted)]" />
-        <span className="text-[9px] text-[var(--muted)]">{broken ? 'Unavailable' : 'No media'}</span>
+        <span className="px-1 text-center text-[9px] leading-tight text-[var(--muted)]">
+          {broken ? 'Unavailable' : remote?.unavailableReason ? 'Not on platform' : 'No media'}
+        </span>
       </div>
+    );
+  }
+
+  /* A borrowed frame is a still even for a video — the platform gives a cover,
+     not the file, so render it as an image with the play affordance over it. */
+  if (media.poster) {
+    return (
+      <>
+        <img
+          src={media.publicUrl}
+          alt="Post media"
+          loading="lazy"
+          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+          onError={() => setBroken(true)}
+        />
+        {media.mediaType === 'video' ? (
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm">
+              <Play className="h-3 w-3 fill-white text-white" />
+            </span>
+          </span>
+        ) : null}
+      </>
     );
   }
 
@@ -106,7 +144,7 @@ function PostMedia({ assets }) {
 
 /* ── Post card ────────────────────────────────────────────────────────────── */
 
-function PostCard({ post, index, syncing, onSync }) {
+function PostCard({ post, index, syncing, onSync, remote, onOpenMedia }) {
   const id = idOf(post);
   const connection = post.platformConnectionId || {};
   const idea = post.contentItemId || {};
@@ -127,9 +165,14 @@ function PostCard({ post, index, syncing, onSync }) {
       />
 
       <div className="relative flex gap-3 p-3">
-        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-[var(--border)]">
-          <PostMedia assets={post.mediaAssetIds} />
-        </div>
+        <button
+          type="button"
+          onClick={() => onOpenMedia?.(post)}
+          aria-label="View this post's media on every platform it went to"
+          className="focus-ring relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-[var(--border)] transition-colors hover:border-[var(--accent-line)]"
+        >
+          <PostMedia assets={post.mediaAssetIds} remote={remote} />
+        </button>
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-1.5">
@@ -210,6 +253,8 @@ function PostCard({ post, index, syncing, onSync }) {
 
 export default function PostsPage() {
   const [posts, setPosts] = useState(null);
+  /* Which post's media the viewer is showing, if any. */
+  const [viewing, setViewing] = useState(null);
   const [groups, setGroups] = useState(null);
   const [error, setError] = useToastState('danger');
   const [notice, setNotice] = useToastState('success');
@@ -279,6 +324,15 @@ export default function PostsPage() {
         .some(value => String(value).toLowerCase().includes(q));
     });
   }, [posts, filter, query]);
+
+  /*
+   * One request for the whole visible page rather than one per card. Only the
+   * rows actually on screen are asked for, so filtering does not fan out into
+   * lookups for posts nobody is looking at.
+   */
+  const { thumbnails } = usePostThumbnails((visible || []).map(idOf));
+
+  const openMedia = post => setViewing(post);
 
   return (
     <AppShell>
@@ -400,6 +454,8 @@ export default function PostsPage() {
                     index={index}
                     syncing={syncing === idOf(post)}
                     onSync={sync}
+                    remote={thumbnails[idOf(post)]}
+                    onOpenMedia={openMedia}
                   />
                 ))}
               </AnimatePresence>
@@ -407,6 +463,19 @@ export default function PostsPage() {
           )}
         </Section>
       </Page>
+
+      {/*
+        The same post as every platform holding it. `postGroupId` is what ties
+        one idea's copies together, so the carousel steps across platforms
+        rather than showing only the row that was clicked.
+      */}
+      <PostMediaViewer
+        open={Boolean(viewing)}
+        onClose={() => setViewing(null)}
+        groupId={viewing?.postGroupId || ''}
+        postId={viewing?.postGroupId ? '' : idOf(viewing)}
+        title={viewing?.contentItemId?.title || 'Post media'}
+      />
     </AppShell>
   );
 }

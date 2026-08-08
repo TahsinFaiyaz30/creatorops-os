@@ -20,7 +20,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Images, Trash2, Pencil, HardDrive, Film, Image as ImageIcon, Clock,
-  Search, LayoutGrid, List as ListIcon, ExternalLink, Check, X, Upload, FolderLock
+  Search, LayoutGrid, List as ListIcon, ExternalLink, Check, X, Upload, FolderLock,
+  FileWarning
 } from 'lucide-react';
 
 import AppShell from '../../components/layout/AppShell';
@@ -36,6 +37,7 @@ import { api } from '../../lib/api';
 import { getActiveWorkspaceId } from '../../lib/teams';
 import { formatPlatform } from '../../lib/platforms';
 import { useToastState } from '../../components/ui/toast';
+import PostMediaViewer from '../../components/media/PostMediaViewer';
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -66,7 +68,7 @@ const FILTERS = [
 
 /* ── Grid tile ────────────────────────────────────────────────────────────── */
 
-function MediaTile({ asset, index, hovered, setHovered, onRename, onDelete, renaming, renameValue, setRenameValue, commitRename, cancelRename, projects, inTeam, onPinned, onPinError }) {
+function MediaTile({ asset, index, hovered, setHovered, onRename, onDelete, renaming, renameValue, setRenameValue, commitRename, cancelRename, projects, inTeam, onPinned, onPinError, onOpenPublished }) {
   const id = asset._id || asset.id;
   const isVideo = asset.mediaType === 'video';
   const dims = asset.width && asset.height ? `${asset.width}×${asset.height}` : null;
@@ -107,10 +109,41 @@ function MediaTile({ asset, index, hovered, setHovered, onRename, onDelete, rena
           </div>
         )}
 
+        {/*
+          Opens the file as the platforms still hold it. An overlay rather than a
+          wrapping button: the tile also carries the pin control and the hover
+          actions, and a <button> cannot contain those without breaking them.
+          It sits before the corner controls so they stack above and stay
+          clickable.
+        */}
+        <button
+          type="button"
+          onClick={() => onOpenPublished?.(asset)}
+          aria-label={`View ${asset.originalName || 'this file'} on the platforms it was published to`}
+          className="focus-ring absolute inset-0 cursor-zoom-in"
+        />
+
+        {/*
+         * An asset the server cannot serve says so on the tile. These are files
+         * uploaded before the move to cloud storage: the row survived, the file
+         * did not. Without this the tile looked identical to a healthy one and
+         * clicking it navigated to a raw 404 from the API.
+         */}
+        {asset.isStored === false ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-[var(--surface)]/85 px-3 text-center backdrop-blur-[2px]">
+            <FileWarning className="h-6 w-6 text-warning" />
+            <p className="text-[11px] font-semibold text-[var(--text)]">File unavailable</p>
+            <p className="text-[10px] leading-snug text-[var(--muted)]">
+              {asset.unavailableReason || 'The stored file is missing.'}
+            </p>
+          </div>
+        ) : null}
+
         {/* Corner meta */}
         <div className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-1">
           <Badge tone={STATUS_TONE[asset.status] || 'neutral'}>{asset.status || 'unknown'}</Badge>
           {isTemp ? <Badge tone="warning"><Clock className="h-2.5 w-2.5" />temp</Badge> : null}
+          {asset.isStored === false ? <Badge tone="danger">missing</Badge> : null}
         </div>
 
         {/*
@@ -213,6 +246,8 @@ export default function MediaPage() {
   const [projects, setProjects] = useState([]);
   const [scope, setScope] = useState('all');
   const [inTeam, setInTeam] = useState(false);
+  /* Which library asset the platform viewer is showing, if any. */
+  const [viewingAsset, setViewingAsset] = useState(null);
   /* Platforms this creator has actually published to, ever. */
   const [platforms, setPlatforms] = useState([]);
   const [platform, setPlatform] = useState('all');
@@ -564,6 +599,7 @@ export default function MediaPage() {
                     inTeam={inTeam}
                     onPinned={onPinned}
                     onPinError={setError}
+                    onOpenPublished={setViewingAsset}
                   />
                 ))}
               </AnimatePresence>
@@ -573,6 +609,18 @@ export default function MediaPage() {
           )}
         </Section>
       </Page>
+
+      {/*
+        The file as the platforms still hold it. Keyed by asset rather than by
+        post: one upload can appear in several posts on several platforms, and
+        that set is exactly what the carousel steps through.
+      */}
+      <PostMediaViewer
+        open={Boolean(viewingAsset)}
+        onClose={() => setViewingAsset(null)}
+        mediaAssetId={viewingAsset?._id || viewingAsset?.id || ''}
+        title={viewingAsset?.originalName || 'Media'}
+      />
     </AppShell>
   );
 }

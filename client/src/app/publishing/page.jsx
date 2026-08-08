@@ -15,6 +15,7 @@ import {
   FileCheck2,
   Globe,
   ImageOff,
+  Images,
   Layers3,
   Loader2,
   MonitorSmartphone,
@@ -42,6 +43,7 @@ import {
   EmptyState, Notice, GlareStat, GlareStatGrid, GLARE_TINTS
 } from '../../components/ds';
 import { useToastState } from '../../components/ui/toast';
+import PostMediaViewer from '../../components/media/PostMediaViewer';
 import { api } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { getUser, getUserId } from '../../lib/auth';
@@ -623,6 +625,8 @@ export default function PublishingPage() {
   const [user, setUser] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [pendingUploads, setPendingUploads] = useState([]);
+  /* Which dispatch group's shipped media the platform viewer is showing. */
+  const [viewingGroup, setViewingGroup] = useState(null);
   /* A stalled transfer is standing state — it stays inline, under the uploads
      it is about. Everything else here is an event, so it toasts. */
   const [pendingUploadError, setPendingUploadError] = useState('');
@@ -900,6 +904,21 @@ export default function PublishingPage() {
     };
   }, [loadPendingUploads, removePendingUploadState, upsertPendingUploadState]);
 
+  /*
+   * Polling fallback when there is no socket — which is every hosted
+   * deployment, since Socket.IO cannot ride the /api rewrite proxy.
+   *
+   * The cadence follows the work. A second is right while a job is actually
+   * moving; once everything has settled it is a request per second, forever,
+   * for a screen that is not changing — the single heaviest thing this app did
+   * to a machine left open on one tab. Any transient job pulls it straight back
+   * to 1s, and focus/visibility handlers refresh immediately regardless.
+   */
+  const hasMovingJob = useMemo(
+    () => jobs.some(job => ['publishing', 'queued'].includes(job.status)) || pendingUploads.length > 0,
+    [jobs, pendingUploads]
+  );
+
   useEffect(() => {
     if (liveTransport === 'socket') return undefined;
 
@@ -907,12 +926,12 @@ export default function PublishingPage() {
       if (document.visibilityState !== 'visible') return;
       loadServerState().catch(() => {});
     };
-    const intervalId = window.setInterval(refreshLiveServerState, 1000);
+    const intervalId = window.setInterval(refreshLiveServerState, hasMovingJob ? 1000 : 10000);
     refreshLiveServerState();
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [liveTransport, loadServerState]);
+  }, [liveTransport, loadServerState, hasMovingJob]);
 
   useEffect(() => {
     const focusHandler = () => {
@@ -1617,6 +1636,7 @@ export default function PublishingPage() {
                     onGroupAction={runGroupAction}
                     onDeleteGroup={group => setDeleteTarget({ kind: 'group', group })}
                     onDeleteJob={job => setDeleteTarget({ kind: 'job', job })}
+                    onOpenPublished={setViewingGroup}
                   />
                 ))}
               </AnimatePresence>
@@ -1659,6 +1679,18 @@ export default function PublishingPage() {
           ) : null}
         </AnimatePresence>
       </Page>
+
+      {/*
+        Once a dispatch has shipped, its cloud media is deleted and the platform
+        is the only place the file still exists. `group.id` is the publish job
+        id, which the server resolves to the posts it produced.
+      */}
+      <PostMediaViewer
+        open={Boolean(viewingGroup)}
+        onClose={() => setViewingGroup(null)}
+        groupId={viewingGroup?.id || ''}
+        title="Published media"
+      />
     </AppShell>
   );
 }
@@ -2248,7 +2280,8 @@ function getPendingItemMeta(item) {
 
 function DispatchGroup({
   group, canManage, busyKey, retentionLabel, hardDeleteLabel,
-  preflight, onPreflight, onJobAction, onGroupAction, onDeleteGroup, onDeleteJob
+  preflight, onPreflight, onJobAction, onGroupAction, onDeleteGroup, onDeleteJob,
+  onOpenPublished
 }) {
   const meta = getJobStatusMeta(group.status);
   const pauseJobs = getGroupActionJobs(group, 'pause');
@@ -2262,7 +2295,16 @@ function DispatchGroup({
   return (
     <CardShell>
       <div className="grid gap-4 p-4 sm:grid-cols-[auto_minmax(0,1fr)] xl:grid-cols-[132px_minmax(0,1fr)_236px]">
-        <MediaPreview media={firstMedia} emptyLabel={group.expiredCount > 0 ? 'Media expired' : 'Media cleared'} />
+        <MediaPreview
+          media={firstMedia}
+          emptyLabel={group.expiredCount > 0 ? 'Media expired' : 'Media cleared'}
+          /* Only once something actually shipped is there a platform to ask. */
+          onOpenPublished={
+            group.jobs.some(job => job.status === 'published')
+              ? () => onOpenPublished?.(group)
+              : null
+          }
+        />
 
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -2394,7 +2436,12 @@ function DispatchGroup({
   );
 }
 
-function MediaPreview({ media, emptyLabel = 'No cloud media' }) {
+/*
+ * `onOpenPublished` appears once a job has shipped. Its cloud media is deleted
+ * at that point — deliberately — so the thumbnail here is dead and the only
+ * copy left is the one the platform is hosting. Clicking opens that.
+ */
+function MediaPreview({ media, emptyLabel = 'No cloud media', onOpenPublished = null }) {
   /* Was `aspect-video` at every width inside a column that is only 132px at xl
      and full-width below it — which stretched the thumbnail to ~660px tall and
      pushed each dispatch card past 1000px. Fixed square thumb, full column at xl. */
@@ -2406,6 +2453,20 @@ function MediaPreview({ media, emptyLabel = 'No cloud media' }) {
   useEffect(() => { setBroken(false); }, [media?.publicUrl]);
 
   if (!media?.publicUrl || broken) {
+    if (onOpenPublished) {
+      return (
+        <button
+          type="button"
+          onClick={onOpenPublished}
+          aria-label="View this post on the platforms it was published to"
+          className={`${wrapper} focus-ring flex flex-col items-center justify-center gap-1 border-dashed px-2 text-center transition-colors hover:border-[var(--accent-line)]`}
+        >
+          <Images className="h-4 w-4 text-[var(--accent)]" />
+          <span className="text-[10px] leading-tight text-[var(--muted)]">View on platform</span>
+        </button>
+      );
+    }
+
     return (
       <div className={`${wrapper} flex flex-col items-center justify-center gap-1 border-dashed px-2 text-center`}>
         <ImageOff className="h-4 w-4 text-[var(--muted)]" />
