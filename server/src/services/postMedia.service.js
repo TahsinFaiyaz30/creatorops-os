@@ -28,6 +28,8 @@
  */
 
 import PublishedPost from '../models/PublishedPost.js';
+import PublishJob from '../models/PublishJob.js';
+import MediaAsset from '../models/MediaAsset.js';
 import PlatformConnection from '../models/PlatformConnection.js';
 import { getConnector } from '../platforms/connectorRegistry.js';
 
@@ -287,18 +289,50 @@ export const getPostGroupMedia = async ({ user, groupId }) => {
  * posts that carried it.
  */
 export const getMediaAssetPosts = async ({ user, mediaAssetId }) => {
-  const posts = await PublishedPost.find({
-    workspaceId: user.workspaceId,
-    mediaAssetIds: mediaAssetId
-  }).sort({ publishedAt: 1, createdAt: 1 });
-
-  if (posts.length === 0) {
-    const error = new Error('This file has not been published anywhere, so there is nothing to fetch back.');
+  const asset = await MediaAsset.findOne({ _id: mediaAssetId, workspaceId: user.workspaceId }).select('+objectKey');
+  if (!asset) {
+    const error = new Error('Media asset not found.');
     error.statusCode = 404;
     throw error;
   }
 
+  /*
+   * Every id this file is known by, not just its own.
+   *
+   * Publishing uploads a `temporary_publish` copy of the asset rather than
+   * sending the library row, so the post records the copy's id and the library
+   * id appears nowhere on it. Same bytes, same sha256 — that hash is the only
+   * durable link between the two, so siblings sharing it count as this file.
+   */
+  const siblingIds = asset.sha256
+    ? (
+        await MediaAsset.find({ workspaceId: user.workspaceId, sha256: asset.sha256 }).select('_id')
+      ).map(row => row._id)
+    : [];
+  const assetIds = [asset._id, ...siblingIds];
+
+  const jobs = await PublishJob.find({
+    workspaceId: user.workspaceId,
+    mediaAssetIds: { $in: assetIds }
+  }).select('_id');
+
+  const posts = await PublishedPost.find({
+    workspaceId: user.workspaceId,
+    $or: [{ mediaAssetIds: { $in: assetIds } }, { publishJobId: { $in: jobs.map(job => job._id) } }]
+  }).sort({ publishedAt: 1, createdAt: 1 });
+
+  /* Platforms only. After publishing there is no copy here to fall back on —
+     the database knows where the file went, and that is the whole source. */
   const slides = await Promise.all(posts.map(post => resolvePostMedia(post)));
+
+  if (slides.length === 0) {
+    const error = new Error(
+      'No published post in this workspace references this file, so there is no platform to fetch it from.'
+    );
+    error.statusCode = 404;
+    throw error;
+  }
+
   return { groupId: '', slides, anyAvailable: slides.some(entry => entry.items.length > 0) };
 };
 
