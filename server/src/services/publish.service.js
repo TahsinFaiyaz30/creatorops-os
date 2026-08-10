@@ -824,6 +824,9 @@ const createBlockedPublishJob = async ({ user, input, validation, publishNow }) 
     contentItemId: validation.contentItem?._id || input.contentItemId || null,
     variantId: validation.variant?._id || input.variantId || null,
     mediaAssetIds: validation.mediaAssets?.length ? validation.mediaAssets.map(asset => asset._id) : input.mediaAssetIds,
+    /* What the caller actually selected, before any temporary copy was made.
+       Survives the post-publish cleanup that removes mediaAssetIds. */
+    sourceMediaAssetIds: input.mediaAssetIds || [],
     platformConnectionId: input.platformConnectionId,
     platform: publishPlatform,
     accountSnapshot: buildAccountSnapshot(validation.connection || {}, publishPlatform),
@@ -1944,6 +1947,7 @@ export const processPublishJob = async ({ jobId }) => {
       publishJobId: lockedJob._id,
       postGroupId: lockedJob.postGroupId,
       mediaAssetIds: lockedJob.mediaAssetIds,
+      sourceMediaAssetIds: lockedJob.sourceMediaAssetIds || [],
       platformConnectionId: lockedJob.platformConnectionId,
       platform: lockedJob.platform,
       accountSnapshot: lockedJob.accountSnapshot,

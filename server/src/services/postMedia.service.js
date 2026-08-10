@@ -313,12 +313,30 @@ export const getMediaAssetPosts = async ({ user, mediaAssetId }) => {
 
   const jobs = await PublishJob.find({
     workspaceId: user.workspaceId,
-    mediaAssetIds: { $in: assetIds }
+    $or: [{ sourceMediaAssetIds: { $in: assetIds } }, { mediaAssetIds: { $in: assetIds } }]
   }).select('_id');
 
+  /*
+   * Four ways a post can claim this file, tried together:
+   *
+   *   · sourceMediaAssetIds — the durable one. Records what the publish was
+   *     built from, so it still points at the library row long after the
+   *     temporary upload copy has been cleaned up.
+   *   · mediaAssetIds       — the copy's own id. Works while it survives.
+   *   · sha256 siblings     — a duplicate row with identical bytes.
+   *   · publishJobId        — reached through a job matching either of the above.
+   *
+   * Only the first survives the post-publish cleanup, which is why it exists;
+   * the rest stay as fallbacks so posts published before it was added still
+   * resolve whenever any trace of the link is left.
+   */
   const posts = await PublishedPost.find({
     workspaceId: user.workspaceId,
-    $or: [{ mediaAssetIds: { $in: assetIds } }, { publishJobId: { $in: jobs.map(job => job._id) } }]
+    $or: [
+      { sourceMediaAssetIds: { $in: assetIds } },
+      { mediaAssetIds: { $in: assetIds } },
+      { publishJobId: { $in: jobs.map(job => job._id) } }
+    ]
   }).sort({ publishedAt: 1, createdAt: 1 });
 
   /* Platforms only. After publishing there is no copy here to fall back on —

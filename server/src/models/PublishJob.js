@@ -89,6 +89,18 @@ const publishJobSchema = new Schema(
       ref: 'PlatformVariant',
       default: null
     },
+    /*
+     * The library assets this publish was BUILT FROM, as opposed to the
+     * `temporary_publish` copies actually uploaded to the platform.
+     *
+     * Those copies are deleted once the post ships — that is the storage model —
+     * and until now nothing recorded where they came from. So after cleanup the
+     * chain "this file in my library → the posts carrying it" was severed, and
+     * the Media viewer could not find a post to fetch the picture back from.
+     * Recording the source ids here is the only durable link; a sha256 match
+     * only works while a duplicate row happens to survive.
+     */
+    sourceMediaAssetIds: [{ type: Schema.Types.ObjectId, ref: 'MediaAsset', index: true }],
     mediaAssetIds: [
       {
         type: Schema.Types.ObjectId,

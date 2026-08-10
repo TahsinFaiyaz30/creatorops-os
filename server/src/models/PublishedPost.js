@@ -16,6 +16,9 @@ const publishedPostSchema = new Schema(
     variantId: { type: Schema.Types.ObjectId, ref: 'PlatformVariant', default: null },
     publishJobId: { type: Schema.Types.ObjectId, ref: 'PublishJob', default: null, index: true },
     mediaAssetIds: [{ type: Schema.Types.ObjectId, ref: 'MediaAsset' }],
+    /* Carried from the job: the library assets this was built from, which
+       outlive the temporary copies in mediaAssetIds. See PublishJob. */
+    sourceMediaAssetIds: [{ type: Schema.Types.ObjectId, ref: 'MediaAsset', index: true }],
     platformConnectionId: { type: Schema.Types.ObjectId, ref: 'PlatformConnection', required: true, index: true },
     platform: { type: String, enum: SUPPORTED_PLATFORMS, required: true },
     accountSnapshot: { type: Schema.Types.Mixed, default: {} },
